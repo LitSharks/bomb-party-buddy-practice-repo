@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Bomb Party Buddy x LitShark",
+    "description": "Nom de l'extension"
+  },
+
+  "extensionDescription": {
+    "message": "Vous aide dans bomb party en tapant les mots à votre place !",
+    "description": "Description de l'extension"
+  }
+}
