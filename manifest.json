@@ -35,6 +35,10 @@
     {
       "resources": ["content/injected.js"],
       "matches": ["*://*.jklm.fun/*"]
+    },
+    {
+      "resources": ["words1/*"],
+      "matches": ["*://*.jklm.fun/*"]
     }
   ],
 

@@ -156,7 +156,9 @@ class Game {
 
     // HUD lists
     this.lastTopPicksSelf = [];
+    this.lastTopPicksSelfDisplay = [];
     this.spectatorSuggestions = [];
+    this.spectatorSuggestionsDisplay = [];
     this.lastSpectatorSyllable = "";
 
     // Back-compat
@@ -281,6 +283,18 @@ class Game {
 
     let words = toWordArrayFromText(mainTxt);
     let foulWords = toWordArrayFromText(foulTxt);
+
+    if (!foulWords.length && lang !== "en") {
+      try {
+        const fallbackTxt = await this.extFetch(`${base}/words.php?lang=en&list=foul`);
+        foulWords = toWordArrayFromText(fallbackTxt);
+        if (foulWords.length) {
+          console.info('[BombPartyShark] Using English foul word list as fallback for', lang);
+        }
+      } catch (err) {
+        console.warn('[BombPartyShark] Failed to load fallback foul list (en) for', lang, err);
+      }
+    }
 
     if (!words.length) {
       const localPath = LOCAL_MAIN_LISTS[lang] || LOCAL_MAIN_LISTS['en'];
@@ -452,7 +466,7 @@ class Game {
       }
     }
     if (!hasPositiveTarget) return;
-    this.coverageCounts.fill(0);
+    this.resetCoverage();
   }
 
   // Coverage score:
@@ -520,49 +534,106 @@ class Game {
     this.lastLenCapRelaxedSelf = false;
     this.lastLenSuppressedByFoulSelf = false;
 
-    let poolMain = this._pickCandidatesBase(syllable, this.words);
-    let poolFoul = this._pickCandidatesBase(syllable, this.foulWords);
-    let pool = poolMain;
+    const foulPoolRaw = this._pickCandidatesBase(syllable, this.foulWords);
+    const mainPoolRaw = this._pickCandidatesBase(syllable, this.words);
+
+    const foulEntries = [];
+    const foulUsed = new Set();
+    const mainEntries = [];
+
+    const shuffled = (arr) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
 
     if (this.foulMode) {
-      if (poolFoul.length) {
-        pool = poolFoul;
-        if (this.lengthMode && !this.coverageMode) this.lastLenSuppressedByFoulSelf = true;
-      } else {
+      if (!foulPoolRaw.length) {
         this.lastFoulFallbackSelf = true;
+      } else {
+        const foulPool = this.coverageMode
+          ? foulPoolRaw.slice().sort((a, b) => this._coverageScore(b) - this._coverageScore(a))
+          : shuffled(foulPoolRaw.slice());
+        foulPool.forEach(word => { foulEntries.push({ word, tone: 'foul' }); foulUsed.add(word); });
       }
     }
 
-    let rankedPool = pool;
+    const remainingPool = mainPoolRaw.filter(word => !foulUsed.has(word));
 
     if (this.coverageMode) {
+      let ranked = remainingPool.slice();
       if (this.lengthMode) {
         const fa = { value: false }, fr = { value: false };
-        rankedPool = this._applyLenCap(rankedPool, this.targetLen, fa, fr);
+        ranked = this._applyLenCap(ranked, this.targetLen, fa, fr);
         this.lastLenCapAppliedSelf = fa.value;
         this.lastLenCapRelaxedSelf = fr.value;
       }
-      rankedPool = rankedPool.slice().sort((a, b) => this._coverageScore(b) - this._coverageScore(a));
+      ranked = ranked.sort((a, b) => this._coverageScore(b) - this._coverageScore(a));
+
+      let anyExact = false;
+      let anyFlex = false;
+      ranked.forEach(word => {
+        let tone = 'default';
+        if (this.lengthMode) {
+          if (word.length === this.targetLen) {
+            tone = 'lengthExact';
+            anyExact = true;
+          } else {
+            tone = 'lengthFlex';
+            anyFlex = true;
+          }
+        }
+        mainEntries.push({ word, tone });
+      });
+      if (this.lengthMode && anyFlex) {
+        this.lastLenFallbackSelf = true;
+      }
     } else if (this.lengthMode) {
-      const ref = { value: false };
-      rankedPool = this._applyLenExact(rankedPool, this.targetLen, ref);
-      this.lastLenFallbackSelf = ref.value;
+      const exact = remainingPool.filter(w => w.length === this.targetLen);
+      const flex = [];
+      if (exact.length) {
+        shuffled(exact);
+      }
+      let usedFallback = false;
+      for (let d = 1; d <= 6; d++) {
+        if (exact.length >= lim) break;
+        const group = remainingPool.filter(w => w.length === this.targetLen - d || w.length === this.targetLen + d);
+        if (!group.length) continue;
+        usedFallback = true;
+        shuffled(group);
+        group.forEach(word => flex.push(word));
+      }
+      if (!exact.length && flex.length) this.lastLenFallbackSelf = true;
+      else if (!exact.length && !flex.length) this.lastLenFallbackSelf = true;
+      else if (usedFallback) this.lastLenFallbackSelf = true;
+
+      exact.forEach(word => mainEntries.push({ word, tone: 'lengthExact' }));
+      flex.forEach(word => mainEntries.push({ word, tone: 'lengthFlex' }));
+
+      const usedWords = new Set([...exact, ...flex]);
+      const leftovers = remainingPool.filter(w => !usedWords.has(w));
+      shuffled(leftovers).forEach(word => mainEntries.push({ word, tone: 'default' }));
+    } else {
+      shuffled(remainingPool).forEach(word => mainEntries.push({ word, tone: 'default' }));
     }
 
-    const candidatePool = rankedPool.slice();
-    if (!this.coverageMode) {
-      for (let i = candidatePool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [candidatePool[i], candidatePool[j]] = [candidatePool[j], candidatePool[i]];
-      }
+    const combinedEntries = foulEntries.concat(mainEntries);
+    const candidatePool = combinedEntries.map(entry => entry.word);
+
+    if (this.lengthMode && this.foulMode && foulEntries.length >= lim) {
+      this.lastLenSuppressedByFoulSelf = true;
     }
 
     this._roundPool = candidatePool.slice();
+    this.lastTopPicksSelfDisplay = combinedEntries.slice(0, lim);
     return candidatePool.slice(0, lim);
   }
 
   // -------- spectator suggestions --------
   generateSpectatorSuggestions(syllable, limit) {
+    const lim = Math.max(1, Math.min(10, limit|0));
     this.flagsRoundSpectator = this.spectatorRound;
     this.lastSpectatorSyllable = syllable;
 
@@ -572,31 +643,63 @@ class Game {
     this.lastLenCapRelaxedSpectator = false;
     this.lastLenSuppressedByFoulSpectator = false;
 
-    let poolMain = this._pickCandidatesBase(syllable, this.words);
-    let poolFoul = this._pickCandidatesBase(syllable, this.foulWords);
-    let pool = poolMain;
+    const foulPoolRaw = this._pickCandidatesBase(syllable, this.foulWords);
+    const mainPoolRaw = this._pickCandidatesBase(syllable, this.words);
 
+    const shuffled = (arr) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
+
+    const foulEntries = [];
+    const foulUsed = new Set();
     if (this.specFoulMode) {
-      if (poolFoul.length) {
-        pool = poolFoul;
-        if (this.specLengthMode) this.lastLenSuppressedByFoulSpectator = true;
-      } else {
+      if (!foulPoolRaw.length) {
         this.lastFoulFallbackSpectator = true;
+      } else {
+        shuffled(foulPoolRaw.slice()).forEach(word => { foulEntries.push({ word, tone: 'foul' }); foulUsed.add(word); });
       }
     }
 
+    const mainEntries = [];
+    const nonFoulPool = mainPoolRaw.filter(word => !foulUsed.has(word));
     if (this.specLengthMode) {
-      const ref = { value: false };
-      pool = this._applyLenExact(pool, this.specTargetLen, ref);
-      this.lastLenFallbackSpectator = ref.value;
+      const exact = nonFoulPool.filter(w => w.length === this.specTargetLen);
+      shuffled(exact);
+      const flex = [];
+      let usedFallback = false;
+      for (let d = 1; d <= 6; d++) {
+        if (exact.length + flex.length >= lim) break;
+        const group = nonFoulPool.filter(w => w.length === this.specTargetLen - d || w.length === this.specTargetLen + d);
+        if (!group.length) continue;
+        usedFallback = true;
+        shuffled(group);
+        group.forEach(word => flex.push(word));
+      }
+      if ((!exact.length && flex.length) || (!exact.length && !flex.length) || usedFallback) {
+        this.lastLenFallbackSpectator = true;
+      }
+
+      exact.forEach(word => mainEntries.push({ word, tone: 'lengthExact' }));
+      flex.forEach(word => mainEntries.push({ word, tone: 'lengthFlex' }));
+
+      const usedWords = new Set([...exact, ...flex]);
+      const leftovers = nonFoulPool.filter(w => !usedWords.has(w));
+      shuffled(leftovers).forEach(word => mainEntries.push({ word, tone: 'default' }));
+    } else {
+      shuffled(nonFoulPool.slice()).forEach(word => mainEntries.push({ word, tone: 'default' }));
     }
 
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
+    const combined = foulEntries.concat(mainEntries);
+    if (this.specFoulMode && foulEntries.length >= lim && this.specLengthMode) {
+      this.lastLenSuppressedByFoulSpectator = true;
     }
 
-    this.spectatorSuggestions = pool.slice(0, Math.max(1, Math.min(10, limit|0)));
+    this.spectatorSuggestionsDisplay = combined.slice(0, lim);
+    this.spectatorSuggestions = combined.map(entry => entry.word).slice(0, lim);
     return this.spectatorSuggestions;
   }
 
