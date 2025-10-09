@@ -33,7 +33,10 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["content/injected.js"],
+      "resources": [
+        "content/injected.js",
+        "words1/*"
+      ],
       "matches": ["*://*.jklm.fun/*"]
     }
   ],

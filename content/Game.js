@@ -278,7 +278,12 @@ class Game {
     try {
       foulTxt = await this.extFetch(foulUrl);
     } catch (err) {
-      console.warn('[BombPartyShark] Failed to load foul word list from API for', lang, err);
+      const msg = (err && err.message) ? err.message : String(err || '');
+      if (msg.includes('404')) {
+        console.info(`[BombPartyShark] No foul word list available from API for ${lang}; falling back to local default.`);
+      } else {
+        console.warn('[BombPartyShark] Failed to load foul word list from API for', lang, err);
+      }
     }
 
     let words = toWordArrayFromText(mainTxt);
@@ -563,7 +568,7 @@ class Game {
       ranked.forEach(word => {
         let tone = 'default';
         if (this.lengthMode) {
-          tone = word.length <= this.targetLen ? 'lengthExact' : 'lengthFlex';
+          tone = word.length === this.targetLen ? 'lengthExact' : 'lengthFlex';
         }
         mainEntries.push({ word, tone });
       });
