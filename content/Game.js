@@ -29,6 +29,14 @@ const LOCAL_MAIN_LISTS = Object.freeze({
 
 const LOCAL_FOUL_LISTS = Object.freeze({
   "en": "words1/foul-words-en.txt",
+  "de": "words1/foul-words-en.txt",
+  "fr": "words1/foul-words-en.txt",
+  "es": "words1/foul-words-en.txt",
+  "pt-br": "words1/foul-words-en.txt",
+  "nah": "words1/foul-words-en.txt",
+  "pok-en": "words1/foul-words-en.txt",
+  "pok-fr": "words1/foul-words-en.txt",
+  "pok-de": "words1/foul-words-en.txt",
   "default": "words1/foul-words-en.txt"
 });
 
@@ -275,10 +283,15 @@ class Game {
       console.warn('[BombPartyShark] Failed to load main word list from API for', lang, err);
     }
 
+    let foulErr = null;
     try {
       foulTxt = await this.extFetch(foulUrl);
     } catch (err) {
-      console.warn('[BombPartyShark] Failed to load foul word list from API for', lang, err);
+      foulErr = err;
+      const msg = err && err.message ? err.message : String(err);
+      const is404 = msg.includes('HTTP 404');
+      const level = is404 ? 'info' : 'warn';
+      console[level]('[BombPartyShark] Foul API responded for', lang, msg);
     }
 
     let words = toWordArrayFromText(mainTxt);
@@ -287,12 +300,15 @@ class Game {
     if (!foulWords.length && lang !== "en") {
       try {
         const fallbackTxt = await this.extFetch(`${base}/words.php?lang=en&list=foul`);
-        foulWords = toWordArrayFromText(fallbackTxt);
-        if (foulWords.length) {
+        const fallbackArr = toWordArrayFromText(fallbackTxt);
+        if (fallbackArr.length) {
+          foulWords = fallbackArr;
           console.info('[BombPartyShark] Using English foul word list as fallback for', lang);
         }
       } catch (err) {
-        console.warn('[BombPartyShark] Failed to load fallback foul list (en) for', lang, err);
+        const msg = err && err.message ? err.message : String(err);
+        const level = msg.includes('HTTP 404') ? 'info' : 'warn';
+        console[level]('[BombPartyShark] English foul fallback API failed', msg);
       }
     }
 
@@ -309,11 +325,24 @@ class Game {
     }
 
     if (!foulWords.length) {
-      const foulPath = LOCAL_FOUL_LISTS[lang] || LOCAL_FOUL_LISTS.default;
-      if (foulPath) {
+      const tried = new Set();
+      const fallbackOrder = [lang, 'en', 'default'];
+      for (const key of fallbackOrder) {
+        const foulPath = LOCAL_FOUL_LISTS[key];
+        if (!foulPath || tried.has(foulPath)) continue;
+        tried.add(foulPath);
         const foulLocalTxt = await fetchLocalText(foulPath);
-        foulWords = toWordArrayFromText(foulLocalTxt);
+        const arr = toWordArrayFromText(foulLocalTxt);
+        if (arr.length) {
+          foulWords = arr;
+          console.info('[BombPartyShark] Loaded foul word list from bundled asset', foulPath, 'for', lang);
+          break;
+        }
       }
+    }
+
+    if (!foulWords.length && foulErr) {
+      console.warn('[BombPartyShark] No foul word list available for', lang, '; falling back to normal words only.');
     }
 
     const letterWeights = Game.computeLetterWeights(words);
@@ -572,43 +601,26 @@ class Game {
       }
       ranked = ranked.sort((a, b) => this._coverageScore(b) - this._coverageScore(a));
 
-      let anyExact = false;
-      let anyFlex = false;
       ranked.forEach(word => {
         let tone = 'default';
         if (this.lengthMode) {
-          if (word.length === this.targetLen) {
-            tone = 'lengthExact';
-            anyExact = true;
-          } else {
-            tone = 'lengthFlex';
-            anyFlex = true;
-          }
+          tone = (word.length === this.targetLen) ? 'lengthExact' : 'lengthFlex';
         }
         mainEntries.push({ word, tone });
       });
-      if (this.lengthMode && anyFlex) {
-        this.lastLenFallbackSelf = true;
-      }
     } else if (this.lengthMode) {
       const exact = remainingPool.filter(w => w.length === this.targetLen);
       const flex = [];
       if (exact.length) {
         shuffled(exact);
       }
-      let usedFallback = false;
       for (let d = 1; d <= 6; d++) {
-        if (exact.length >= lim) break;
+        if (exact.length + flex.length >= lim) break;
         const group = remainingPool.filter(w => w.length === this.targetLen - d || w.length === this.targetLen + d);
         if (!group.length) continue;
-        usedFallback = true;
         shuffled(group);
         group.forEach(word => flex.push(word));
       }
-      if (!exact.length && flex.length) this.lastLenFallbackSelf = true;
-      else if (!exact.length && !flex.length) this.lastLenFallbackSelf = true;
-      else if (usedFallback) this.lastLenFallbackSelf = true;
-
       exact.forEach(word => mainEntries.push({ word, tone: 'lengthExact' }));
       flex.forEach(word => mainEntries.push({ word, tone: 'lengthFlex' }));
 
@@ -626,8 +638,16 @@ class Game {
       this.lastLenSuppressedByFoulSelf = true;
     }
 
+    const displayed = combinedEntries.slice(0, lim);
+
+    if (this.lengthMode) {
+      const hasExact = displayed.some(entry => entry.tone === 'lengthExact');
+      const hasFlex = displayed.some(entry => entry.tone === 'lengthFlex');
+      this.lastLenFallbackSelf = displayed.length > 0 && (!hasExact || hasFlex);
+    }
+
     this._roundPool = candidatePool.slice();
-    this.lastTopPicksSelfDisplay = combinedEntries.slice(0, lim);
+    this.lastTopPicksSelfDisplay = displayed;
     return candidatePool.slice(0, lim);
   }
 
@@ -670,19 +690,13 @@ class Game {
       const exact = nonFoulPool.filter(w => w.length === this.specTargetLen);
       shuffled(exact);
       const flex = [];
-      let usedFallback = false;
       for (let d = 1; d <= 6; d++) {
         if (exact.length + flex.length >= lim) break;
         const group = nonFoulPool.filter(w => w.length === this.specTargetLen - d || w.length === this.specTargetLen + d);
         if (!group.length) continue;
-        usedFallback = true;
         shuffled(group);
         group.forEach(word => flex.push(word));
       }
-      if ((!exact.length && flex.length) || (!exact.length && !flex.length) || usedFallback) {
-        this.lastLenFallbackSpectator = true;
-      }
-
       exact.forEach(word => mainEntries.push({ word, tone: 'lengthExact' }));
       flex.forEach(word => mainEntries.push({ word, tone: 'lengthFlex' }));
 
@@ -698,8 +712,15 @@ class Game {
       this.lastLenSuppressedByFoulSpectator = true;
     }
 
-    this.spectatorSuggestionsDisplay = combined.slice(0, lim);
-    this.spectatorSuggestions = combined.map(entry => entry.word).slice(0, lim);
+    const specDisplayed = combined.slice(0, lim);
+    if (this.specLengthMode) {
+      const hasExact = specDisplayed.some(entry => entry.tone === 'lengthExact');
+      const hasFlex = specDisplayed.some(entry => entry.tone === 'lengthFlex');
+      this.lastLenFallbackSpectator = specDisplayed.length > 0 && (!hasExact || hasFlex);
+    }
+
+    this.spectatorSuggestionsDisplay = specDisplayed;
+    this.spectatorSuggestions = specDisplayed.map(entry => entry.word);
     return this.spectatorSuggestions;
   }
 
