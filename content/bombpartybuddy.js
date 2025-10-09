@@ -114,31 +114,86 @@ function createOverlay(game) {
   setActive("Words");
 
   // helpers
-  const applyToggleStyle = (btn, on) => {
-    btn.textContent = on ? "ON" : "OFF";
-    btn.style.background = on ? "rgba(22,163,74,0.22)" : "rgba(220,38,38,0.20)";
-    btn.style.border = `1px solid ${on ? "rgba(22,163,74,0.55)" : "rgba(220,38,38,0.55)"}`;
-    btn.style.color = on ? "#86efac" : "#fecaca";
+  const toggleThemes = {
+    default: { onBg: "rgba(59,130,246,0.24)", onBorder: "rgba(59,130,246,0.55)", onColor: "#bfdbfe" },
+    white:   { onBg: "rgba(248,250,252,0.28)", onBorder: "rgba(226,232,240,0.65)", onColor: "#f8fafc" },
+    yellow:  { onBg: "rgba(253,224,71,0.24)", onBorder: "rgba(250,204,21,0.70)", onColor: "#facc15" },
+    red:     { onBg: "rgba(248,113,113,0.26)", onBorder: "rgba(239,68,68,0.70)", onColor: "#fecaca" },
+    green:   { onBg: "rgba(74,222,128,0.26)", onBorder: "rgba(34,197,94,0.65)", onColor: "#bbf7d0" },
+    pink:    { onBg: "rgba(236,72,153,0.25)", onBorder: "rgba(244,114,182,0.68)", onColor: "#fce7f3" },
+    teal:    { onBg: "rgba(45,212,191,0.26)", onBorder: "rgba(20,184,166,0.68)", onColor: "#ccfbf1" }
+  };
+  const toggleOff = { bg: "rgba(30,41,59,0.55)", border: "rgba(71,85,105,0.55)", color: "#cbd5f5" };
+
+  const applyToggleStyle = (btn, on, scheme = "default", mode = "status") => {
+    const theme = toggleThemes[scheme] || toggleThemes.default;
+    btn.dataset.scheme = scheme;
+    btn.dataset.mode = mode;
+    const label = btn.dataset.label || btn.textContent || "";
+    if (mode === "status") {
+      btn.textContent = on ? "ON" : "OFF";
+      btn.style.letterSpacing = "0.3px";
+      btn.style.fontSize = "13px";
+    } else {
+      btn.textContent = label;
+      btn.style.letterSpacing = "0.4px";
+      btn.style.fontSize = "12px";
+    }
+    btn.style.background = on ? theme.onBg : toggleOff.bg;
+    btn.style.border = `1px solid ${on ? theme.onBorder : toggleOff.border}`;
+    btn.style.color = on ? theme.onColor : toggleOff.color;
     btn.style.fontWeight = "800";
     btn.style.borderRadius = "10px";
-    btn.style.padding = "6px 10px";
+    btn.style.padding = "6px 12px";
     btn.style.cursor = "pointer";
-    btn.style.minWidth = "64px";
+    btn.style.minWidth = mode === "status" ? "64px" : "54px";
     btn.style.textAlign = "center";
+    btn.style.transition = "background 0.15s ease, border 0.15s ease, color 0.15s ease";
+    btn.style.boxShadow = on ? `0 0 0 1px ${theme.onBorder}` : "none";
   };
-  const applyToggleBtn = (btn, on) => applyToggleStyle(btn, !!on);
+  const applyToggleBtn = (btn, on, scheme = "default", mode = "status") => applyToggleStyle(btn, !!on, scheme, mode);
 
-  const mkRow = (label, onClick, getOn) => {
+  const mkRow = (label, onClick, getOn, scheme = "default", mode = "status") => {
     const r = document.createElement("div");
     Object.assign(r.style, { display:"flex", alignItems:"center", justifyContent:"space-between", gap:"16px", margin:"8px 0" });
     const span = document.createElement("span"); span.textContent = label; span.style.fontWeight = "600"; r.appendChild(span);
     const btn = document.createElement("button"); btn.onclick = () => { onClick(); render(); };
     r.appendChild(btn);
-    r._btn = btn; r._get = getOn;
+    btn.dataset.mode = mode;
+    r._btn = btn; r._get = getOn; r._scheme = scheme; r._mode = mode;
     return r;
   };
 
-  function sliderRow(label, min, max, val, step, oninput){
+  const mkDualRow = (label, configs) => {
+    const row = document.createElement("div");
+    Object.assign(row.style, {
+      display:"flex",
+      alignItems:"center",
+      justifyContent:"space-between",
+      gap:"16px",
+      flexWrap:"wrap",
+      margin:"8px 0"
+    });
+    const span = document.createElement("span");
+    span.textContent = label;
+    span.style.fontWeight = "600";
+    row.appendChild(span);
+    const btnWrap = document.createElement("div");
+    Object.assign(btnWrap.style, { display:"flex", gap:"8px", flexWrap:"wrap" });
+    row.appendChild(btnWrap);
+    row._buttons = [];
+    configs.forEach(cfg => {
+      const btn = document.createElement("button");
+      btn.dataset.label = cfg.label;
+      btn.dataset.mode = "label";
+      btn.addEventListener("click", () => { cfg.onClick(); render(); });
+      btnWrap.appendChild(btn);
+      row._buttons.push({ btn, getOn: cfg.getOn, scheme: cfg.scheme || "default", mode: "label" });
+    });
+    return row;
+  };
+
+  function sliderRow(label, min, max, val, step, oninput, options = {}){
     const row = document.createElement("div");
     Object.assign(row.style, {
       display:"grid",
@@ -150,17 +205,27 @@ function createOverlay(game) {
     const span = document.createElement("span"); span.textContent = label; span.style.fontWeight = "600";
     const input = document.createElement("input");
     input.type = "range"; input.min = String(min); input.max = String(max); input.step = String(step); input.value = String(val);
+    const accent = options.accent || "#60a5fa";
+    input.style.accentColor = accent;
     const valEl = document.createElement("span"); valEl.textContent = String(val); valEl.style.opacity = "0.9"; valEl.style.fontWeight = "700";
+    if (options.valueColor) valEl.style.color = options.valueColor;
     input.addEventListener("input", (e)=>{ const v = step===1?parseInt(input.value,10):parseFloat(input.value); oninput(v); valEl.textContent = String(v); e.stopPropagation(); });
     row.appendChild(span); row.appendChild(input); row.appendChild(valEl);
     row._range = input;
+    row._valueEl = valEl;
     return row;
   }
-  function textInput(placeholder, value, oninput){
+  function textInput(placeholder, value, oninput, options = {}){
     const wrap = document.createElement("div");
     const inp = document.createElement("input");
     inp.type = "text"; inp.placeholder = placeholder; inp.value = value || "";
-    Object.assign(inp.style, { width:"100%", padding:"6px 8px", borderRadius:"8px", border:"1px solid rgba(255,255,255,0.25)", background:"rgba(255,255,255,0.06)", color:"#fff", fontWeight:"600" });
+    const baseStyle = { width:"100%", padding:"6px 8px", borderRadius:"8px", border:"1px solid rgba(255,255,255,0.25)", background:"rgba(255,255,255,0.06)", color:"#fff", fontWeight:"600" };
+    if (options.theme === "pink") {
+      Object.assign(baseStyle, { border:"1px solid rgba(244,114,182,0.65)", background:"rgba(236,72,153,0.15)", color:"#fdf2f8" });
+    } else if (options.theme === "chrome") {
+      Object.assign(baseStyle, { border:"1px solid rgba(226,232,240,0.35)", background:"linear-gradient(135deg, rgba(148,163,184,0.20), rgba(71,85,105,0.25))", color:"#f8fafc" });
+    }
+    Object.assign(inp.style, baseStyle);
     inp.addEventListener("input", (e)=>{ oninput(inp.value); e.stopPropagation(); });
     wrap.appendChild(inp);
     return wrap;
@@ -243,10 +308,12 @@ function createOverlay(game) {
 
   // =============== MAIN TAB =================
   const rows = [
-    mkRow("AutoType", () => game.togglePause(), () => !game.paused),
-    mkRow("Butterfingers", () => game.toggleMistakes(), () => game.mistakesEnabled),
-    mkRow("Auto /suicide", () => game.toggleAutoSuicide(), () => game.autoSuicide),
+    mkRow("AutoType", () => game.togglePause(), () => !game.paused, "white"),
+    mkRow("Butterfingers", () => game.toggleMistakes(), () => game.mistakesEnabled, "yellow"),
+    mkRow("Auto /suicide", () => game.toggleAutoSuicide(), () => game.autoSuicide, "red"),
   ];
+  const toggleRefs = [...rows];
+  const dualToggleRows = [];
 
   const mainGrid = document.createElement("div");
   Object.assign(mainGrid.style, { display:"grid", gap:"16px" });
@@ -257,27 +324,36 @@ function createOverlay(game) {
   mainGrid.appendChild(automationCard);
 
   const hudCard = createCard("HUD & Rhythm");
-  hudCard.appendChild(sliderRow("HUD size", 20, 70, 45, 1, (v)=>{ hudScale = v/100; applyScale(); }));
-  hudCard.appendChild(sliderRow("Speed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v)));
-  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v)));
-  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100)));
+  hudCard.appendChild(sliderRow("HUD size", 20, 70, 45, 1, (v)=>{ hudScale = v/100; applyScale(); }, { accent: "#3b82f6", valueColor: "#93c5fd" }));
+  hudCard.appendChild(sliderRow("Speed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v), { accent: "#22c55e", valueColor: "#4ade80" }));
+  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74" }));
+  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15" }));
   mainGrid.appendChild(hudCard);
 
   const messageCard = createCard("Messages");
-  const preTop = mkRow("Premessage", ()=>game.setPreMsgEnabled(!game.preMsgEnabled), ()=>game.preMsgEnabled);
+  Object.assign(messageCard.style, { background:"rgba(236,72,153,0.18)", border:"1px solid rgba(244,114,182,0.45)" });
+  const preTop = mkRow("Premessage", ()=>game.setPreMsgEnabled(!game.preMsgEnabled), ()=>game.preMsgEnabled, "pink");
+  toggleRefs.push(preTop);
   messageCard.appendChild(preTop);
-  messageCard.appendChild(textInput("Message to flash before your word", game.preMsgText, (v)=>game.setPreMsgText(v)));
-  const postTop = mkRow("Postfix", ()=>game.setPostfixEnabled(!game.postfixEnabled), ()=>game.postfixEnabled);
+  messageCard.appendChild(textInput("Message to flash before your word", game.preMsgText, (v)=>game.setPreMsgText(v), { theme:"pink" }));
+  const postTop = mkRow("Postfix", ()=>game.setPostfixEnabled(!game.postfixEnabled), ()=>game.postfixEnabled, "pink");
+  toggleRefs.push(postTop);
   messageCard.appendChild(postTop);
-  messageCard.appendChild(textInput("Characters to append (e.g., <3)", game.postfixText, (v)=>game.setPostfixText(v)));
+  messageCard.appendChild(textInput("Characters to append (e.g., <3)", game.postfixText, (v)=>game.setPostfixText(v), { theme:"pink" }));
   mainGrid.appendChild(messageCard);
 
   // =============== COVERAGE TAB =================
   const coverageCard = createCard("Alphabet mastery");
-  const coverageToggle = mkRow("Alphabet coverage", () => game.toggleCoverageMode(), () => game.coverageMode);
+  Object.assign(coverageCard.style, {
+    background:"linear-gradient(135deg, rgba(56,189,248,0.18), rgba(244,114,182,0.10), rgba(14,165,233,0.18))",
+    border:"1px solid rgba(148,163,184,0.45)"
+  });
+  const coverageToggle = mkRow("Alphabet coverage", () => game.toggleCoverageMode(), () => game.coverageMode, "teal");
+  toggleRefs.push(coverageToggle);
   coverageCard.appendChild(coverageToggle);
 
-  const exTop = mkRow("A-Z goals / exclusions", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled);
+  const exTop = mkRow("A-Z goals / exclusions", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal");
+  toggleRefs.push(exTop);
   coverageCard.appendChild(exTop);
 
   const help = document.createElement("div");
@@ -285,7 +361,7 @@ function createOverlay(game) {
   Object.assign(help.style, { color:"rgba(255,255,255,0.78)", fontSize:"12px" });
   coverageCard.appendChild(help);
 
-  const exInputWrap = textInput("a3 f2 c8 x0 z0  majority0", game.excludeSpec || "x0 z0", (v)=>game.setExcludeSpec(v));
+  const exInputWrap = textInput("a3 f2 c8 x0 z0  majority0", game.excludeSpec || "x0 z0", (v)=>game.setExcludeSpec(v), { theme:"chrome" });
   coverageCard.appendChild(exInputWrap);
 
   const grid = document.createElement("div");
@@ -299,7 +375,7 @@ function createOverlay(game) {
 
   const resetBtn = document.createElement("button");
   resetBtn.textContent = "Reset A-Z progress";
-  Object.assign(resetBtn.style,{ padding:"8px 12px", borderRadius:"10px", cursor:"pointer", background:"rgba(79,70,229,0.18)", color:"#c7d2fe", border:"1px solid rgba(129,140,248,0.35)", fontWeight:"700" });
+  Object.assign(resetBtn.style,{ padding:"8px 12px", borderRadius:"10px", cursor:"pointer", background:"rgba(15,118,110,0.32)", color:"#ccfbf1", border:"1px solid rgba(20,184,166,0.55)", fontWeight:"700" });
   resetBtn.onclick = ()=>game.resetCoverage();
   coverageCard.appendChild(resetBtn);
 
@@ -310,50 +386,65 @@ function createOverlay(game) {
   Object.assign(wordsGrid.style, { display:"grid", gap:"16px" });
   wordsSec.appendChild(wordsGrid);
 
-  const overviewCard = createCard("Suggestions feed");
-  const suggRow = sliderRow("Suggestions", 1, 10, game.suggestionsLimit, 1, (v)=>game.setSuggestionsLimit(v));
+  const overviewCard = createCard("Word targeting");
+  const colorGuide = document.createElement("div");
+  colorGuide.innerHTML = "🟥 foul • 🟩 matches target length • 🟨 nearby length • ⚪ regular <span style=\"font-size:10px; opacity:0.65; margin-left:6px;\">click me to go away</span>";
+  Object.assign(colorGuide.style, {
+    background:"rgba(15,23,42,0.55)",
+    border:"1px solid rgba(148,163,184,0.35)",
+    borderRadius:"12px",
+    padding:"6px 10px",
+    fontSize:"12px",
+    color:"rgba(248,250,252,0.88)",
+    cursor:"pointer",
+    display:"inline-flex",
+    flexWrap:"wrap",
+    gap:"6px",
+    alignItems:"center"
+  });
+  colorGuide.addEventListener("click", () => { colorGuide.style.display = "none"; });
+  overviewCard.appendChild(colorGuide);
+
+  const suggRow = sliderRow("Suggestions", 1, 10, game.suggestionsLimit, 1, (v)=>game.setSuggestionsLimit(v), { accent: "#e2e8f0", valueColor: "#cbd5f5" });
   overviewCard.appendChild(suggRow);
+
+  const foulDualRow = mkDualRow("Foul words", [
+    { label: "Me", onClick: () => game.toggleFoulMode(), getOn: () => game.foulMode, scheme: "red" },
+    { label: "Spectator", onClick: () => game.toggleSpecFoul(), getOn: () => game.specFoulMode, scheme: "red" }
+  ]);
+  dualToggleRows.push(foulDualRow);
+  overviewCard.appendChild(foulDualRow);
+
+  const lenDualRow = mkDualRow("Target length", [
+    { label: "Me", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green" },
+    { label: "Spectator", onClick: () => game.toggleSpecLength(), getOn: () => game.specLengthMode, scheme: "green" }
+  ]);
+  dualToggleRows.push(lenDualRow);
+  overviewCard.appendChild(lenDualRow);
+
+  const lenSliderWrap = document.createElement("div");
+  Object.assign(lenSliderWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
+  const lenSliderMain = sliderRow("Me", 3, 20, game.targetLen, 1, (v)=>game.setTargetLen(v), { accent: "#22c55e", valueColor: "#86efac" });
+  const specLenSlider = sliderRow("Spectator", 3, 20, game.specTargetLen, 1, (v)=>game.setSpecTargetLen(v), { accent: "#22c55e", valueColor: "#86efac" });
+  lenSliderWrap.appendChild(lenSliderMain);
+  lenSliderWrap.appendChild(specLenSlider);
+  overviewCard.appendChild(lenSliderWrap);
+
+  const lenNoticeMain = noticeBar();
+  overviewCard.appendChild(lenNoticeMain);
   wordsGrid.appendChild(overviewCard);
 
-  const myCard = createCard("My turn preferences");
-  const foulSelfRow = mkRow("Foul words (me)", () => game.toggleFoulMode(), () => game.foulMode);
-  myCard.appendChild(foulSelfRow);
-  const lenRowMain = mkRow("Target length", ()=>game.toggleLengthMode(), ()=>game.lengthMode);
-  myCard.appendChild(lenRowMain);
-  const lenSliderMain = sliderRow("Length", 3, 20, game.targetLen, 1, (v)=>game.setTargetLen(v));
-  myCard.appendChild(lenSliderMain);
-  const lenNoticeMain = noticeBar();
-  myCard.appendChild(lenNoticeMain);
+  const suggestionsCard = createCard("Live suggestions");
+  const dynamicTitle = document.createElement("div");
+  Object.assign(dynamicTitle.style, { fontWeight:800, fontSize:"15px" });
+  suggestionsCard.appendChild(dynamicTitle);
 
-  const noteSelf = noticeBar();
-  myCard.appendChild(noteSelf);
+  const turnNotice = noticeBar();
+  suggestionsCard.appendChild(turnNotice);
 
-  const myTitle = document.createElement("div");
-  myTitle.textContent = "My top picks";
-  Object.assign(myTitle.style, { fontWeight:800, fontSize:"15px" });
-  myCard.appendChild(myTitle);
-  const myPicks = listBox(22);
-  myCard.appendChild(myPicks);
-  wordsGrid.appendChild(myCard);
-
-  const specCard = createCard("Spectator spotlight");
-  const specFoulRow = mkRow("Foul words", ()=>game.toggleSpecFoul(), ()=>game.specFoulMode);
-  specCard.appendChild(specFoulRow);
-  const specLenRow = mkRow("Target length", ()=>game.toggleSpecLength(), ()=>game.specLengthMode);
-  specCard.appendChild(specLenRow);
-  const specLenSlider = sliderRow("Length", 3, 20, game.specTargetLen, 1, (v)=>game.setSpecTargetLen(v));
-  specCard.appendChild(specLenSlider);
-
-  const noteSpec = noticeBar();
-  specCard.appendChild(noteSpec);
-
-  const specTitle = document.createElement("div");
-  specTitle.textContent = "Spectator suggestions";
-  Object.assign(specTitle.style, { fontWeight:800, fontSize:"15px" });
-  specCard.appendChild(specTitle);
-  const specList = listBox(22);
-  specCard.appendChild(specList);
-  wordsGrid.appendChild(specCard);
+  const wordList = listBox(22);
+  suggestionsCard.appendChild(wordList);
+  wordsGrid.appendChild(suggestionsCard);
 
   // update lists when suggestion slider changes
   suggRow._range.addEventListener("input", () => {
@@ -466,43 +557,54 @@ function createOverlay(game) {
   }
 
   function render() {
-    rows.forEach(r => applyToggleBtn(r._btn, r._get()));
-    applyToggleBtn(foulSelfRow._btn, game.foulMode);
-    applyToggleBtn(lenRowMain._btn, game.lengthMode);
-    applyToggleBtn(preTop._btn, game.preMsgEnabled);
-    applyToggleBtn(postTop._btn, game.postfixEnabled);
-    applyToggleBtn(exTop._btn, game.excludeEnabled);
-    applyToggleBtn(coverageToggle._btn, game.coverageMode);
+    toggleRefs.forEach(row => applyToggleBtn(row._btn, row._get(), row._scheme, row._mode));
+    dualToggleRows.forEach(row => {
+      row._buttons.forEach(info => applyToggleBtn(info.btn, info.getOn(), info.scheme, info.mode));
+    });
 
     renderCoverageGrid();
 
-    // Length notice
-    if (game.lengthMode && (game.coverageMode || game.foulMode)) {
+    const updateSlider = (row, value) => {
+      if (!row || !row._range) return;
+      const str = String(value);
+      if (row._range.value !== str) row._range.value = str;
+      if (row._valueEl && row._valueEl.textContent !== str) row._valueEl.textContent = str;
+    };
+    updateSlider(lenSliderMain, game.targetLen);
+    updateSlider(specLenSlider, game.specTargetLen);
+    updateSlider(suggRow, game.suggestionsLimit);
+
+    const noticeParts = [];
+    if (game.lengthMode) {
       if (game.coverageMode && game.foulMode) {
-        lenNoticeMain._show(`Target Length: with coverage on it acts as a max (<= ${game.targetLen}); with foul words on it is used only if no foul words match.`);
+        noticeParts.push(`Target length (me): with coverage on it acts as a max (<= ${game.targetLen}); foul words still take priority.`);
       } else if (game.coverageMode) {
-        lenNoticeMain._show(`Target Length: acts as a max (<= ${game.targetLen}) while optimizing alphabet coverage.`);
+        noticeParts.push(`Target length (me): acts as a max (<= ${game.targetLen}) while optimizing alphabet coverage.`);
+      } else if (game.foulMode) {
+        noticeParts.push("Target length (me): ignored when foul words are available; used only if none match.");
       } else {
-        lenNoticeMain._show("Target Length: ignored when foul words are available; used only if no foul words match this prompt.");
+        noticeParts.push("Target length (me): exact matches show green, nearby lengths appear in yellow when needed.");
       }
-    } else {
-      lenNoticeMain._show("");
     }
-    const syl = (game.syllable || "").toLowerCase();
-    clickableWords(myPicks, game.lastTopPicksSelfDisplay || game.lastTopPicksSelf, syl);
-    if (!game.myTurn) {
-      clickableWords(specList, game.spectatorSuggestionsDisplay || game.spectatorSuggestions, game.lastSpectatorSyllable || "");
-    } else {
-      specList.textContent = "(you are playing)";
+    if (game.specLengthMode) {
+      if (game.specFoulMode) {
+        noticeParts.push("Target length (spectator): ignored whenever foul words are available for the prompt.");
+      } else {
+        noticeParts.push("Target length (spectator): exact matches show green; nearby lengths are marked in yellow.");
+      }
     }
+    lenNoticeMain._show(noticeParts.join(" "));
 
-    // Spectator-tab specific toggles (render here so colors update)
-    applyToggleBtn(specFoulRow._btn, game.specFoulMode);
-    applyToggleBtn(specLenRow._btn, game.specLengthMode);
+    const isMyTurn = !!game.myTurn;
+    dynamicTitle.textContent = isMyTurn ? "My top picks" : "Spectator suggestions";
+    const entries = isMyTurn
+      ? ((game.lastTopPicksSelfDisplay && game.lastTopPicksSelfDisplay.length) ? game.lastTopPicksSelfDisplay : game.lastTopPicksSelf)
+      : ((game.spectatorSuggestionsDisplay && game.spectatorSuggestionsDisplay.length) ? game.spectatorSuggestionsDisplay : game.spectatorSuggestions);
+    const syllable = isMyTurn ? (game.syllable || "") : (game.lastSpectatorSyllable || "");
+    clickableWords(wordList, entries, syllable);
 
-    // Notices
-    noteSelf._show(buildNotice("self"));
-    noteSpec._show(buildNotice("spectator"));
+    const noticeContext = isMyTurn ? "self" : "spectator";
+    turnNotice._show(buildNotice(noticeContext));
   }
 
   const iv = setInterval(render, 160);
