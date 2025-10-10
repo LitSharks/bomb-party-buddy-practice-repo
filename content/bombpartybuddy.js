@@ -107,6 +107,7 @@ function createOverlay(game) {
     mainTabBtn._setActive(name==="Main");
     covTabBtn._setActive(name==="Coverage");
     wordsTabBtn._setActive(name==="Words");
+    if (name !== "Coverage") setCoverageEditMode("off", { quiet: true });
   };
   mainTabBtn.onclick = () => setActive("Main");
   covTabBtn.onclick  = () => setActive("Coverage");
@@ -348,21 +349,154 @@ function createOverlay(game) {
     background:"linear-gradient(135deg, rgba(56,189,248,0.18), rgba(244,114,182,0.10), rgba(14,165,233,0.18))",
     border:"1px solid rgba(148,163,184,0.45)"
   });
-  const coverageToggle = mkRow("Alphabet coverage", () => game.toggleCoverageMode(), () => game.coverageMode, "teal");
+  let coverageEditMode = "off"; // off | counts | targets
+  const coverageToggle = mkRow("Alphabet coverage", () => {
+    setCoverageEditMode("off", { quiet: true });
+    game.toggleCoverageMode();
+  }, () => game.coverageMode, "teal");
   toggleRefs.push(coverageToggle);
   coverageCard.appendChild(coverageToggle);
 
-  const exTop = mkRow("A-Z goals / exclusions", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal");
+  const exTop = mkRow("A-Z goals / exclusions", ()=>{
+    setCoverageEditMode("off", { quiet: true });
+    game.setExcludeEnabled(!game.excludeEnabled);
+  }, ()=>game.excludeEnabled, "teal");
   toggleRefs.push(exTop);
   coverageCard.appendChild(exTop);
 
-  const help = document.createElement("div");
-  help.innerHTML = "Format examples: <b>a3 f2 c8 x0 z0</b> (0 = exclude). You can also set <b>majority5</b> to set a default for all letters; explicit tokens like <b>a3</b> override the majority.";
-  Object.assign(help.style, { color:"rgba(255,255,255,0.78)", fontSize:"12px" });
-  coverageCard.appendChild(help);
+  const coverageEditRow = mkDualRow("Edit mode", [
+    { label: "Tallies", onClick: () => setCoverageEditMode("counts"), getOn: () => coverageEditMode === "counts", scheme: "teal" },
+    { label: "Goals", onClick: () => setCoverageEditMode("targets"), getOn: () => coverageEditMode === "targets", scheme: "teal" }
+  ]);
+  dualToggleRows.push(coverageEditRow);
+  coverageCard.appendChild(coverageEditRow);
 
-  const exInputWrap = textInput("a3 f2 c8 x0 z0  majority0", game.excludeSpec || "x0 z0", (v)=>game.setExcludeSpec(v), { theme:"chrome" });
-  coverageCard.appendChild(exInputWrap);
+  const editHint = document.createElement("div");
+  editHint.textContent = "";
+  Object.assign(editHint.style, {
+    display:"none",
+    background:"rgba(14,165,233,0.12)",
+    border:"1px solid rgba(125,211,252,0.35)",
+    color:"#e0f2fe",
+    borderRadius:"10px",
+    padding:"6px 10px",
+    fontSize:"12px",
+    marginTop:"6px"
+  });
+  coverageCard.appendChild(editHint);
+
+  const setAllWrap = document.createElement("div");
+  Object.assign(setAllWrap.style, {
+    display:"none",
+    alignItems:"center",
+    gap:"8px",
+    marginTop:"8px",
+    flexWrap:"wrap"
+  });
+  const setAllLabel = document.createElement("span");
+  setAllLabel.style.fontWeight = "600";
+  setAllLabel.textContent = "Set all to:";
+  setAllWrap.appendChild(setAllLabel);
+  const setAllInput = document.createElement("input");
+  Object.assign(setAllInput, { type:"number", min:"0", max:"99" });
+  Object.assign(setAllInput.style, {
+    width:"72px",
+    padding:"6px 8px",
+    borderRadius:"8px",
+    border:"1px solid rgba(148,163,184,0.5)",
+    background:"rgba(15,23,42,0.6)",
+    color:"#e2e8f0",
+    fontWeight:"600"
+  });
+  setAllInput.inputMode = "numeric";
+  setAllWrap.appendChild(setAllInput);
+  const setAllBtn = document.createElement("button");
+  setAllBtn.textContent = "Apply";
+  Object.assign(setAllBtn.style, {
+    padding:"6px 12px",
+    borderRadius:"10px",
+    border:"1px solid rgba(56,189,248,0.55)",
+    background:"rgba(56,189,248,0.25)",
+    color:"#e0f2fe",
+    fontWeight:"700",
+    cursor:"pointer"
+  });
+  setAllWrap.appendChild(setAllBtn);
+  coverageCard.appendChild(setAllWrap);
+
+  const clampAllValue = (value) => {
+    const n = Math.floor(Number(value));
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(99, n));
+  };
+
+  const applySetAllValue = () => {
+    if (coverageEditMode === "off") return;
+    const sanitized = clampAllValue(setAllInput.value);
+    setAllInput.value = String(sanitized);
+    if (coverageEditMode === "targets") {
+      game.setAllTargetCounts(sanitized);
+    } else {
+      game.setAllCoverageCounts(sanitized);
+    }
+    renderCoverageGrid();
+  };
+
+  setAllBtn.addEventListener("click", applySetAllValue);
+  setAllInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      applySetAllValue();
+    }
+  });
+  setAllInput.addEventListener("blur", () => {
+    if (setAllInput.value === "") return;
+    setAllInput.value = String(clampAllValue(setAllInput.value));
+  });
+
+  function updateCoverageEditUi() {
+    const mode = coverageEditMode;
+    if (mode === "counts") {
+      editHint.textContent = "Editing tallies: left click adds, right click removes. Tallies stay between 0 and each letter's goal.";
+      setAllLabel.textContent = "Set all tallies to:";
+      setAllBtn.textContent = "Apply tallies";
+    } else if (mode === "targets") {
+      editHint.textContent = "Editing goals: left click adds, right click removes, or type numbers in the boxes. Goals clamp between 0 and 99.";
+      setAllLabel.textContent = "Set all goals to:";
+      setAllBtn.textContent = "Apply goals";
+    } else {
+      editHint.textContent = "";
+      setAllLabel.textContent = "Set all to:";
+      setAllBtn.textContent = "Apply";
+    }
+    const active = mode !== "off";
+    editHint.style.display = active ? "block" : "none";
+    setAllWrap.style.display = active ? "flex" : "none";
+    setAllBtn.disabled = !active;
+    setAllInput.disabled = !active;
+    setAllBtn.style.opacity = active ? "1" : "0.55";
+    setAllBtn.style.cursor = active ? "pointer" : "not-allowed";
+    setAllLabel.style.opacity = active ? "1" : "0.7";
+  }
+
+  function setCoverageEditMode(mode, options = {}) {
+    const { quiet = false } = options;
+    let next = mode;
+    if (mode !== "counts" && mode !== "targets") {
+      next = "off";
+    } else if (mode === coverageEditMode && !options.force) {
+      next = "off";
+    }
+    if (coverageEditMode === next) {
+      updateCoverageEditUi();
+      if (!quiet) renderCoverageGrid();
+      return;
+    }
+    coverageEditMode = next;
+    updateCoverageEditUi();
+    renderCoverageGrid();
+    if (!quiet) render();
+  }
 
   const grid = document.createElement("div");
   Object.assign(grid.style, {
@@ -376,10 +510,11 @@ function createOverlay(game) {
   const resetBtn = document.createElement("button");
   resetBtn.textContent = "Reset A-Z progress";
   Object.assign(resetBtn.style,{ padding:"8px 12px", borderRadius:"10px", cursor:"pointer", background:"rgba(15,118,110,0.32)", color:"#ccfbf1", border:"1px solid rgba(20,184,166,0.55)", fontWeight:"700" });
-  resetBtn.onclick = ()=>game.resetCoverage();
+  resetBtn.onclick = ()=>{ setCoverageEditMode("off", { quiet: true }); game.resetCoverage(); };
   coverageCard.appendChild(resetBtn);
 
   covSec.appendChild(coverageCard);
+  updateCoverageEditUi();
 
   // =============== WORDS TAB =================
   const wordsGrid = document.createElement("div");
@@ -511,20 +646,105 @@ function createOverlay(game) {
         borderRadius:"8px",
         border:"1px solid rgba(255,255,255,0.18)",
         background:"rgba(255,255,255,0.05)",
+        position:"relative"
       });
+      if (coverageEditMode !== "off") {
+        box.style.cursor = "pointer";
+        box.style.boxShadow = "0 0 0 1px rgba(96,165,250,0.45)";
+      } else {
+        box.style.cursor = "default";
+        box.style.boxShadow = "none";
+      }
+
+      const letter = String.fromCharCode(97 + i);
+      const actualTarget = Math.max(0, Math.floor(targets[i] || 0));
+      const shownTarget = actualTarget;
+      const currentCount = Math.max(0, Math.floor(counts[i] || 0));
+      const limitedCount = shownTarget > 0 ? Math.min(currentCount, shownTarget) : 0;
+
       const top = document.createElement("div");
-      const letter = String.fromCharCode(97+i);
-      const target = game.excludeEnabled ? targets[i] : 1;
-      const have = Math.min(counts[i] || 0, target);
-      top.textContent = target<=0 ? `${letter} (excluded)` : `${letter} ${have}/${target}`;
-      Object.assign(top.style, { fontWeight:800, marginBottom:"4px", color: target<=0 ? "#9ca3af" : "#fff", textDecoration: target<=0 ? "line-through" : "none" });
+      if (actualTarget <= 0) {
+        top.textContent = `${letter} (excluded)`;
+      } else {
+        top.textContent = `${letter} ${limitedCount}/${shownTarget}`;
+      }
+      Object.assign(top.style, {
+        fontWeight:800,
+        marginBottom:"4px",
+        color: actualTarget <= 0 ? "#9ca3af" : "#fff",
+        textDecoration: actualTarget <= 0 ? "line-through" : "none"
+      });
+      box.appendChild(top);
+
       const bar = document.createElement("div");
       Object.assign(bar.style, { height:"6px", width:"100%", borderRadius:"999px", background:"rgba(255,255,255,0.1)", overflow:"hidden" });
       const fill = document.createElement("div");
-      const pct = target>0 ? Math.round((have/target)*100) : 0;
+      const pct = shownTarget > 0 ? Math.min(100, Math.round((limitedCount / shownTarget) * 100)) : 0;
       Object.assign(fill.style, { height:"100%", width:`${pct}%`, background: pct>=100 ? "rgba(34,197,94,0.9)" : "rgba(250,204,21,0.85)" });
       bar.appendChild(fill);
-      box.appendChild(top); box.appendChild(bar);
+      box.appendChild(bar);
+
+      if (coverageEditMode !== "off") {
+        const applyDelta = (delta) => {
+          if (coverageEditMode === "counts") {
+            game.adjustCoverageCountAt(i, delta);
+          } else if (coverageEditMode === "targets") {
+            const next = Math.floor((game.targetCounts[i] || 0)) + delta;
+            game.setTargetCountAt(i, next);
+          }
+        };
+        box.addEventListener("click", (ev) => {
+          if (coverageEditMode === "off") return;
+          ev.preventDefault();
+          applyDelta(1);
+          renderCoverageGrid();
+        });
+        box.addEventListener("contextmenu", (ev) => {
+          if (coverageEditMode === "off") return;
+          ev.preventDefault();
+          applyDelta(-1);
+          renderCoverageGrid();
+        });
+
+        if (coverageEditMode === "targets") {
+          const goalInput = document.createElement("input");
+          Object.assign(goalInput, { type:"number", min:"0", max:"99" });
+          Object.assign(goalInput.style, {
+            marginTop:"6px",
+            width:"100%",
+            borderRadius:"8px",
+            border:"1px solid rgba(148,163,184,0.45)",
+            background:"rgba(15,23,42,0.72)",
+            color:"#e2e8f0",
+            fontWeight:"600",
+            padding:"6px 8px"
+          });
+          goalInput.value = String(actualTarget);
+          goalInput.inputMode = "numeric";
+          goalInput.addEventListener("click", (ev) => ev.stopPropagation());
+          goalInput.addEventListener("contextmenu", (ev) => ev.preventDefault());
+          const syncInput = () => {
+            goalInput.value = String(Math.max(0, Math.floor(game.targetCounts[i] || 0)));
+          };
+          goalInput.addEventListener("change", () => {
+            const raw = Math.floor(Number(goalInput.value));
+            if (!Number.isFinite(raw)) { syncInput(); return; }
+            const next = Math.max(0, Math.min(99, raw));
+            game.setTargetCountAt(i, next);
+            syncInput();
+            renderCoverageGrid();
+          });
+          goalInput.addEventListener("blur", () => {
+            const raw = Math.floor(Number(goalInput.value));
+            const next = Number.isFinite(raw) ? Math.max(0, Math.min(99, raw)) : Math.max(0, Math.floor(game.targetCounts[i] || 0));
+            game.setTargetCountAt(i, next);
+            syncInput();
+            renderCoverageGrid();
+          });
+          box.appendChild(goalInput);
+        }
+      }
+
       grid.appendChild(box);
     }
   }
@@ -562,6 +782,7 @@ function createOverlay(game) {
       row._buttons.forEach(info => applyToggleBtn(info.btn, info.getOn(), info.scheme, info.mode));
     });
 
+    updateCoverageEditUi();
     renderCoverageGrid();
 
     const updateSlider = (row, value) => {

@@ -165,6 +165,8 @@ class Game {
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
 
     this._lastLoadedLang = null;
+
+    this.recomputeTargets();
   }
 
   apiBase() { return "https://extensions.litshark.ca/api"; }
@@ -392,9 +394,63 @@ class Game {
     this.mistakesProb = isFinite(n) ? n : 0.08;
   }
 
-  setExcludeEnabled(b) { this.excludeEnabled = !!b; this.recomputeTargets(); }
+  setExcludeEnabled(b) { this.excludeEnabled = !!b; }
   setExcludeSpec(spec) { this.excludeSpec = (spec || ""); this.recomputeTargets(); }
   resetCoverage() { this.coverageCounts.fill(0); this._roundFailed.clear(); }
+
+  _clampCoverageByTargets() {
+    for (let i = 0; i < 26; i++) {
+      const max = Math.max(0, Math.floor(this.targetCounts[i] || 0));
+      const current = Math.max(0, Math.floor(this.coverageCounts[i] || 0));
+      this.coverageCounts[i] = Math.min(current, max);
+    }
+  }
+
+  _syncExcludeSpecFromTargets() {
+    const tokens = [];
+    for (let i = 0; i < 26; i++) {
+      const val = Math.max(0, Math.min(99, Math.floor(this.targetCounts[i] || 0)));
+      tokens.push(`${String.fromCharCode(97 + i)}${val}`);
+    }
+    this.excludeSpec = tokens.join(" ");
+  }
+
+  setCoverageCountAt(index, value) {
+    const idx = Math.max(0, Math.min(25, index|0));
+    const max = Math.max(0, Math.floor(this.targetCounts[idx] || 0));
+    const next = Math.max(0, Math.min(max, Math.floor(Number(value) || 0)));
+    this.coverageCounts[idx] = next;
+  }
+
+  adjustCoverageCountAt(index, delta) {
+    if (!delta) return;
+    const current = Math.floor(this.coverageCounts[index] || 0);
+    this.setCoverageCountAt(index, current + delta);
+  }
+
+  setTargetCountAt(index, value) {
+    const idx = Math.max(0, Math.min(25, index|0));
+    const next = Math.max(0, Math.min(99, Math.floor(Number(value) || 0)));
+    this.targetCounts[idx] = next;
+    this._clampCoverageByTargets();
+    this._syncExcludeSpecFromTargets();
+  }
+
+  setAllCoverageCounts(value) {
+    const target = Math.max(0, Math.floor(Number(value) || 0));
+    for (let i = 0; i < 26; i++) {
+      this.setCoverageCountAt(i, target);
+    }
+  }
+
+  setAllTargetCounts(value) {
+    const target = Math.max(0, Math.min(99, Math.floor(Number(value) || 0)));
+    for (let i = 0; i < 26; i++) {
+      this.targetCounts[i] = target;
+    }
+    this._clampCoverageByTargets();
+    this._syncExcludeSpecFromTargets();
+  }
 
   recomputeTargets() {
     const tgt = new Array(26).fill(1);
@@ -425,6 +481,8 @@ class Game {
       }
     }
     this.targetCounts = tgt;
+    this._clampCoverageByTargets();
+    this._syncExcludeSpecFromTargets();
   }
 
 
@@ -802,7 +860,11 @@ class Game {
     letters.forEach(c => {
       const idx = c.charCodeAt(0) - 97;
       if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += 1;
+        const next = Math.min(
+          Math.max(0, Math.floor(this.targetCounts[idx] || 0)),
+          Math.floor((this.coverageCounts[idx] || 0)) + 1
+        );
+        this.coverageCounts[idx] = next;
       }
     });
     this._maybeResetCoverageOnComplete();
