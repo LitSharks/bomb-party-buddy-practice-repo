@@ -32,6 +32,8 @@ const LOCAL_FOUL_LISTS = Object.freeze({
   "default": "words1/foul-words-en.txt"
 });
 
+const NON_TEXT_INPUT_TYPES = new Set(["button", "submit", "reset", "checkbox", "radio", "color", "range", "file", "image", "hidden"]);
+
 function pushWordCandidate(output, seen, candidate) {
   const word = (candidate ?? "").toString().trim().toLowerCase();
   if (!word || seen.has(word)) return;
@@ -153,6 +155,8 @@ class Game {
     // Round-local failure blacklist + last pool
     this._roundFailed = new Set();
     this._roundPool = [];
+    this._lastSubmittedCandidate = null;
+    this._lastSubmittedCandidateRound = null;
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -996,6 +1000,56 @@ class Game {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
+  _normalizeWordForTracking(word) {
+    const normalized = (word ?? "").toString().trim().toLowerCase();
+    return normalized.length ? normalized : null;
+  }
+
+  _markFailedWord(word) {
+    const normalized = this._normalizeWordForTracking(word);
+    if (normalized) this._roundFailed.add(normalized);
+  }
+
+  _shouldPreserveFocus(activeEl, input) {
+    if (!activeEl || activeEl === input) return false;
+    const connected = typeof activeEl.isConnected === "boolean" ? activeEl.isConnected : (!!activeEl.ownerDocument && !!activeEl.ownerDocument.contains(activeEl));
+    if (!connected) return false;
+    if (activeEl.isContentEditable) return true;
+    const tag = activeEl.tagName;
+    if (tag === "TEXTAREA") return true;
+    if (tag === "INPUT") {
+      const type = (activeEl.type || "").toLowerCase();
+      return !NON_TEXT_INPUT_TYPES.has(type);
+    }
+    return false;
+  }
+
+  _captureFocusState(el) {
+    if (!el) return null;
+    const info = { element: el };
+    if (typeof el.selectionStart === "number" && typeof el.selectionEnd === "number") {
+      info.selectionStart = el.selectionStart;
+      info.selectionEnd = el.selectionEnd;
+    }
+    return info;
+  }
+
+  _restoreFocusState(info) {
+    if (!info || !info.element) return;
+    const el = info.element;
+    const connected = typeof el.isConnected === "boolean" ? el.isConnected : (!!el.ownerDocument && !!el.ownerDocument.contains(el));
+    if (!connected) return;
+    try {
+      el.focus({ preventScroll: true });
+    } catch (_) {
+      try { el.focus(); } catch (_) { /* ignore */ }
+    }
+    if (document.activeElement === el && info.selectionStart !== undefined && info.selectionEnd !== undefined && typeof el.setSelectionRange === "function") {
+      try { el.setSelectionRange(info.selectionStart, info.selectionEnd); }
+      catch (_) { /* ignore */ }
+    }
+  }
+
   async _typeTextSequence(input, text, perCharDelay, options = {}) {
     if (!input || text === undefined || text === null) return;
     const seq = typeof text === "string" ? text : String(text);
@@ -1035,7 +1089,8 @@ class Game {
 
   _pickNextNotFailed() {
     for (const w of this._roundPool) {
-      if (!this._roundFailed.has(w)) return w;
+      const normalized = this._normalizeWordForTracking(w);
+      if (normalized && !this._roundFailed.has(normalized)) return w;
     }
     return null;
   }
@@ -1043,7 +1098,21 @@ class Game {
   async typeAndSubmit(word, ignorePostfix=false) {
     const input = this._ensureInput(); if (!input) return;
 
-    input.focus();
+    const normalizedCandidate = this._normalizeWordForTracking(word);
+    this._lastSubmittedCandidate = normalizedCandidate;
+    this._lastSubmittedCandidateRound = this.selfRound;
+
+    const activeBefore = document.activeElement;
+    const preserveFocus = this._shouldPreserveFocus(activeBefore, input);
+    const focusState = preserveFocus ? this._captureFocusState(activeBefore) : null;
+
+    if (!preserveFocus) {
+      try {
+        input.focus({ preventScroll: true });
+      } catch (_) {
+        input.focus();
+      }
+    }
     await Promise.resolve();
     input.value = "";
     this._emitInputEvent(input);
@@ -1088,16 +1157,28 @@ class Game {
     input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
     await new Promise(r => setTimeout(r, 10));
 
-    if (document.activeElement !== input) input.focus();
     const form = input.closest("form");
     if (form && typeof form.requestSubmit === "function") {
       form.requestSubmit();
+    }
+    if (!preserveFocus) {
+      if (document.activeElement !== input) {
+        try {
+          input.focus({ preventScroll: true });
+        } catch (_) {
+          input.focus();
+        }
+      }
+    } else {
+      this._restoreFocusState(focusState);
     }
   }
 
 
   onCorrectWord(word) {
     if (!this.myTurn) return;
+    this._lastSubmittedCandidate = null;
+    this._lastSubmittedCandidateRound = null;
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach(c => {
@@ -1113,7 +1194,12 @@ class Game {
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
     if (!myTurn) return;
-    if (word) this._roundFailed.add((word || "").toLowerCase());
+    this._markFailedWord(word);
+    if (this._lastSubmittedCandidate && this._lastSubmittedCandidateRound === this.selfRound) {
+      this._roundFailed.add(this._lastSubmittedCandidate);
+    }
+    this._lastSubmittedCandidate = null;
+    this._lastSubmittedCandidateRound = null;
     if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});
