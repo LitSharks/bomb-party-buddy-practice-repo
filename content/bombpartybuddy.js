@@ -97,6 +97,8 @@ function createOverlay(game) {
   const wordsSec= document.createElement("div");
   box.appendChild(mainSec); box.appendChild(covSec); box.appendChild(wordsSec);
 
+  let coverageEditMode = "off"; // off | counts | targets
+
   // default to Words
   let active = "Words";
   const setActive = (name) => {
@@ -349,7 +351,6 @@ function createOverlay(game) {
     background:"linear-gradient(135deg, rgba(56,189,248,0.18), rgba(244,114,182,0.10), rgba(14,165,233,0.18))",
     border:"1px solid rgba(148,163,184,0.45)"
   });
-  let coverageEditMode = "off"; // off | counts | targets
   const coverageToggle = mkRow("Alphabet coverage", () => {
     setCoverageEditMode("off", { quiet: true });
     game.toggleCoverageMode();
