@@ -198,6 +198,11 @@ class Game {
     // Back-compat
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
 
+    // Focus / submission state hooks
+    this._focusGuard = null;
+    this._onSubmitComplete = null;
+    this._isSubmitting = false;
+
     this._lastLoadedLang = null;
   }
 
@@ -1041,57 +1046,75 @@ class Game {
   }
 
   async typeAndSubmit(word, ignorePostfix=false) {
-    const input = this._ensureInput(); if (!input) return;
-
-    input.focus();
-    await Promise.resolve();
-    input.value = "";
-    this._emitInputEvent(input);
-
-    const perCharDelay = this._charDelayMs();
-    const instant = !!this.instantMode;
-
-    if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
-      if (instant) {
-        input.value = this.preMsgText;
-        this._emitInputEvent(input);
-        await this._sleep(Math.max(40, perCharDelay));
-        input.value = "";
-        this._emitInputEvent(input);
-      } else {
-        await this._typeTextSequence(input, this.preMsgText, perCharDelay);
-        await this._sleep(Math.max(80, perCharDelay * 4));
-        input.value = "";
-        this._emitInputEvent(input);
-      }
+    const input = this._ensureInput();
+    if (!input) {
+      this._emitSubmitComplete();
+      return;
     }
 
-    if (instant) {
-      input.value = word;
+    const preserveFocus = this._shouldPreserveFocus();
+    const prevFocus = document.activeElement;
+
+    this._isSubmitting = true;
+    try {
+      if (!preserveFocus) {
+        input.focus();
+      }
+      await Promise.resolve();
+      input.value = "";
       this._emitInputEvent(input);
-    } else {
-      await this._typeTextSequence(input, word, perCharDelay);
-    }
 
-    if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
+      const perCharDelay = this._charDelayMs();
+      const instant = !!this.instantMode;
+
+      if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
+        if (instant) {
+          input.value = this.preMsgText;
+          this._emitInputEvent(input);
+          await this._sleep(Math.max(40, perCharDelay));
+          input.value = "";
+          this._emitInputEvent(input);
+        } else {
+          await this._typeTextSequence(input, this.preMsgText, perCharDelay);
+          await this._sleep(Math.max(80, perCharDelay * 4));
+          input.value = "";
+          this._emitInputEvent(input);
+        }
+      }
+
       if (instant) {
-        input.value = `${input.value}${this.postfixText}`;
+        input.value = word;
         this._emitInputEvent(input);
       } else {
-        await this._typeTextSequence(input, this.postfixText, perCharDelay);
+        await this._typeTextSequence(input, word, perCharDelay);
       }
-    }
 
-    const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
-    input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
-    input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
-    input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
-    await new Promise(r => setTimeout(r, 10));
+      if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
+        if (instant) {
+          input.value = `${input.value}${this.postfixText}`;
+          this._emitInputEvent(input);
+        } else {
+          await this._typeTextSequence(input, this.postfixText, perCharDelay);
+        }
+      }
 
-    if (document.activeElement !== input) input.focus();
-    const form = input.closest("form");
-    if (form && typeof form.requestSubmit === "function") {
-      form.requestSubmit();
+      const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
+      input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
+      input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
+      input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
+      await new Promise(r => setTimeout(r, 10));
+
+      if (!preserveFocus && document.activeElement !== input) input.focus();
+      if (preserveFocus && prevFocus && prevFocus !== document.activeElement && document.body.contains(prevFocus)) {
+        try { prevFocus.focus(); } catch (_) { /* ignore */ }
+      }
+      const form = input.closest("form");
+      if (form && typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      }
+    } finally {
+      this._isSubmitting = false;
+      this._emitSubmitComplete();
     }
   }
 
@@ -1113,10 +1136,52 @@ class Game {
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
     if (!myTurn) return;
-    if (word) this._roundFailed.add((word || "").toLowerCase());
+    if (word) {
+      const lowered = (word || "").toString().trim().toLowerCase();
+      if (lowered) {
+        this._roundFailed.add(lowered);
+        const postfix = (this.postfixEnabled && this.postfixText && !this.autoSuicide)
+          ? this.postfixText.toString().trim().toLowerCase()
+          : "";
+        if (postfix && lowered.endsWith(postfix)) {
+          const base = lowered.slice(0, lowered.length - postfix.length).trim();
+          if (base) this._roundFailed.add(base);
+        }
+      }
+    }
     if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});
+  }
+
+  setFocusGuard(fn) {
+    this._focusGuard = typeof fn === 'function' ? fn : null;
+  }
+
+  _shouldPreserveFocus() {
+    if (typeof this._focusGuard !== 'function') return false;
+    try {
+      return !!this._focusGuard();
+    } catch (err) {
+      console.warn('[BombPartyShark] focus guard failed', err);
+      return false;
+    }
+  }
+
+  isSubmitting() {
+    return !!this._isSubmitting;
+  }
+
+  setSubmitCompleteCallback(fn) {
+    this._onSubmitComplete = typeof fn === 'function' ? fn : null;
+  }
+
+  _emitSubmitComplete() {
+    if (this._isSubmitting) return;
+    if (typeof this._onSubmitComplete === 'function') {
+      try { this._onSubmitComplete(); }
+      catch (err) { console.warn('[BombPartyShark] submit-complete listener failed', err); }
+    }
   }
 
   async _reportInvalid(word, reason, myTurn) {
