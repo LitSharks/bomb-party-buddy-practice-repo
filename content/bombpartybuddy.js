@@ -39,6 +39,171 @@ function createOverlay(game) {
     zIndex: "2147483647", userSelect: "none",
   });
 
+  const STORAGE_KEY = "bombpartybuddy.settings.v1";
+  const SESSION_KEY = "bombpartybuddy.session.v1";
+
+  const safeParse = (text) => {
+    if (!text) return null;
+    try { return JSON.parse(text); } catch (_) { return null; }
+  };
+
+  const loadSettings = () => {
+    try { return safeParse(localStorage.getItem(STORAGE_KEY)) || {}; }
+    catch (err) { console.warn("[BombPartyShark] Failed to load settings", err); return {}; }
+  };
+  const saveSettingsNow = (payload) => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); }
+    catch (err) { console.warn("[BombPartyShark] Failed to save settings", err); }
+  };
+  const loadTallies = () => {
+    try { return safeParse(sessionStorage.getItem(SESSION_KEY)) || {}; }
+    catch (_) { return {}; }
+  };
+  const saveTalliesNow = (payload) => {
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload)); }
+    catch (_) { /* ignore */ }
+  };
+
+  const savedSettings = loadSettings();
+  const sessionData = loadTallies();
+
+  const clampNumber = (value, min, max, fallback) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  };
+  const getBool = (value, fallback) => (typeof value === "boolean" ? value : fallback);
+
+  let hudSizePercent = clampNumber(savedSettings?.hudSizePercent, 20, 70, 45);
+
+  const setIfString = (val, setter) => { if (typeof val === "string") setter(val); };
+
+  game.paused = !getBool(savedSettings?.autoTypeEnabled, true);
+  game.instantMode = getBool(savedSettings?.instantMode, game.instantMode);
+  game.mistakesEnabled = getBool(savedSettings?.mistakesEnabled, game.mistakesEnabled);
+  game.autoSuicide = getBool(savedSettings?.autoSuicide, game.autoSuicide);
+  game.foulMode = getBool(savedSettings?.foulMode, game.foulMode);
+  game.coverageMode = getBool(savedSettings?.coverageMode, game.coverageMode);
+  game.lengthMode = getBool(savedSettings?.lengthMode, game.lengthMode);
+  game.specLengthMode = getBool(savedSettings?.specLengthMode, game.specLengthMode);
+  game.specFoulMode = getBool(savedSettings?.specFoulMode, game.specFoulMode);
+  game.hyphenMode = getBool(savedSettings?.hyphenMode, game.hyphenMode);
+  game.specHyphenMode = getBool(savedSettings?.specHyphenMode, game.specHyphenMode);
+  game.containsMode = getBool(savedSettings?.containsMode, game.containsMode);
+  game.specContainsMode = getBool(savedSettings?.specContainsMode, game.specContainsMode);
+  game.pokemonMode = getBool(savedSettings?.pokemonMode, game.pokemonMode);
+  game.specPokemonMode = getBool(savedSettings?.specPokemonMode, game.specPokemonMode);
+  game.mineralsMode = getBool(savedSettings?.mineralsMode, game.mineralsMode);
+  game.specMineralsMode = getBool(savedSettings?.specMineralsMode, game.specMineralsMode);
+  game.rareMode = getBool(savedSettings?.rareMode, game.rareMode);
+  game.specRareMode = getBool(savedSettings?.specRareMode, game.specRareMode);
+  game.preMsgEnabled = getBool(savedSettings?.preMsgEnabled, game.preMsgEnabled);
+  game.postfixEnabled = getBool(savedSettings?.postfixEnabled, game.postfixEnabled);
+
+  game.setSpeed(clampNumber(savedSettings?.speed, 1, 12, game.speed));
+  game.setThinkingDelaySec(clampNumber(savedSettings?.thinkingDelaySec, 0, 5, game.thinkingDelaySec));
+  const savedMistakeProb = typeof savedSettings?.mistakesProb === "number" ? savedSettings.mistakesProb : game.mistakesProb;
+  game.setMistakesProb(Math.max(0, Math.min(0.30, Number(savedMistakeProb))));
+  game.setSuggestionsLimit(clampNumber(savedSettings?.suggestionsLimit, 1, 10, game.suggestionsLimit));
+  game.setTargetLen(clampNumber(savedSettings?.targetLen, 3, 20, game.targetLen));
+  game.setSpecTargetLen(clampNumber(savedSettings?.specTargetLen, 3, 20, game.specTargetLen));
+
+  setIfString(savedSettings?.preMsgText, (val) => game.setPreMsgText(val));
+  setIfString(savedSettings?.postfixText, (val) => game.setPostfixText(val));
+  setIfString(savedSettings?.containsText, (val) => game.setContainsText(val));
+  setIfString(savedSettings?.specContainsText, (val) => game.setSpecContainsText(val));
+  setIfString(savedSettings?.excludeSpec, (val) => game.setExcludeSpec(val));
+
+  game.setExcludeEnabled(getBool(savedSettings?.excludeEnabled, game.excludeEnabled));
+  if (Array.isArray(savedSettings?.priorityOrder)) {
+    game.setPriorityOrder(savedSettings.priorityOrder);
+  }
+
+  if (Array.isArray(sessionData?.coverageCounts) && sessionData.coverageCounts.length === 26) {
+    for (let i = 0; i < 26; i++) {
+      const raw = Number(sessionData.coverageCounts[i]);
+      if (Number.isFinite(raw)) {
+        game.coverageCounts[i] = Math.max(0, Math.min(99, Math.floor(raw)));
+      }
+    }
+  }
+
+  const collectSettings = () => ({
+    hudSizePercent,
+    autoTypeEnabled: !game.paused,
+    instantMode: !!game.instantMode,
+    mistakesEnabled: !!game.mistakesEnabled,
+    autoSuicide: !!game.autoSuicide,
+    foulMode: !!game.foulMode,
+    coverageMode: !!game.coverageMode,
+    excludeEnabled: !!game.excludeEnabled,
+    lengthMode: !!game.lengthMode,
+    specLengthMode: !!game.specLengthMode,
+    specFoulMode: !!game.specFoulMode,
+    hyphenMode: !!game.hyphenMode,
+    specHyphenMode: !!game.specHyphenMode,
+    containsMode: !!game.containsMode,
+    specContainsMode: !!game.specContainsMode,
+    pokemonMode: !!game.pokemonMode,
+    specPokemonMode: !!game.specPokemonMode,
+    mineralsMode: !!game.mineralsMode,
+    specMineralsMode: !!game.specMineralsMode,
+    rareMode: !!game.rareMode,
+    specRareMode: !!game.specRareMode,
+    speed: game.speed,
+    thinkingDelaySec: game.thinkingDelaySec,
+    mistakesProb: game.mistakesProb,
+    suggestionsLimit: game.suggestionsLimit,
+    targetLen: game.targetLen,
+    specTargetLen: game.specTargetLen,
+    preMsgEnabled: !!game.preMsgEnabled,
+    preMsgText: game.preMsgText || "",
+    postfixEnabled: !!game.postfixEnabled,
+    postfixText: game.postfixText || "",
+    containsText: game.containsText || "",
+    specContainsText: game.specContainsText || "",
+    excludeSpec: game.excludeSpec || "",
+    priorityOrder: Array.isArray(game.priorityOrder) ? game.priorityOrder.slice() : []
+  });
+
+  let saveTimer = null;
+  const scheduleSave = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { saveSettingsNow(collectSettings()); }, 120);
+  };
+
+  let talliesTimer = null;
+  const scheduleTalliesSave = () => {
+    if (talliesTimer) clearTimeout(talliesTimer);
+    talliesTimer = setTimeout(() => {
+      const counts = Array.isArray(game.coverageCounts) ? game.coverageCounts.slice(0, 26) : [];
+      saveTalliesNow({ coverageCounts: counts });
+    }, 120);
+  };
+
+  const recomputeSuggestions = () => {
+    if (game.myTurn && game.syllable) {
+      game.lastTopPicksSelf = game.getTopCandidates(game.syllable, game.suggestionsLimit);
+    } else if (game.lastSpectatorSyllable) {
+      game.generateSpectatorSuggestions(game.lastSpectatorSyllable, game.suggestionsLimit);
+    }
+  };
+
+  const requestSave = (opts = {}) => {
+    if (opts.recompute) recomputeSuggestions();
+    scheduleSave();
+  };
+
+  game._notifySettingsChanged = (opts = {}) => {
+    requestSave(opts);
+  };
+
+  game.setTalliesChangedCallback(() => {
+    scheduleTalliesSave();
+    recomputeSuggestions();
+  });
+  scheduleTalliesSave();
+
   // HUD
   const box = document.createElement("div");
   Object.assign(box.style, {
@@ -57,7 +222,7 @@ function createOverlay(game) {
   wrap.appendChild(box);
 
   // scale (range 20-70; default ~45)
-  let hudScale = 0.45;
+  let hudScale = hudSizePercent / 100;
   const applyScale = () => { box.style.transform = `scale(${hudScale})`; };
   applyScale();
 
@@ -118,12 +283,16 @@ function createOverlay(game) {
   // helpers
   const toggleThemes = {
     default: { onBg: "rgba(59,130,246,0.24)", onBorder: "rgba(59,130,246,0.55)", onColor: "#bfdbfe" },
+    purple:  { onBg: "rgba(168,85,247,0.26)", onBorder: "rgba(147,51,234,0.65)", onColor: "#e9d5ff" },
     white:   { onBg: "rgba(248,250,252,0.28)", onBorder: "rgba(226,232,240,0.65)", onColor: "#f8fafc" },
     yellow:  { onBg: "rgba(253,224,71,0.24)", onBorder: "rgba(250,204,21,0.70)", onColor: "#facc15" },
+    gold:    { onBg: "rgba(250,204,21,0.28)", onBorder: "rgba(234,179,8,0.72)", onColor: "#fde047" },
     red:     { onBg: "rgba(248,113,113,0.26)", onBorder: "rgba(239,68,68,0.70)", onColor: "#fecaca" },
     green:   { onBg: "rgba(74,222,128,0.26)", onBorder: "rgba(34,197,94,0.65)", onColor: "#bbf7d0" },
     pink:    { onBg: "rgba(236,72,153,0.25)", onBorder: "rgba(244,114,182,0.68)", onColor: "#fce7f3" },
-    teal:    { onBg: "rgba(45,212,191,0.26)", onBorder: "rgba(20,184,166,0.68)", onColor: "#ccfbf1" }
+    teal:    { onBg: "rgba(45,212,191,0.26)", onBorder: "rgba(20,184,166,0.68)", onColor: "#ccfbf1" },
+    brown:   { onBg: "rgba(120,53,15,0.32)", onBorder: "rgba(146,64,14,0.68)", onColor: "#fbbf24" },
+    cyan:    { onBg: "rgba(34,211,238,0.28)", onBorder: "rgba(6,182,212,0.65)", onColor: "#a5f3fc" }
   };
   const toggleOff = { bg: "rgba(30,41,59,0.55)", border: "rgba(71,85,105,0.55)", color: "#cbd5f5" };
 
@@ -155,11 +324,54 @@ function createOverlay(game) {
   };
   const applyToggleBtn = (btn, on, scheme = "default", mode = "status") => applyToggleStyle(btn, !!on, scheme, mode);
 
-  const mkRow = (label, onClick, getOn, scheme = "default", mode = "status") => {
+  const priorityControls = new Map();
+  const priorityKeys = ["contains", "foul", "coverage", "hyphen", "length"];
+  const attachPriorityControl = (row, key) => {
+    if (!row || !row._labelSpan || priorityControls.has(key)) return;
+    const span = row._labelSpan;
+    span.style.display = "inline-flex";
+    span.style.alignItems = "center";
+    span.style.gap = "6px";
+    const select = document.createElement("select");
+    for (let i = 1; i <= priorityKeys.length; i++) {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = `#${i}`;
+      select.appendChild(opt);
+    }
+    Object.assign(select.style, {
+      background: "rgba(15,23,42,0.65)",
+      color: "#e2e8f0",
+      border: "1px solid rgba(148,163,184,0.4)",
+      borderRadius: "6px",
+      fontSize: "11px",
+      fontWeight: "700",
+      padding: "2px 4px",
+      cursor: "pointer"
+    });
+    select.addEventListener("change", () => {
+      const pos = Math.max(0, Math.min(priorityKeys.length - 1, parseInt(select.value, 10) - 1 || 0));
+      game.setPriorityPosition(key, pos);
+      requestSave({ recompute: true });
+      render();
+    });
+    span.appendChild(select);
+    priorityControls.set(key, select);
+  };
+
+  const mkRow = (label, onClick, getOn, scheme = "default", mode = "status", options = {}) => {
     const r = document.createElement("div");
     Object.assign(r.style, { display:"flex", alignItems:"center", justifyContent:"space-between", gap:"16px", margin:"8px 0" });
     const span = document.createElement("span"); span.textContent = label; span.style.fontWeight = "600"; r.appendChild(span);
-    const btn = document.createElement("button"); btn.onclick = () => { onClick(); render(); };
+    r._labelSpan = span;
+    const btn = document.createElement("button");
+    btn.onclick = () => {
+      onClick();
+      if (typeof options.after === "function") options.after();
+      if (options.recompute) requestSave({ recompute: true });
+      else requestSave();
+      render();
+    };
     r.appendChild(btn);
     btn.dataset.mode = mode;
     r._btn = btn; r._get = getOn; r._scheme = scheme; r._mode = mode;
@@ -180,6 +392,7 @@ function createOverlay(game) {
     span.textContent = label;
     span.style.fontWeight = "600";
     row.appendChild(span);
+    row._labelSpan = span;
     const btnWrap = document.createElement("div");
     Object.assign(btnWrap.style, { display:"flex", gap:"8px", flexWrap:"wrap" });
     row.appendChild(btnWrap);
@@ -188,7 +401,13 @@ function createOverlay(game) {
       const btn = document.createElement("button");
       btn.dataset.label = cfg.label;
       btn.dataset.mode = "label";
-      btn.addEventListener("click", () => { cfg.onClick(); render(); });
+      btn.addEventListener("click", () => {
+        cfg.onClick();
+        if (typeof cfg.after === "function") cfg.after();
+        if (cfg.recompute) requestSave({ recompute: true });
+        else requestSave();
+        render();
+      });
       btnWrap.appendChild(btn);
       row._buttons.push({ btn, getOn: cfg.getOn, scheme: cfg.scheme || "default", mode: "label" });
     });
@@ -211,7 +430,13 @@ function createOverlay(game) {
     input.style.accentColor = accent;
     const valEl = document.createElement("span"); valEl.textContent = String(val); valEl.style.opacity = "0.9"; valEl.style.fontWeight = "700";
     if (options.valueColor) valEl.style.color = options.valueColor;
-    input.addEventListener("input", (e)=>{ const v = step===1?parseInt(input.value,10):parseFloat(input.value); oninput(v); valEl.textContent = String(v); e.stopPropagation(); });
+    input.addEventListener("input", (e)=>{
+      const v = step===1?parseInt(input.value,10):parseFloat(input.value);
+      oninput(v);
+      valEl.textContent = String(v);
+      if (typeof options.onChange === "function") options.onChange(v);
+      e.stopPropagation();
+    });
     row.appendChild(span); row.appendChild(input); row.appendChild(valEl);
     row._range = input;
     row._valueEl = valEl;
@@ -226,10 +451,17 @@ function createOverlay(game) {
       Object.assign(baseStyle, { border:"1px solid rgba(244,114,182,0.65)", background:"rgba(236,72,153,0.15)", color:"#fdf2f8" });
     } else if (options.theme === "chrome") {
       Object.assign(baseStyle, { border:"1px solid rgba(226,232,240,0.35)", background:"linear-gradient(135deg, rgba(148,163,184,0.20), rgba(71,85,105,0.25))", color:"#f8fafc" });
+    } else if (options.theme === "blue") {
+      Object.assign(baseStyle, { border:"1px solid rgba(96,165,250,0.6)", background:"rgba(59,130,246,0.18)", color:"#dbeafe" });
     }
     Object.assign(inp.style, baseStyle);
-    inp.addEventListener("input", (e)=>{ oninput(inp.value); e.stopPropagation(); });
+    inp.addEventListener("input", (e)=>{
+      oninput(inp.value);
+      if (typeof options.onChange === "function") options.onChange(inp.value);
+      e.stopPropagation();
+    });
     wrap.appendChild(inp);
+    wrap._input = inp;
     return wrap;
   }
   function createCard(title){
@@ -310,7 +542,8 @@ function createOverlay(game) {
 
   // =============== MAIN TAB =================
   const rows = [
-    mkRow("AutoType", () => game.togglePause(), () => !game.paused, "white"),
+    mkRow("AutoType", () => game.togglePause(), () => !game.paused, "purple"),
+    mkRow("Instant mode", () => game.toggleInstantMode(), () => game.instantMode, "white"),
     mkRow("Butterfingers", () => game.toggleMistakes(), () => game.mistakesEnabled, "yellow"),
     mkRow("Auto /suicide", () => game.toggleAutoSuicide(), () => game.autoSuicide, "red"),
   ];
@@ -326,10 +559,11 @@ function createOverlay(game) {
   mainGrid.appendChild(automationCard);
 
   const hudCard = createCard("HUD & Rhythm");
-  hudCard.appendChild(sliderRow("HUD size", 20, 70, 45, 1, (v)=>{ hudScale = v/100; applyScale(); }, { accent: "#3b82f6", valueColor: "#93c5fd" }));
-  hudCard.appendChild(sliderRow("Speed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v), { accent: "#22c55e", valueColor: "#4ade80" }));
-  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74" }));
-  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15" }));
+  const hudSizeRow = sliderRow("HUD size", 20, 70, hudSizePercent, 1, (v)=>{ hudSizePercent = v; hudScale = v/100; applyScale(); }, { accent: "#3b82f6", valueColor: "#93c5fd", onChange: () => requestSave() });
+  hudCard.appendChild(hudSizeRow);
+  hudCard.appendChild(sliderRow("Speed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v), { accent: "#22c55e", valueColor: "#4ade80", onChange: () => requestSave() }));
+  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74", onChange: () => requestSave() }));
+  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15", onChange: () => requestSave() }));
   mainGrid.appendChild(hudCard);
 
   const messageCard = createCard("Messages");
@@ -337,11 +571,11 @@ function createOverlay(game) {
   const preTop = mkRow("Premessage", ()=>game.setPreMsgEnabled(!game.preMsgEnabled), ()=>game.preMsgEnabled, "pink");
   toggleRefs.push(preTop);
   messageCard.appendChild(preTop);
-  messageCard.appendChild(textInput("Message to flash before your word", game.preMsgText, (v)=>game.setPreMsgText(v), { theme:"pink" }));
+  messageCard.appendChild(textInput("Message to flash before your word", game.preMsgText, (v)=>game.setPreMsgText(v), { theme:"pink", onChange: () => requestSave() }));
   const postTop = mkRow("Postfix", ()=>game.setPostfixEnabled(!game.postfixEnabled), ()=>game.postfixEnabled, "pink");
   toggleRefs.push(postTop);
   messageCard.appendChild(postTop);
-  messageCard.appendChild(textInput("Characters to append (e.g., <3)", game.postfixText, (v)=>game.setPostfixText(v), { theme:"pink" }));
+  messageCard.appendChild(textInput("Characters to append (e.g., <3)", game.postfixText, (v)=>game.setPostfixText(v), { theme:"pink", onChange: () => requestSave() }));
   mainGrid.appendChild(messageCard);
 
   // =============== COVERAGE TAB =================
@@ -350,11 +584,12 @@ function createOverlay(game) {
     background:"linear-gradient(135deg, rgba(56,189,248,0.18), rgba(244,114,182,0.10), rgba(14,165,233,0.18))",
     border:"1px solid rgba(148,163,184,0.45)"
   });
-  const coverageToggle = mkRow("Alphabet coverage", () => game.toggleCoverageMode(), () => game.coverageMode, "teal");
+  const coverageToggle = mkRow("Alphabet coverage", () => game.toggleCoverageMode(), () => game.coverageMode, "teal", "status", { recompute: true });
   toggleRefs.push(coverageToggle);
   coverageCard.appendChild(coverageToggle);
+  attachPriorityControl(coverageToggle, "coverage");
 
-  const exTop = mkRow("A-Z goals / exclusions", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal");
+  const exTop = mkRow("A-Z goals / exclusions", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal", "status", { recompute: true });
   toggleRefs.push(exTop);
   coverageCard.appendChild(exTop);
 
@@ -487,7 +722,8 @@ function createOverlay(game) {
 
   const overviewCard = createCard("Word targeting");
   const colorGuide = document.createElement("div");
-  colorGuide.innerHTML = "🟥 foul • 🟩 matches target length • 🟨 nearby length • ⚪ regular <span style=\"font-size:10px; opacity:0.65; margin-left:6px;\">click me to go away</span>";
+  const colorDot = (hex) => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${hex};"></span>`;
+  colorGuide.innerHTML = `${colorDot('#f87171')} foul • ${colorDot('#22c55e')} matches target length • ${colorDot('#facc15')} nearby length • ${colorDot('#ec4899')} hyphen words • ${colorDot('#3b82f6')} contains filter • ${colorDot('#fde047')} Pokémon • ${colorDot('#92400e')} minerals • ${colorDot('#22d3ee')} rare • ${colorDot('#e2e8f0')} regular <span style="font-size:10px; opacity:0.65; margin-left:6px;">click me to go away</span>`;
   Object.assign(colorGuide.style, {
     background:"rgba(15,23,42,0.55)",
     border:"1px solid rgba(148,163,184,0.35)",
@@ -504,27 +740,74 @@ function createOverlay(game) {
   colorGuide.addEventListener("click", () => { colorGuide.style.display = "none"; });
   overviewCard.appendChild(colorGuide);
 
-  const suggRow = sliderRow("Suggestions", 1, 10, game.suggestionsLimit, 1, (v)=>game.setSuggestionsLimit(v), { accent: "#e2e8f0", valueColor: "#cbd5f5" });
+  const suggRow = sliderRow("Suggestions", 1, 10, game.suggestionsLimit, 1, (v)=>game.setSuggestionsLimit(v), { accent: "#e2e8f0", valueColor: "#cbd5f5", onChange: () => requestSave({ recompute: true }) });
   overviewCard.appendChild(suggRow);
 
   const foulDualRow = mkDualRow("Foul words", [
-    { label: "Me", onClick: () => game.toggleFoulMode(), getOn: () => game.foulMode, scheme: "red" },
-    { label: "Spectator", onClick: () => game.toggleSpecFoul(), getOn: () => game.specFoulMode, scheme: "red" }
+    { label: "Me", onClick: () => game.toggleFoulMode(), getOn: () => game.foulMode, scheme: "red", recompute: true },
+    { label: "Spectator", onClick: () => game.toggleSpecFoul(), getOn: () => game.specFoulMode, scheme: "red", recompute: true }
   ]);
   dualToggleRows.push(foulDualRow);
   overviewCard.appendChild(foulDualRow);
+  attachPriorityControl(foulDualRow, "foul");
+
+  const pokemonRow = mkDualRow("Pokémon words", [
+    { label: "Me", onClick: () => game.togglePokemonMode(), getOn: () => game.pokemonMode, scheme: "gold", recompute: true },
+    { label: "Spectator", onClick: () => game.toggleSpecPokemonMode(), getOn: () => game.specPokemonMode, scheme: "gold", recompute: true }
+  ]);
+  dualToggleRows.push(pokemonRow);
+  overviewCard.appendChild(pokemonRow);
+
+  const mineralsRow = mkDualRow("Minerals", [
+    { label: "Me", onClick: () => game.toggleMineralsMode(), getOn: () => game.mineralsMode, scheme: "brown", recompute: true },
+    { label: "Spectator", onClick: () => game.toggleSpecMineralsMode(), getOn: () => game.specMineralsMode, scheme: "brown", recompute: true }
+  ]);
+  dualToggleRows.push(mineralsRow);
+  overviewCard.appendChild(mineralsRow);
+
+  const rareRow = mkDualRow("Rare words", [
+    { label: "Me", onClick: () => game.toggleRareMode(), getOn: () => game.rareMode, scheme: "cyan", recompute: true },
+    { label: "Spectator", onClick: () => game.toggleSpecRareMode(), getOn: () => game.specRareMode, scheme: "cyan", recompute: true }
+  ]);
+  dualToggleRows.push(rareRow);
+  overviewCard.appendChild(rareRow);
 
   const lenDualRow = mkDualRow("Target length", [
-    { label: "Me", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green" },
-    { label: "Spectator", onClick: () => game.toggleSpecLength(), getOn: () => game.specLengthMode, scheme: "green" }
+    { label: "Me", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green", recompute: true },
+    { label: "Spectator", onClick: () => game.toggleSpecLength(), getOn: () => game.specLengthMode, scheme: "green", recompute: true }
   ]);
   dualToggleRows.push(lenDualRow);
   overviewCard.appendChild(lenDualRow);
+  attachPriorityControl(lenDualRow, "length");
+
+  const hyphenRow = mkDualRow("Hyphen only", [
+    { label: "Me", onClick: () => game.toggleHyphenMode(), getOn: () => game.hyphenMode, scheme: "pink", recompute: true },
+    { label: "Spectator", onClick: () => game.toggleSpecHyphenMode(), getOn: () => game.specHyphenMode, scheme: "pink", recompute: true }
+  ]);
+  dualToggleRows.push(hyphenRow);
+  overviewCard.appendChild(hyphenRow);
+  attachPriorityControl(hyphenRow, "hyphen");
+
+  const containsRow = mkDualRow("Contains", [
+    { label: "Me", onClick: () => game.toggleContainsMode(), getOn: () => game.containsMode, scheme: "default", recompute: true },
+    { label: "Spectator", onClick: () => game.toggleSpecContainsMode(), getOn: () => game.specContainsMode, scheme: "default", recompute: true }
+  ]);
+  dualToggleRows.push(containsRow);
+  overviewCard.appendChild(containsRow);
+  attachPriorityControl(containsRow, "contains");
+
+  const containsInputWrap = document.createElement("div");
+  Object.assign(containsInputWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
+  const containsMeInput = textInput("Letters or fragment (me)", game.containsText, (v)=>game.setContainsText(v), { theme:"blue", onChange: () => requestSave({ recompute: true }) });
+  const containsSpecInput = textInput("Letters or fragment (spectator)", game.specContainsText, (v)=>game.setSpecContainsText(v), { theme:"blue", onChange: () => requestSave({ recompute: true }) });
+  containsInputWrap.appendChild(containsMeInput);
+  containsInputWrap.appendChild(containsSpecInput);
+  overviewCard.appendChild(containsInputWrap);
 
   const lenSliderWrap = document.createElement("div");
   Object.assign(lenSliderWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
-  const lenSliderMain = sliderRow("Me", 3, 20, game.targetLen, 1, (v)=>game.setTargetLen(v), { accent: "#22c55e", valueColor: "#86efac" });
-  const specLenSlider = sliderRow("Spectator", 3, 20, game.specTargetLen, 1, (v)=>game.setSpecTargetLen(v), { accent: "#22c55e", valueColor: "#86efac" });
+  const lenSliderMain = sliderRow("Me", 3, 20, game.targetLen, 1, (v)=>game.setTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }) });
+  const specLenSlider = sliderRow("Spectator", 3, 20, game.specTargetLen, 1, (v)=>game.setSpecTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }) });
   lenSliderWrap.appendChild(lenSliderMain);
   lenSliderWrap.appendChild(specLenSlider);
   overviewCard.appendChild(lenSliderWrap);
@@ -546,17 +829,15 @@ function createOverlay(game) {
   wordsGrid.appendChild(suggestionsCard);
 
   // update lists when suggestion slider changes
-  suggRow._range.addEventListener("input", () => {
-    if (game.myTurn) {
-      game.lastTopPicksSelf = game.getTopCandidates(game.syllable, game.suggestionsLimit);
-    } else if (game.lastSpectatorSyllable) {
-      game.generateSpectatorSuggestions(game.lastSpectatorSyllable, game.suggestionsLimit);
-    }
-    render();
-  });
+  suggRow._range.addEventListener("input", () => { render(); });
 
   function toneStyle(tone) {
     if (tone === "foul") return { bg:"rgba(248,113,113,0.18)", border:"rgba(248,113,113,0.55)", color:"#fecaca" };
+    if (tone === "pokemon") return { bg:"rgba(250,204,21,0.22)", border:"rgba(234,179,8,0.6)", color:"#fde047" };
+    if (tone === "minerals") return { bg:"rgba(120,53,15,0.28)", border:"rgba(146,64,14,0.65)", color:"#fcd34d" };
+    if (tone === "rare") return { bg:"rgba(14,165,233,0.22)", border:"rgba(6,182,212,0.6)", color:"#bae6fd" };
+    if (tone === "hyphen") return { bg:"rgba(236,72,153,0.20)", border:"rgba(244,114,182,0.6)", color:"#fbcfe8" };
+    if (tone === "contains") return { bg:"rgba(59,130,246,0.20)", border:"rgba(59,130,246,0.55)", color:"#bfdbfe" };
     if (tone === "lengthExact") return { bg:"rgba(74,222,128,0.18)", border:"rgba(74,222,128,0.55)", color:"#bbf7d0" };
     if (tone === "lengthFlex") return { bg:"rgba(251,191,36,0.18)", border:"rgba(251,191,36,0.55)", color:"#fde68a" };
     return { bg:"rgba(255,255,255,0.08)", border:"rgba(255,255,255,0.18)", color:"#f8fafc" };
@@ -761,10 +1042,24 @@ function createOverlay(game) {
     const capApplied     = context==="self" ? game.lastLenCapAppliedSelf : game.lastLenCapAppliedSpectator;
     const capRelaxed     = context==="self" ? game.lastLenCapRelaxedSelf : game.lastLenCapRelaxedSpectator;
     const lenSuppressed  = context==="self" ? game.lastLenSuppressedByFoulSelf : game.lastLenSuppressedByFoulSpectator;
+    const containsFallback = context==="self" ? game.lastContainsFallbackSelf : game.lastContainsFallbackSpectator;
+    const hyphenFallback = context==="self" ? game.lastHyphenFallbackSelf : game.lastHyphenFallbackSpectator;
+    const pokemonFallback = context==="self" ? game.lastPokemonFallbackSelf : game.lastPokemonFallbackSpectator;
+    const mineralsFallback = context==="self" ? game.lastMineralsFallbackSelf : game.lastMineralsFallbackSpectator;
+    const rareFallback = context==="self" ? game.lastRareFallbackSelf : game.lastRareFallbackSpectator;
 
     const parts = [];
     if ((context==="self" && game.foulMode) || (context==="spectator" && game.specFoulMode)) {
       if (foulFallback) parts.push("No foul words matched this prompt; using the normal word list.");
+    }
+    if ((context==="self" && game.pokemonMode) || (context==="spectator" && game.specPokemonMode)) {
+      if (pokemonFallback) parts.push("No Pokémon words matched this prompt; falling back to regular suggestions.");
+    }
+    if ((context==="self" && game.mineralsMode) || (context==="spectator" && game.specMineralsMode)) {
+      if (mineralsFallback) parts.push("No mineral words matched this prompt; showing main list instead.");
+    }
+    if ((context==="self" && game.rareMode) || (context==="spectator" && game.specRareMode)) {
+      if (rareFallback) parts.push("No rare words matched this prompt; showing normal suggestions.");
     }
     if (context==="self" && game.lengthMode && game.coverageMode && capApplied)
       parts.push(`Limiting to words of <= ${game.targetLen} letters while maximizing alphabet coverage.`);
@@ -773,7 +1068,13 @@ function createOverlay(game) {
     if ((context==="self" && game.lengthMode && !game.coverageMode) ||
         (context==="spectator" && game.specLengthMode)) {
       if (lenFallback) parts.push(`No words with exactly ${context==="self"?game.targetLen:game.specTargetLen} letters; trying nearby lengths.`);
-      if (lenSuppressed) parts.push("Target length ignored because foul words are available for this prompt.");
+      if (lenSuppressed) parts.push("Target length ignored because higher-priority lists supplied enough options.");
+    }
+    if ((context==="self" && game.containsMode) || (context==="spectator" && game.specContainsMode)) {
+      if (containsFallback) parts.push("Contains filter: no matches found; showing broader results.");
+    }
+    if ((context==="self" && game.hyphenMode) || (context==="spectator" && game.specHyphenMode)) {
+      if (hyphenFallback) parts.push("Hyphen mode: no hyphenated words matched this prompt.");
     }
     return parts.join(" ");
   }
@@ -805,9 +1106,44 @@ function createOverlay(game) {
       if (row._range.value !== str) row._range.value = str;
       if (row._valueEl && row._valueEl.textContent !== str) row._valueEl.textContent = str;
     };
+    updateSlider(hudSizeRow, hudSizePercent);
     updateSlider(lenSliderMain, game.targetLen);
     updateSlider(specLenSlider, game.specTargetLen);
     updateSlider(suggRow, game.suggestionsLimit);
+
+    if (containsMeInput && containsMeInput._input) {
+      const val = game.containsText || "";
+      if (containsMeInput._input.value !== val) containsMeInput._input.value = val;
+    }
+    if (containsSpecInput && containsSpecInput._input) {
+      const val = game.specContainsText || "";
+      if (containsSpecInput._input.value !== val) containsSpecInput._input.value = val;
+    }
+
+    const basePriority = typeof game.priorityFeatures === "function" ? game.priorityFeatures() : priorityKeys;
+    const rawPriority = Array.isArray(game.priorityOrder) ? game.priorityOrder.slice() : [];
+    const seenPriority = new Set();
+    const finalPriority = [];
+    rawPriority.forEach((item) => {
+      const key = (item || "").toString().toLowerCase();
+      if (basePriority.includes(key) && !seenPriority.has(key)) {
+        finalPriority.push(key);
+        seenPriority.add(key);
+      }
+    });
+    basePriority.forEach((key) => {
+      if (!seenPriority.has(key)) {
+        finalPriority.push(key);
+        seenPriority.add(key);
+      }
+    });
+    finalPriority.forEach((key, idx) => {
+      const select = priorityControls.get(key);
+      if (select) {
+        const target = String(idx + 1);
+        if (select.value !== target) select.value = target;
+      }
+    });
 
     const noticeParts = [];
     if (game.lengthMode) {
@@ -861,6 +1197,16 @@ async function setupBuddy() {
 
   const { render } = createOverlay(game);
 
+  const notifySettingsChanged = (opts = {}) => {
+    if (typeof game._notifySettingsChanged === "function") {
+      try {
+        game._notifySettingsChanged(opts);
+      } catch (err) {
+        console.warn("[BombPartyShark] Failed to persist settings", err);
+      }
+    }
+  };
+
   window.addEventListener("message", async (event) => {
     if (!event.origin.endsWith("jklm.fun")) return;
     const data = event.data;
@@ -903,15 +1249,22 @@ async function setupBuddy() {
   window.addEventListener("keydown", function (ev) {
     if (!ev.altKey) return;
     const k = ev.key.toLowerCase();
-    if (k === "w") game.togglePause();
-    else if (k === "arrowup") game.setSpeed(Math.min(12, game.speed+1));
-    else if (k === "arrowdown") game.setSpeed(Math.max(1, game.speed-1));
-    else if (k === "f") game.toggleFoulMode();
-    else if (k === "c") game.toggleCoverageMode();
-    else if (k === "s") game.toggleAutoSuicide();
-    else if (k === "b") game.toggleMistakes();
-    else if (k === "r") game.resetCoverage();
-    else if (k === "t") game.toggleLengthMode();
+    let handled = false;
+    let recompute = false;
+    if (k === "w") { game.togglePause(); handled = true; }
+    else if (k === "arrowup") { game.setSpeed(Math.min(12, game.speed+1)); handled = true; }
+    else if (k === "arrowdown") { game.setSpeed(Math.max(1, game.speed-1)); handled = true; }
+    else if (k === "f") { game.toggleFoulMode(); handled = true; recompute = true; }
+    else if (k === "c") { game.toggleCoverageMode(); handled = true; recompute = true; }
+    else if (k === "s") { game.toggleAutoSuicide(); handled = true; }
+    else if (k === "b") { game.toggleMistakes(); handled = true; }
+    else if (k === "r") { game.resetCoverage(); handled = true; recompute = true; }
+    else if (k === "t") { game.toggleLengthMode(); handled = true; recompute = true; }
+
+    if (!handled) return;
+    notifySettingsChanged({ recompute });
+    render();
+    ev.preventDefault();
   });
 }
 
