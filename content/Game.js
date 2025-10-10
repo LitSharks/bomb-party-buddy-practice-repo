@@ -88,16 +88,26 @@ class Game {
     this.words = [];
     this.foulWords = [];
     this.foulSet = new Set();
+    this.pokemonWords = [];
+    this.mineralWords = [];
+    this.rareWords = [];
 
     // Per-letter rarity weights for coverage scoring
     this.letterWeights = new Array(26).fill(1);
 
     // Modes
     this.paused = false;
+    this.instantMode = false;
     this.foulMode = false;
     this.coverageMode = false;
     this.mistakesEnabled = false;
     this.autoSuicide = false;
+    this.hyphenMode = false;
+    this.containsMode = false;
+    this.containsText = "";
+    this.pokemonMode = false;
+    this.mineralsMode = false;
+    this.rareMode = false;
 
     // Length (self)
     this.lengthMode = false;
@@ -107,9 +117,18 @@ class Game {
     this.specLengthMode = false;
     this.specTargetLen = 8;
     this.specFoulMode = false;
+    this.specHyphenMode = false;
+    this.specContainsMode = false;
+    this.specContainsText = "";
+    this.specPokemonMode = false;
+    this.specMineralsMode = false;
+    this.specRareMode = false;
 
     // Suggestions
     this.suggestionsLimit = 5;
+
+    // Priority order (highest priority first)
+    this.priorityOrder = ["contains", "foul", "coverage", "hyphen", "length"];
 
     // Timing
     this.speed = 5;               // 1..12 (fastest unchanged; slowest slower)
@@ -142,11 +161,21 @@ class Game {
     this.lastLenCapAppliedSelf = false;
     this.lastLenCapRelaxedSelf = false;
     this.lastLenSuppressedByFoulSelf = false;
+    this.lastContainsFallbackSelf = false;
+    this.lastHyphenFallbackSelf = false;
+    this.lastPokemonFallbackSelf = false;
+    this.lastMineralsFallbackSelf = false;
+    this.lastRareFallbackSelf = false;
     this.lastFoulFallbackSpectator = false;
     this.lastLenFallbackSpectator = false;
     this.lastLenCapAppliedSpectator = false;
     this.lastLenCapRelaxedSpectator = false;
     this.lastLenSuppressedByFoulSpectator = false;
+    this.lastContainsFallbackSpectator = false;
+    this.lastHyphenFallbackSpectator = false;
+    this.lastPokemonFallbackSpectator = false;
+    this.lastMineralsFallbackSpectator = false;
+    this.lastRareFallbackSpectator = false;
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
@@ -154,6 +183,9 @@ class Game {
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
     this._targetsManualOverride = false;
+
+    // Tallies persistence hook
+    this._onTalliesChanged = null;
 
     // HUD lists
     this.lastTopPicksSelf = [];
@@ -266,9 +298,15 @@ class Game {
     const base = this.apiBase();
     const mainUrl = `${base}/words.php?lang=${encodeURIComponent(lang)}&list=main`;
     const foulUrl = `${base}/words.php?lang=${encodeURIComponent(lang)}&list=foul`;
+    const pokemonUrl = `${base}/words.php?lang=${encodeURIComponent(lang)}&list=pok`;
+    const mineralsUrl = `${base}/words.php?lang=${encodeURIComponent(lang)}&list=minerals`;
+    const rareUrl = `${base}/words.php?lang=${encodeURIComponent(lang)}&list=rare`;
 
     let mainTxt = '';
     let foulTxt = '';
+    let pokemonTxt = '';
+    let mineralsTxt = '';
+    let rareTxt = '';
 
     try {
       mainTxt = await this.extFetch(mainUrl);
@@ -287,8 +325,29 @@ class Game {
       }
     }
 
+    try {
+      pokemonTxt = await this.extFetch(pokemonUrl);
+    } catch (err) {
+      console.warn('[BombPartyShark] Failed to load Pokémon word list from API for', lang, err);
+    }
+
+    try {
+      mineralsTxt = await this.extFetch(mineralsUrl);
+    } catch (err) {
+      console.warn('[BombPartyShark] Failed to load minerals word list from API for', lang, err);
+    }
+
+    try {
+      rareTxt = await this.extFetch(rareUrl);
+    } catch (err) {
+      console.warn('[BombPartyShark] Failed to load rare word list from API for', lang, err);
+    }
+
     let words = toWordArrayFromText(mainTxt);
     let foulWords = toWordArrayFromText(foulTxt);
+    let pokemonWords = toWordArrayFromText(pokemonTxt);
+    let mineralWords = toWordArrayFromText(mineralsTxt);
+    let rareWords = toWordArrayFromText(rareTxt);
 
     if (!words.length) {
       const localPath = LOCAL_MAIN_LISTS[lang] || LOCAL_MAIN_LISTS['en'];
@@ -315,6 +374,9 @@ class Game {
       lang,
       words,
       foulWords,
+      pokemonWords,
+      mineralWords,
+      rareWords,
       letterWeights,
       fetchedAt: Date.now()
     };
@@ -326,6 +388,9 @@ class Game {
     }
     this.words = data.words.slice();
     this.foulWords = (data.foulWords || []).slice();
+    this.pokemonWords = (data.pokemonWords || []).slice();
+    this.mineralWords = (data.mineralWords || []).slice();
+    this.rareWords = (data.rareWords || []).slice();
     this.foulSet = new Set(this.foulWords);
     this.letterWeights = (data.letterWeights || new Array(26).fill(1)).slice(0, 26);
     if (this.letterWeights.length < 26) {
@@ -371,17 +436,30 @@ class Game {
   setSuggestionsLimit(v) { this.suggestionsLimit = Math.max(1, Math.min(10, Math.floor(v))); }
 
   togglePause() { this.paused = !this.paused; }
+  toggleInstantMode() { this.instantMode = !this.instantMode; }
   toggleFoulMode() { this.foulMode = !this.foulMode; }
   toggleCoverageMode() { this.coverageMode = !this.coverageMode; }
   toggleMistakes() { this.mistakesEnabled = !this.mistakesEnabled; }
   toggleAutoSuicide() { this.autoSuicide = !this.autoSuicide; }
+  toggleHyphenMode() { this.hyphenMode = !this.hyphenMode; }
+  togglePokemonMode() { this.pokemonMode = !this.pokemonMode; }
+  toggleMineralsMode() { this.mineralsMode = !this.mineralsMode; }
+  toggleRareMode() { this.rareMode = !this.rareMode; }
 
   toggleLengthMode() { this.lengthMode = !this.lengthMode; }
   setTargetLen(n) { this.targetLen = Math.max(3, Math.min(20, Math.floor(n))); }
+  toggleContainsMode() { this.containsMode = !this.containsMode; }
+  setContainsText(t) { this.containsText = (t ?? ""); }
 
   toggleSpecLength() { this.specLengthMode = !this.specLengthMode; }
   setSpecTargetLen(n) { this.specTargetLen = Math.max(3, Math.min(20, Math.floor(n))); }
   toggleSpecFoul() { this.specFoulMode = !this.specFoulMode; }
+  toggleSpecHyphenMode() { this.specHyphenMode = !this.specHyphenMode; }
+  toggleSpecContainsMode() { this.specContainsMode = !this.specContainsMode; }
+  setSpecContainsText(t) { this.specContainsText = (t ?? ""); }
+  toggleSpecPokemonMode() { this.specPokemonMode = !this.specPokemonMode; }
+  toggleSpecMineralsMode() { this.specMineralsMode = !this.specMineralsMode; }
+  toggleSpecRareMode() { this.specRareMode = !this.specRareMode; }
 
   setPreMsgEnabled(b) { this.preMsgEnabled = !!b; }
   setPreMsgText(t) { this.preMsgText = (t || ""); }
@@ -393,6 +471,45 @@ class Game {
     this.mistakesProb = isFinite(n) ? n : 0.08;
   }
 
+  priorityFeatures() { return ["contains", "foul", "coverage", "hyphen", "length"]; }
+
+  _ensurePriorityOrder(order = this.priorityOrder) {
+    const base = this.priorityFeatures();
+    const seen = new Set();
+    const final = [];
+    if (Array.isArray(order)) {
+      for (const key of order) {
+        if (typeof key !== "string") continue;
+        const lower = key.toLowerCase();
+        if (!base.includes(lower)) continue;
+        if (seen.has(lower)) continue;
+        final.push(lower);
+        seen.add(lower);
+      }
+    }
+    for (const key of base) {
+      if (!seen.has(key)) {
+        final.push(key);
+        seen.add(key);
+      }
+    }
+    this.priorityOrder = final;
+    return final;
+  }
+
+  setPriorityOrder(order) {
+    this._ensurePriorityOrder(order);
+  }
+
+  setPriorityPosition(key, position) {
+    const base = this.priorityFeatures();
+    const normalized = (typeof key === "string" && base.includes(key.toLowerCase())) ? key.toLowerCase() : base[0];
+    const order = this._ensurePriorityOrder().filter(item => item !== normalized);
+    const idx = Math.max(0, Math.min(base.length - 1, Number.isFinite(position) ? Math.floor(position) : 0));
+    order.splice(idx, 0, normalized);
+    this.priorityOrder = order;
+  }
+
   setExcludeEnabled(b) {
     this.excludeEnabled = !!b;
     if (!this._targetsManualOverride) this.recomputeTargets();
@@ -402,7 +519,17 @@ class Game {
     this._targetsManualOverride = false;
     this.recomputeTargets();
   }
-  resetCoverage() { this.coverageCounts.fill(0); this._roundFailed.clear(); }
+
+  setTalliesChangedCallback(fn) {
+    this._onTalliesChanged = typeof fn === 'function' ? fn : null;
+  }
+
+  _emitTalliesChanged() {
+    if (typeof this._onTalliesChanged === 'function') {
+      try { this._onTalliesChanged(); } catch (err) { console.warn('[BombPartyShark] tally listener failed', err); }
+    }
+  }
+  resetCoverage() { this.coverageCounts.fill(0); this._roundFailed.clear(); this._emitTalliesChanged(); }
 
   setCoverageCount(idx, value) {
     const n = Math.floor(Number(value));
@@ -412,6 +539,7 @@ class Game {
     const max = target;
     const clamped = Math.max(0, Math.min(max, n));
     this.coverageCounts[idx] = clamped;
+    this._emitTalliesChanged();
   }
 
   adjustCoverageCount(idx, delta) {
@@ -429,6 +557,7 @@ class Game {
       this.coverageCounts[idx] = clamped;
     }
     this._targetsManualOverride = true;
+    this._emitTalliesChanged();
   }
 
   adjustTargetCount(idx, delta) {
@@ -447,6 +576,7 @@ class Game {
       }
     }
     this._targetsManualOverride = true;
+    this._emitTalliesChanged();
   }
 
   recomputeTargets() {
@@ -538,32 +668,6 @@ class Game {
     return score + Math.random() * 0.01;
   }
 
-  _applyLenExact(words, len, outFallbackFlagRef) {
-    const exact = words.filter(w => w.length === len);
-    if (exact.length) return exact;
-    let d = 1;
-    while (d <= 6) {
-      const alt = words.filter(w => w.length === len - d || w.length === len + d);
-      if (alt.length) {
-        if (outFallbackFlagRef) outFallbackFlagRef.value = true;
-        return alt;
-      }
-      d++;
-    }
-    if (outFallbackFlagRef) outFallbackFlagRef.value = true;
-    return words;
-  }
-
-  _applyLenCap(words, maxLen, outCapAppliedRef, outCapRelaxedRef) {
-    let filtered = words.filter(w => w.length <= maxLen);
-    if (filtered.length) {
-      if (outCapAppliedRef) outCapAppliedRef.value = true;
-      return filtered;
-    }
-    if (outCapRelaxedRef) outCapRelaxedRef.value = true;
-    return words;
-  }
-
   _pickCandidatesBase(syllable, pool) {
     const syl = (syllable || "").toLowerCase();
     if (!syl) return [];
@@ -571,171 +675,292 @@ class Game {
     return pool.filter(w => w.includes(syl));
   }
 
-  // -------- candidate selection (self) --------
-  getTopCandidates(syllable, limit) {
-    const lim = Math.max(1, Math.min(10, limit|0));
-    this.flagsRoundSelf = this.selfRound;
-    this.lastFoulFallbackSelf = false;
-    this.lastLenFallbackSelf = false;
-    this.lastLenCapAppliedSelf = false;
-    this.lastLenCapRelaxedSelf = false;
-    this.lastLenSuppressedByFoulSelf = false;
+  _generateCandidates(context, syllable, limit) {
+    const lim = Math.max(1, Math.min(10, limit | 0));
+    const syl = (syllable || "").toLowerCase();
+    if (!syl) {
+      return { orderedWords: [], limitedWords: [], displayEntries: [], flags: {} };
+    }
 
-    const foulPoolRaw = this._pickCandidatesBase(syllable, this.foulWords);
-    const mainPoolRaw = this._pickCandidatesBase(syllable, this.words);
+    const isSelf = context === 'self';
+    const coverageMode = isSelf ? this.coverageMode : false;
+    const lengthMode = isSelf ? this.lengthMode : this.specLengthMode;
+    const targetLen = isSelf ? this.targetLen : this.specTargetLen;
+    const foulMode = isSelf ? this.foulMode : this.specFoulMode;
+    const pokemonMode = isSelf ? this.pokemonMode : this.specPokemonMode;
+    const mineralsMode = isSelf ? this.mineralsMode : this.specMineralsMode;
+    const rareMode = isSelf ? this.rareMode : this.specRareMode;
+    const hyphenMode = isSelf ? this.hyphenMode : this.specHyphenMode;
+    const containsMode = isSelf ? this.containsMode : this.specContainsMode;
+    const containsNeedleRaw = (isSelf ? this.containsText : this.specContainsText) || '';
+    const containsNeedle = containsNeedleRaw.trim().toLowerCase();
+    const containsActive = containsMode && containsNeedle.length > 0;
 
-    const foulEntries = [];
-    const foulUsed = new Set();
-    const mainEntries = [];
+    const foulPool = foulMode ? this._pickCandidatesBase(syllable, this.foulWords) : [];
+    const pokemonPool = pokemonMode ? this._pickCandidatesBase(syllable, this.pokemonWords) : [];
+    const mineralsPool = mineralsMode ? this._pickCandidatesBase(syllable, this.mineralWords) : [];
+    const rarePool = rareMode ? this._pickCandidatesBase(syllable, this.rareWords) : [];
+    const mainPool = this._pickCandidatesBase(syllable, this.words);
 
-    const shuffled = (arr) => {
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
+    const candidateMap = new Map();
+    const addWords = (words, source) => {
+      if (!Array.isArray(words)) return;
+      for (const rawWord of words) {
+        const word = (rawWord || '').toString().trim();
+        if (!word) continue;
+        const key = word.toLowerCase();
+        if (!candidateMap.has(key)) {
+          candidateMap.set(key, { word, sources: new Set([source]) });
+        } else {
+          candidateMap.get(key).sources.add(source);
+        }
       }
-      return arr;
     };
 
-    if (this.foulMode) {
-      if (!foulPoolRaw.length) {
-        this.lastFoulFallbackSelf = true;
-      } else {
-        const foulPool = this.coverageMode
-          ? foulPoolRaw.slice().sort((a, b) => this._coverageScore(b) - this._coverageScore(a))
-          : shuffled(foulPoolRaw.slice());
-        foulPool.forEach(word => { foulEntries.push({ word, tone: 'foul' }); foulUsed.add(word); });
-      }
+    addWords(mainPool, 'main');
+    if (foulMode) addWords(foulPool, 'foul');
+    if (pokemonMode) addWords(pokemonPool, 'pokemon');
+    if (mineralsMode) addWords(mineralsPool, 'minerals');
+    if (rareMode) addWords(rarePool, 'rare');
+
+    const flags = {
+      foulFallback: foulMode && foulPool.length === 0,
+      pokemonFallback: pokemonMode && pokemonPool.length === 0,
+      mineralsFallback: mineralsMode && mineralsPool.length === 0,
+      rareFallback: rareMode && rarePool.length === 0,
+      lenFallback: false,
+      lenCapApplied: false,
+      lenCapRelaxed: false,
+      lenSuppressed: false,
+      containsFallback: false,
+      hyphenFallback: false
+    };
+
+    if (!candidateMap.size) {
+      return { orderedWords: [], limitedWords: [], displayEntries: [], flags };
     }
 
-    const remainingPool = mainPoolRaw.filter(word => !foulUsed.has(word));
+    const specialPriority = ['foul', 'pokemon', 'minerals', 'rare'];
+    const specialRanks = { foul: 4, pokemon: 3, minerals: 2, rare: 1 };
 
-    if (this.coverageMode) {
-      let ranked = remainingPool.slice();
-      if (this.lengthMode) {
-        const fa = { value: false }, fr = { value: false };
-        ranked = this._applyLenCap(ranked, this.targetLen, fa, fr);
-        this.lastLenCapAppliedSelf = fa.value;
-        this.lastLenCapRelaxedSelf = fr.value;
-      }
-      ranked = ranked.sort((a, b) => this._coverageScore(b) - this._coverageScore(a));
+    let containsMatches = 0;
+    let hyphenMatches = 0;
+    let exactCount = 0;
+    let nearCount = 0;
+    let withinCapCount = 0;
 
-      ranked.forEach(word => {
-        let tone = 'default';
-        if (this.lengthMode) {
-          tone = word.length === this.targetLen ? 'lengthExact' : 'lengthFlex';
+    const candidates = Array.from(candidateMap.values()).map(info => {
+      const word = info.word;
+      const lower = word.toLowerCase();
+      let specialType = null;
+      let specialRank = 0;
+      for (const type of specialPriority) {
+        const enabled = (type === 'foul' ? foulMode : type === 'pokemon' ? pokemonMode : type === 'minerals' ? mineralsMode : rareMode);
+        if (!enabled) continue;
+        if (info.sources.has(type)) {
+          specialType = type;
+          specialRank = specialRanks[type];
+          break;
         }
-        mainEntries.push({ word, tone });
-      });
-    } else if (this.lengthMode) {
-      const exact = remainingPool.filter(w => w.length === this.targetLen);
-      const flex = [];
-      if (exact.length) {
-        shuffled(exact);
       }
-      let usedFallback = false;
-      for (let d = 1; d <= 6; d++) {
-        if (exact.length >= lim) break;
-        const group = remainingPool.filter(w => w.length === this.targetLen - d || w.length === this.targetLen + d);
-        if (!group.length) continue;
-        usedFallback = true;
-        shuffled(group);
-        group.forEach(word => flex.push(word));
+
+      const containsIdx = containsActive ? lower.indexOf(containsNeedle) : -1;
+      const containsMatch = containsIdx >= 0 ? 1 : 0;
+      if (containsMatch) containsMatches++;
+
+      const hyphenMatch = hyphenMode && word.includes('-') ? 1 : 0;
+      if (hyphenMatch) hyphenMatches++;
+
+      let lengthCategory = 0;
+      let lengthTone = null;
+      let lengthDistance = Math.abs(word.length - targetLen);
+      if (lengthMode) {
+        if (coverageMode) {
+          if (word.length <= targetLen) {
+            lengthCategory = 2;
+            withinCapCount++;
+          }
+        } else {
+          if (word.length === targetLen) {
+            lengthCategory = 2;
+            lengthTone = 'lengthExact';
+            exactCount++;
+          } else if (Math.abs(word.length - targetLen) <= 6) {
+            lengthCategory = 1;
+            lengthTone = 'lengthFlex';
+            nearCount++;
+          }
+        }
       }
-      if (!exact.length && flex.length) this.lastLenFallbackSelf = true;
-      else if (!exact.length && !flex.length) this.lastLenFallbackSelf = true;
-      else if (usedFallback) this.lastLenFallbackSelf = true;
 
-      exact.forEach(word => mainEntries.push({ word, tone: 'lengthExact' }));
-      flex.forEach(word => mainEntries.push({ word, tone: 'lengthFlex' }));
+      const coverageScore = coverageMode ? this._coverageScore(lower) : 0;
 
-      const usedWords = new Set([...exact, ...flex]);
-      const leftovers = remainingPool.filter(w => !usedWords.has(w));
-      shuffled(leftovers).forEach(word => mainEntries.push({ word, tone: 'default' }));
-    } else {
-      shuffled(remainingPool).forEach(word => mainEntries.push({ word, tone: 'default' }));
+      return {
+        word,
+        lower,
+        specialType,
+        specialRank,
+        containsMatch,
+        containsIdx,
+        hyphenMatch,
+        lengthCategory,
+        lengthTone,
+        lengthDistance,
+        coverageScore,
+        tone: 'default'
+      };
+    });
+
+    if (containsActive && containsMatches === 0) flags.containsFallback = true;
+    if (hyphenMode && hyphenMatches === 0) flags.hyphenFallback = true;
+
+    let workingCandidates = candidates;
+    if (coverageMode && lengthMode) {
+      const withinCap = candidates.filter(c => c.word.length <= targetLen);
+      if (withinCap.length) {
+        workingCandidates = withinCap;
+        flags.lenCapApplied = true;
+      } else {
+        flags.lenCapRelaxed = true;
+      }
     }
 
-    const combinedEntries = foulEntries.concat(mainEntries);
-    const candidatePool = combinedEntries.map(entry => entry.word);
+    const priority = this._ensurePriorityOrder();
+    const comparators = {
+      contains: (a, b) => {
+        if (!containsActive) return 0;
+        const diff = b.containsMatch - a.containsMatch;
+        if (diff !== 0) return diff;
+        if (a.containsMatch && b.containsMatch) {
+          return a.containsIdx - b.containsIdx;
+        }
+        return 0;
+      },
+      foul: (a, b) => {
+        if (!foulMode && !pokemonMode && !mineralsMode && !rareMode) return 0;
+        return (b.specialRank - a.specialRank);
+      },
+      coverage: (a, b) => {
+        if (!coverageMode) return 0;
+        const diff = b.coverageScore - a.coverageScore;
+        if (diff !== 0) return diff;
+        return a.word.length - b.word.length;
+      },
+      hyphen: (a, b) => {
+        if (!hyphenMode) return 0;
+        return (b.hyphenMatch - a.hyphenMatch);
+      },
+      length: (a, b) => {
+        if (!lengthMode) return 0;
+        const diff = b.lengthCategory - a.lengthCategory;
+        if (diff !== 0) return diff;
+        if (!coverageMode && a.lengthCategory > 0 && b.lengthCategory > 0) {
+          const closeDiff = a.lengthDistance - b.lengthDistance;
+          if (closeDiff !== 0) return closeDiff;
+        }
+        if (coverageMode && a.word.length !== b.word.length) {
+          return a.word.length - b.word.length;
+        }
+        return 0;
+      }
+    };
 
-    if (this.lengthMode && this.foulMode && foulEntries.length >= lim) {
-      this.lastLenSuppressedByFoulSelf = true;
+    workingCandidates = workingCandidates.sort((a, b) => {
+      for (const feature of priority) {
+        const cmp = (comparators[feature] || (() => 0))(a, b);
+        if (cmp !== 0) return cmp;
+      }
+      if (b.coverageScore !== a.coverageScore) return b.coverageScore - a.coverageScore;
+      if (a.word.length !== b.word.length) return a.word.length - b.word.length;
+      return a.word.localeCompare(b.word);
+    });
+
+    for (const candidate of workingCandidates) {
+      let tone = null;
+      for (const feature of priority) {
+        if (feature === 'contains' && containsActive && candidate.containsMatch) { tone = 'contains'; break; }
+        if (feature === 'foul' && candidate.specialRank > 0) { tone = candidate.specialType || 'default'; break; }
+        if (feature === 'hyphen' && hyphenMode && candidate.hyphenMatch) { tone = 'hyphen'; break; }
+        if (feature === 'length' && lengthMode && !coverageMode) {
+          if (candidate.lengthCategory === 2) { tone = 'lengthExact'; break; }
+          if (candidate.lengthCategory === 1) { tone = 'lengthFlex'; break; }
+        }
+      }
+      if (!tone) {
+        if (candidate.specialRank > 0) tone = candidate.specialType;
+        else if (lengthMode && !coverageMode) {
+          if (candidate.lengthCategory === 2) tone = 'lengthExact';
+          else if (candidate.lengthCategory === 1) tone = 'lengthFlex';
+        }
+      }
+      candidate.tone = tone || 'default';
     }
 
-    this._roundPool = candidatePool.slice();
-    this.lastTopPicksSelfDisplay = combinedEntries.slice(0, lim);
-    return candidatePool.slice(0, lim);
+    if (lengthMode && !coverageMode) {
+      const flexUsed = workingCandidates.some(c => c.lengthCategory === 1);
+      if (exactCount === 0 || (exactCount < lim && flexUsed)) {
+        flags.lenFallback = true;
+      }
+    }
+
+    if (lengthMode && (foulMode || pokemonMode || mineralsMode || rareMode)) {
+      const specialCount = workingCandidates.filter(c => c.specialRank > 0).length;
+      if (specialCount >= lim && !coverageMode) {
+        flags.lenSuppressed = true;
+      }
+    }
+
+    const orderedWords = workingCandidates.map(c => c.word);
+    const displayEntries = workingCandidates.slice(0, lim).map(c => ({ word: c.word, tone: c.tone }));
+
+    return {
+      orderedWords,
+      limitedWords: orderedWords.slice(0, lim),
+      displayEntries,
+      flags
+    };
+  }
+
+  // -------- candidate selection (self) --------
+  getTopCandidates(syllable, limit) {
+    const result = this._generateCandidates('self', syllable, limit);
+    this.flagsRoundSelf = this.selfRound;
+    this.lastFoulFallbackSelf = !!result.flags.foulFallback;
+    this.lastPokemonFallbackSelf = !!result.flags.pokemonFallback;
+    this.lastMineralsFallbackSelf = !!result.flags.mineralsFallback;
+    this.lastRareFallbackSelf = !!result.flags.rareFallback;
+    this.lastLenFallbackSelf = !!result.flags.lenFallback;
+    this.lastLenCapAppliedSelf = !!result.flags.lenCapApplied;
+    this.lastLenCapRelaxedSelf = !!result.flags.lenCapRelaxed;
+    this.lastLenSuppressedByFoulSelf = !!result.flags.lenSuppressed;
+    this.lastContainsFallbackSelf = !!result.flags.containsFallback;
+    this.lastHyphenFallbackSelf = !!result.flags.hyphenFallback;
+
+    this._roundPool = result.orderedWords.slice();
+    this.lastTopPicksSelf = result.limitedWords.slice();
+    this.lastTopPicksSelfDisplay = result.displayEntries.slice();
+    return this.lastTopPicksSelf;
   }
 
   // -------- spectator suggestions --------
   generateSpectatorSuggestions(syllable, limit) {
-    const lim = Math.max(1, Math.min(10, limit|0));
+    const result = this._generateCandidates('spectator', syllable, limit);
     this.flagsRoundSpectator = this.spectatorRound;
     this.lastSpectatorSyllable = syllable;
 
-    this.lastFoulFallbackSpectator = false;
-    this.lastLenFallbackSpectator = false;
-    this.lastLenCapAppliedSpectator = false;
-    this.lastLenCapRelaxedSpectator = false;
-    this.lastLenSuppressedByFoulSpectator = false;
+    this.lastFoulFallbackSpectator = !!result.flags.foulFallback;
+    this.lastPokemonFallbackSpectator = !!result.flags.pokemonFallback;
+    this.lastMineralsFallbackSpectator = !!result.flags.mineralsFallback;
+    this.lastRareFallbackSpectator = !!result.flags.rareFallback;
+    this.lastLenFallbackSpectator = !!result.flags.lenFallback;
+    this.lastLenCapAppliedSpectator = !!result.flags.lenCapApplied;
+    this.lastLenCapRelaxedSpectator = !!result.flags.lenCapRelaxed;
+    this.lastLenSuppressedByFoulSpectator = !!result.flags.lenSuppressed;
+    this.lastContainsFallbackSpectator = !!result.flags.containsFallback;
+    this.lastHyphenFallbackSpectator = !!result.flags.hyphenFallback;
 
-    const foulPoolRaw = this._pickCandidatesBase(syllable, this.foulWords);
-    const mainPoolRaw = this._pickCandidatesBase(syllable, this.words);
-
-    const shuffled = (arr) => {
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
-      return arr;
-    };
-
-    const foulEntries = [];
-    const foulUsed = new Set();
-    if (this.specFoulMode) {
-      if (!foulPoolRaw.length) {
-        this.lastFoulFallbackSpectator = true;
-      } else {
-        shuffled(foulPoolRaw.slice()).forEach(word => { foulEntries.push({ word, tone: 'foul' }); foulUsed.add(word); });
-      }
-    }
-
-    const mainEntries = [];
-    const nonFoulPool = mainPoolRaw.filter(word => !foulUsed.has(word));
-    if (this.specLengthMode) {
-      const exact = nonFoulPool.filter(w => w.length === this.specTargetLen);
-      shuffled(exact);
-      const flex = [];
-      let usedFallback = false;
-      for (let d = 1; d <= 6; d++) {
-        if (exact.length + flex.length >= lim) break;
-        const group = nonFoulPool.filter(w => w.length === this.specTargetLen - d || w.length === this.specTargetLen + d);
-        if (!group.length) continue;
-        usedFallback = true;
-        shuffled(group);
-        group.forEach(word => flex.push(word));
-      }
-      if ((!exact.length && flex.length) || (!exact.length && !flex.length) || usedFallback) {
-        this.lastLenFallbackSpectator = true;
-      }
-
-      exact.forEach(word => mainEntries.push({ word, tone: 'lengthExact' }));
-      flex.forEach(word => mainEntries.push({ word, tone: 'lengthFlex' }));
-
-      const usedWords = new Set([...exact, ...flex]);
-      const leftovers = nonFoulPool.filter(w => !usedWords.has(w));
-      shuffled(leftovers).forEach(word => mainEntries.push({ word, tone: 'default' }));
-    } else {
-      shuffled(nonFoulPool.slice()).forEach(word => mainEntries.push({ word, tone: 'default' }));
-    }
-
-    const combined = foulEntries.concat(mainEntries);
-    if (this.specFoulMode && foulEntries.length >= lim && this.specLengthMode) {
-      this.lastLenSuppressedByFoulSpectator = true;
-    }
-
-    this.spectatorSuggestionsDisplay = combined.slice(0, lim);
-    this.spectatorSuggestions = combined.map(entry => entry.word).slice(0, lim);
+    this.spectatorSuggestionsDisplay = result.displayEntries.slice();
+    this.spectatorSuggestions = result.limitedWords.slice();
     return this.spectatorSuggestions;
   }
 
@@ -821,18 +1046,37 @@ class Game {
     this._emitInputEvent(input);
 
     const perCharDelay = this._charDelayMs();
+    const instant = !!this.instantMode;
 
     if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
-      await this._typeTextSequence(input, this.preMsgText, perCharDelay);
-      await this._sleep(Math.max(80, perCharDelay * 4));
-      input.value = "";
-      this._emitInputEvent(input);
+      if (instant) {
+        input.value = this.preMsgText;
+        this._emitInputEvent(input);
+        await this._sleep(Math.max(40, perCharDelay));
+        input.value = "";
+        this._emitInputEvent(input);
+      } else {
+        await this._typeTextSequence(input, this.preMsgText, perCharDelay);
+        await this._sleep(Math.max(80, perCharDelay * 4));
+        input.value = "";
+        this._emitInputEvent(input);
+      }
     }
 
-    await this._typeTextSequence(input, word, perCharDelay);
+    if (instant) {
+      input.value = word;
+      this._emitInputEvent(input);
+    } else {
+      await this._typeTextSequence(input, word, perCharDelay);
+    }
 
     if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
-      await this._typeTextSequence(input, this.postfixText, perCharDelay);
+      if (instant) {
+        input.value = `${input.value}${this.postfixText}`;
+        this._emitInputEvent(input);
+      } else {
+        await this._typeTextSequence(input, this.postfixText, perCharDelay);
+      }
     }
 
     const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
@@ -860,12 +1104,14 @@ class Game {
       }
     });
     this._maybeResetCoverageOnComplete();
+    this._emitTalliesChanged();
   }
 
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
     if (!myTurn) return;
     if (word) this._roundFailed.add((word || "").toLowerCase());
+    if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});
   }
