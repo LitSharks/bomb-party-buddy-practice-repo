@@ -153,6 +153,7 @@ class Game {
     this.excludeEnabled = false;
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
+    this._targetsManualOverride = false;
 
     // HUD lists
     this.lastTopPicksSelf = [];
@@ -392,9 +393,61 @@ class Game {
     this.mistakesProb = isFinite(n) ? n : 0.08;
   }
 
-  setExcludeEnabled(b) { this.excludeEnabled = !!b; this.recomputeTargets(); }
-  setExcludeSpec(spec) { this.excludeSpec = (spec || ""); this.recomputeTargets(); }
+  setExcludeEnabled(b) {
+    this.excludeEnabled = !!b;
+    if (!this._targetsManualOverride) this.recomputeTargets();
+  }
+  setExcludeSpec(spec) {
+    this.excludeSpec = (spec || "");
+    this._targetsManualOverride = false;
+    this.recomputeTargets();
+  }
   resetCoverage() { this.coverageCounts.fill(0); this._roundFailed.clear(); }
+
+  setCoverageCount(idx, value) {
+    const n = Math.floor(Number(value));
+    if (!Number.isFinite(n)) return;
+    if (idx < 0 || idx >= 26) return;
+    const target = Math.max(0, this.targetCounts[idx] || 0);
+    const max = target;
+    const clamped = Math.max(0, Math.min(max, n));
+    this.coverageCounts[idx] = clamped;
+  }
+
+  adjustCoverageCount(idx, delta) {
+    const current = this.coverageCounts[idx] || 0;
+    this.setCoverageCount(idx, current + delta);
+  }
+
+  setTargetCount(idx, value) {
+    const n = Math.floor(Number(value));
+    if (!Number.isFinite(n)) return;
+    if (idx < 0 || idx >= 26) return;
+    const clamped = Math.max(0, Math.min(99, n));
+    this.targetCounts[idx] = clamped;
+    if ((this.coverageCounts[idx] || 0) > clamped) {
+      this.coverageCounts[idx] = clamped;
+    }
+    this._targetsManualOverride = true;
+  }
+
+  adjustTargetCount(idx, delta) {
+    const current = this.targetCounts[idx] || 0;
+    this.setTargetCount(idx, current + delta);
+  }
+
+  setAllTargetCounts(value) {
+    const n = Math.floor(Number(value));
+    if (!Number.isFinite(n)) return;
+    const clamped = Math.max(0, Math.min(99, n));
+    for (let i = 0; i < 26; i++) {
+      this.targetCounts[i] = clamped;
+      if ((this.coverageCounts[i] || 0) > clamped) {
+        this.coverageCounts[i] = clamped;
+      }
+    }
+    this._targetsManualOverride = true;
+  }
 
   recomputeTargets() {
     const tgt = new Array(26).fill(1);
@@ -425,6 +478,7 @@ class Game {
       }
     }
     this.targetCounts = tgt;
+    this._targetsManualOverride = false;
   }
 
 

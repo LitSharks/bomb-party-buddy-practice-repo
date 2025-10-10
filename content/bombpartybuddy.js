@@ -99,6 +99,7 @@ function createOverlay(game) {
 
   // default to Words
   let active = "Words";
+  let coverageEditMode = "off";
   const setActive = (name) => {
     active = name;
     mainSec.style.display  = name==="Main" ? "block" : "none";
@@ -107,6 +108,7 @@ function createOverlay(game) {
     mainTabBtn._setActive(name==="Main");
     covTabBtn._setActive(name==="Coverage");
     wordsTabBtn._setActive(name==="Words");
+    if (name !== "Coverage") coverageEditMode = "off";
   };
   mainTabBtn.onclick = () => setActive("Main");
   covTabBtn.onclick  = () => setActive("Coverage");
@@ -356,13 +358,110 @@ function createOverlay(game) {
   toggleRefs.push(exTop);
   coverageCard.appendChild(exTop);
 
-  const help = document.createElement("div");
-  help.innerHTML = "Format examples: <b>a3 f2 c8 x0 z0</b> (0 = exclude). You can also set <b>majority5</b> to set a default for all letters; explicit tokens like <b>a3</b> override the majority.";
-  Object.assign(help.style, { color:"rgba(255,255,255,0.78)", fontSize:"12px" });
-  coverageCard.appendChild(help);
+  const coverageEditButtons = [];
+  const coverageCells = [];
 
-  const exInputWrap = textInput("a3 f2 c8 x0 z0  majority0", game.excludeSpec || "x0 z0", (v)=>game.setExcludeSpec(v), { theme:"chrome" });
-  coverageCard.appendChild(exInputWrap);
+  const editControls = document.createElement("div");
+  Object.assign(editControls.style, { display:"grid", gap:"6px", marginTop:"8px" });
+  coverageCard.appendChild(editControls);
+
+  const editLabel = document.createElement("div");
+  editLabel.textContent = "Editing mode";
+  Object.assign(editLabel.style, { fontWeight:"600", color:"rgba(226,232,240,0.9)" });
+  editControls.appendChild(editLabel);
+
+  const editButtonsRow = document.createElement("div");
+  Object.assign(editButtonsRow.style, { display:"flex", flexWrap:"wrap", gap:"8px" });
+  editControls.appendChild(editButtonsRow);
+
+  const editModes = [
+    { key:"off", label:"Off" },
+    { key:"tally", label:"Edit tallies" },
+    { key:"goal", label:"Edit goals" }
+  ];
+  const setCoverageEditMode = (mode) => {
+    const next = editModes.some(m => m.key === mode) ? mode : "off";
+    if (coverageEditMode === next) return;
+    coverageEditMode = next;
+    render();
+  };
+  if (coverageToggle?._btn) coverageToggle._btn.addEventListener("click", () => { coverageEditMode = "off"; });
+  if (exTop?._btn) exTop._btn.addEventListener("click", () => { coverageEditMode = "off"; });
+  editModes.forEach(cfg => {
+    const btn = document.createElement("button");
+    btn.dataset.label = cfg.label;
+    btn.dataset.mode = "label";
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (coverageEditMode === cfg.key) {
+        setCoverageEditMode("off");
+      } else {
+        setCoverageEditMode(cfg.key);
+      }
+    });
+    editButtonsRow.appendChild(btn);
+    coverageEditButtons.push({ key: cfg.key, btn });
+  });
+
+  const editNotice = document.createElement("div");
+  Object.assign(editNotice.style, {
+    display:"none",
+    background:"rgba(15,118,110,0.22)",
+    border:"1px solid rgba(20,184,166,0.45)",
+    borderRadius:"10px",
+    padding:"8px 10px",
+    fontSize:"12px",
+    color:"#ccfbf1",
+    lineHeight:"1.4"
+  });
+  coverageCard.appendChild(editNotice);
+
+  const setAllWrap = document.createElement("div");
+  Object.assign(setAllWrap.style, { display:"flex", flexWrap:"wrap", gap:"8px", alignItems:"center", marginTop:"6px" });
+  const setAllLabel = document.createElement("span");
+  setAllLabel.textContent = "Set all goals to:";
+  Object.assign(setAllLabel.style, { fontWeight:"600" });
+  setAllWrap.appendChild(setAllLabel);
+  const setAllInput = document.createElement("input");
+  Object.assign(setAllInput, { type:"number", min:"0", max:"99", value:"1" });
+  Object.assign(setAllInput.style, {
+    width:"72px",
+    padding:"6px 8px",
+    borderRadius:"8px",
+    border:"1px solid rgba(148,163,184,0.45)",
+    background:"rgba(15,23,42,0.6)",
+    color:"#e2e8f0",
+    fontWeight:"600"
+  });
+  setAllWrap.appendChild(setAllInput);
+  const setAllBtn = document.createElement("button");
+  setAllBtn.textContent = "Apply";
+  Object.assign(setAllBtn.style, {
+    padding:"6px 12px",
+    borderRadius:"8px",
+    border:"1px solid rgba(20,184,166,0.55)",
+    background:"rgba(13,148,136,0.35)",
+    color:"#ccfbf1",
+    fontWeight:"700",
+    cursor:"pointer"
+  });
+  setAllBtn.addEventListener("click", () => {
+    const val = Number.parseInt(setAllInput.value, 10);
+    if (!Number.isFinite(val)) return;
+    const clamped = Math.max(0, Math.min(99, val));
+    game.setAllTargetCounts(clamped);
+    setAllInput.value = String(clamped);
+    coverageEditMode = "off";
+    render();
+  });
+  setAllInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      setAllBtn.click();
+    }
+  });
+  setAllWrap.appendChild(setAllBtn);
+  coverageCard.appendChild(setAllWrap);
 
   const grid = document.createElement("div");
   Object.assign(grid.style, {
@@ -375,8 +474,8 @@ function createOverlay(game) {
 
   const resetBtn = document.createElement("button");
   resetBtn.textContent = "Reset A-Z progress";
-  Object.assign(resetBtn.style,{ padding:"8px 12px", borderRadius:"10px", cursor:"pointer", background:"rgba(15,118,110,0.32)", color:"#ccfbf1", border:"1px solid rgba(20,184,166,0.55)", fontWeight:"700" });
-  resetBtn.onclick = ()=>game.resetCoverage();
+  Object.assign(resetBtn.style,{ padding:"8px 12px", borderRadius:"10px", cursor:"pointer", background:"rgba(15,118,110,0.32)",color:"#ccfbf1", border:"1px solid rgba(20,184,166,0.55)", fontWeight:"700" });
+  resetBtn.onclick = ()=>{ game.resetCoverage(); setCoverageEditMode("off"); render(); };
   coverageCard.appendChild(resetBtn);
 
   covSec.appendChild(coverageCard);
@@ -500,33 +599,156 @@ function createOverlay(game) {
     });
   }
 
-  function renderCoverageGrid() {
-    grid.innerHTML = "";
-    const counts = game.coverageCounts || new Array(26).fill(0);
-    const targets = game.targetCounts || new Array(26).fill(1);
+  function ensureCoverageCells() {
+    if (coverageCells.length) return;
     for (let i = 0; i < 26; i++) {
       const box = document.createElement("div");
       Object.assign(box.style, {
-        padding:"6px 6px 8px",
-        borderRadius:"8px",
+        padding:"8px 8px 10px",
+        borderRadius:"10px",
         border:"1px solid rgba(255,255,255,0.18)",
         background:"rgba(255,255,255,0.05)",
+        display:"flex",
+        flexDirection:"column",
+        gap:"6px",
+        minHeight:"64px"
       });
-      const top = document.createElement("div");
-      const letter = String.fromCharCode(97+i);
-      const target = game.excludeEnabled ? targets[i] : 1;
-      const have = Math.min(counts[i] || 0, target);
-      top.textContent = target<=0 ? `${letter} (excluded)` : `${letter} ${have}/${target}`;
-      Object.assign(top.style, { fontWeight:800, marginBottom:"4px", color: target<=0 ? "#9ca3af" : "#fff", textDecoration: target<=0 ? "line-through" : "none" });
+      const header = document.createElement("div");
+      Object.assign(header.style, {
+        display:"flex",
+        alignItems:"center",
+        justifyContent:"space-between",
+        gap:"6px"
+      });
+      const letterSpan = document.createElement("span");
+      Object.assign(letterSpan.style, { fontWeight:800, fontSize:"15px", textTransform:"uppercase" });
+      const progressSpan = document.createElement("span");
+      Object.assign(progressSpan.style, { fontWeight:700, fontSize:"12px" });
+      header.appendChild(letterSpan);
+      header.appendChild(progressSpan);
+      const input = document.createElement("input");
+      Object.assign(input, { type:"number", min:"0", max:"99" });
+      Object.assign(input.style, {
+        display:"none",
+        width:"100%",
+        padding:"5px 6px",
+        borderRadius:"8px",
+        border:"1px solid rgba(148,163,184,0.45)",
+        background:"rgba(15,23,42,0.65)",
+        color:"#e2e8f0",
+        fontWeight:"600"
+      });
       const bar = document.createElement("div");
-      Object.assign(bar.style, { height:"6px", width:"100%", borderRadius:"999px", background:"rgba(255,255,255,0.1)", overflow:"hidden" });
+      Object.assign(bar.style, {
+        height:"6px",
+        width:"100%",
+        borderRadius:"999px",
+        background:"rgba(255,255,255,0.1)",
+        overflow:"hidden"
+      });
       const fill = document.createElement("div");
-      const pct = target>0 ? Math.round((have/target)*100) : 0;
-      Object.assign(fill.style, { height:"100%", width:`${pct}%`, background: pct>=100 ? "rgba(34,197,94,0.9)" : "rgba(250,204,21,0.85)" });
+      Object.assign(fill.style, { height:"100%", width:"0%", background:"rgba(250,204,21,0.85)" });
       bar.appendChild(fill);
-      box.appendChild(top); box.appendChild(bar);
+      box.appendChild(header);
+      box.appendChild(input);
+      box.appendChild(bar);
+
+      const idx = i;
+      box.addEventListener("click", (ev) => {
+        if (coverageEditMode === "off") return;
+        if (ev.target === input) return;
+        if (coverageEditMode === "tally") {
+          game.adjustCoverageCount(idx, 1);
+        } else if (coverageEditMode === "goal") {
+          game.adjustTargetCount(idx, 1);
+        }
+        render();
+      });
+      box.addEventListener("contextmenu", (ev) => {
+        if (coverageEditMode === "off") return;
+        if (ev.target === input) return;
+        ev.preventDefault();
+        if (coverageEditMode === "tally") {
+          game.adjustCoverageCount(idx, -1);
+        } else if (coverageEditMode === "goal") {
+          game.adjustTargetCount(idx, -1);
+        }
+        render();
+      });
+
+      input.addEventListener("click", (ev) => ev.stopPropagation());
+      input.addEventListener("keydown", (ev) => {
+        ev.stopPropagation();
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          input.blur();
+        }
+      });
+      input.addEventListener("change", () => {
+        const val = Number.parseInt(input.value, 10);
+        if (!Number.isFinite(val)) {
+          input.value = String(game.targetCounts[idx] || 0);
+          return;
+        }
+        game.setTargetCount(idx, val);
+        input.value = String(game.targetCounts[idx] || 0);
+        render();
+      });
+      input.addEventListener("contextmenu", (ev) => {
+        if (coverageEditMode !== "goal") return;
+        ev.preventDefault();
+        game.adjustTargetCount(idx, -1);
+        input.value = String(game.targetCounts[idx] || 0);
+        render();
+      });
+
+      coverageCells.push({ idx, box, letterSpan, progressSpan, input, fill });
       grid.appendChild(box);
     }
+  }
+
+  function renderCoverageGrid() {
+    ensureCoverageCells();
+    const counts = game.coverageCounts || new Array(26).fill(0);
+    const targets = game.targetCounts || new Array(26).fill(1);
+    coverageCells.forEach(cell => {
+      const { idx, box, letterSpan, progressSpan, input, fill } = cell;
+      const letter = String.fromCharCode(97 + idx);
+      letterSpan.textContent = letter;
+      const target = Math.max(0, targets[idx] || 0);
+      const haveRaw = Math.max(0, counts[idx] || 0);
+      const have = Math.min(haveRaw, target);
+      if (target <= 0) {
+        progressSpan.textContent = "excluded";
+        progressSpan.style.color = "#9ca3af";
+        letterSpan.style.color = "#9ca3af";
+        letterSpan.style.textDecoration = "line-through";
+      } else {
+        progressSpan.textContent = `${have}/${target}`;
+        progressSpan.style.color = have >= target ? "#bbf7d0" : "#e0f2fe";
+        letterSpan.style.color = "#fff";
+        letterSpan.style.textDecoration = "none";
+      }
+      const pct = target > 0 ? Math.round((have / (target || 1)) * 100) : 0;
+      fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      fill.style.background = target > 0 && have >= target ? "rgba(34,197,94,0.9)" : "rgba(250,204,21,0.85)";
+      box.style.border = target <= 0 ? "1px solid rgba(148,163,184,0.32)" : "1px solid rgba(255,255,255,0.18)";
+      box.style.background = coverageEditMode === "off" ? "rgba(255,255,255,0.05)" : "rgba(15,118,110,0.10)";
+      box.style.cursor = coverageEditMode === "off" ? "default" : "pointer";
+      if (coverageEditMode === "tally") {
+        box.title = "Left click to add progress, right click to remove.";
+      } else if (coverageEditMode === "goal") {
+        box.title = "Left click to raise the goal, right click to lower.";
+      } else {
+        box.title = "";
+      }
+
+      input.style.display = coverageEditMode === "goal" ? "block" : "none";
+      input.disabled = coverageEditMode !== "goal";
+      if (document.activeElement !== input) {
+        input.value = String(target);
+      }
+    });
   }
 
   function buildNotice(context) {
@@ -563,6 +785,19 @@ function createOverlay(game) {
     });
 
     renderCoverageGrid();
+    coverageEditButtons.forEach(({ key, btn }) => {
+      applyToggleStyle(btn, coverageEditMode === key, "teal", "label");
+    });
+    if (coverageEditMode === "tally") {
+      editNotice.style.display = "block";
+      editNotice.textContent = "Editing tallies: left-click to add progress, right-click to remove. Values stay within each letter's goal.";
+    } else if (coverageEditMode === "goal") {
+      editNotice.style.display = "block";
+      editNotice.textContent = "Editing goals: left-click to raise, right-click to lower, or type a number inside any letter box.";
+    } else {
+      editNotice.style.display = "none";
+      editNotice.textContent = "";
+    }
 
     const updateSlider = (row, value) => {
       if (!row || !row._range) return;
