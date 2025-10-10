@@ -154,6 +154,11 @@ class Game {
     this._roundFailed = new Set();
     this._roundPool = [];
 
+    this._isTyping = false;
+    this._hudTypingEl = null;
+    this._lastSubmittedBaseWord = "";
+    this._lastSubmittedFullWord = "";
+
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
     this.flagsRoundSpectator = 0;
@@ -992,6 +997,44 @@ class Game {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  _currentHudTypingElement() {
+    const el = this._hudTypingEl;
+    if (el && document.body.contains(el)) return el;
+    this._hudTypingEl = null;
+    return null;
+  }
+
+  setHudTypingElement(el) {
+    if (el && typeof el.focus === "function" && document.body.contains(el)) {
+      this._hudTypingEl = el;
+    } else if (!el) {
+      this._hudTypingEl = null;
+    }
+  }
+
+  clearHudTypingElement(el) {
+    if (!el || this._hudTypingEl === el) {
+      this._hudTypingEl = null;
+    }
+  }
+
+  hudTypingActive() {
+    return !!this._currentHudTypingElement();
+  }
+
+  isTyping() {
+    return !!this._isTyping;
+  }
+
+  async waitForTypingIdle(maxWaitMs = 0) {
+    if (!this._isTyping) return;
+    const start = maxWaitMs > 0 ? Date.now() : 0;
+    while (this._isTyping) {
+      await this._sleep(25);
+      if (maxWaitMs > 0 && Date.now() - start >= maxWaitMs) break;
+    }
+  }
+
   _emitInputEvent(input) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
@@ -1027,6 +1070,8 @@ class Game {
       await new Promise(r => setTimeout(r, this.thinkingDelaySec * 1000));
     }
     this._roundFailed.clear();
+    this._lastSubmittedBaseWord = "";
+    this._lastSubmittedFullWord = "";
     const picks = this.getTopCandidates(this.syllable, this.suggestionsLimit);
     this.lastTopPicksSelf = picks;
     const word = this._pickNextNotFailed();
@@ -1043,61 +1088,90 @@ class Game {
   async typeAndSubmit(word, ignorePostfix=false) {
     const input = this._ensureInput(); if (!input) return;
 
-    input.focus();
-    await Promise.resolve();
-    input.value = "";
-    this._emitInputEvent(input);
+    const wordStr = (word ?? "").toString();
+    const normalizedBase = wordStr.trim().toLowerCase();
+    const shouldAppendPostfix = !ignorePostfix && this.postfixEnabled && this.postfixText && !this.autoSuicide;
+    const postfixText = shouldAppendPostfix ? this.postfixText : "";
+    this._lastSubmittedBaseWord = normalizedBase;
+    this._lastSubmittedFullWord = (wordStr + postfixText).trim().toLowerCase();
 
-    const perCharDelay = this._charDelayMs();
-    const instant = !!this.instantMode;
+    const preserveHudFocus = this.hudTypingActive();
+    this._isTyping = true;
 
-    if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
-      if (instant) {
-        input.value = this.preMsgText;
-        this._emitInputEvent(input);
-        await this._sleep(Math.max(40, perCharDelay));
-        input.value = "";
-        this._emitInputEvent(input);
-      } else {
-        await this._typeTextSequence(input, this.preMsgText, perCharDelay);
-        await this._sleep(Math.max(80, perCharDelay * 4));
-        input.value = "";
-        this._emitInputEvent(input);
+    try {
+      if (!preserveHudFocus && document.body.contains(input)) {
+        input.focus();
       }
-    }
-
-    if (instant) {
-      input.value = word;
+      await Promise.resolve();
+      input.value = "";
       this._emitInputEvent(input);
-    } else {
-      await this._typeTextSequence(input, word, perCharDelay);
-    }
 
-    if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
+      const perCharDelay = this._charDelayMs();
+      const instant = !!this.instantMode;
+
+      if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
+        if (instant) {
+          input.value = this.preMsgText;
+          this._emitInputEvent(input);
+          await this._sleep(Math.max(40, perCharDelay));
+          input.value = "";
+          this._emitInputEvent(input);
+        } else {
+          await this._typeTextSequence(input, this.preMsgText, perCharDelay);
+          await this._sleep(Math.max(80, perCharDelay * 4));
+          input.value = "";
+          this._emitInputEvent(input);
+        }
+      }
+
       if (instant) {
-        input.value = `${input.value}${this.postfixText}`;
+        input.value = wordStr;
         this._emitInputEvent(input);
       } else {
-        await this._typeTextSequence(input, this.postfixText, perCharDelay);
+        await this._typeTextSequence(input, wordStr, perCharDelay);
       }
-    }
 
-    const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
-    input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
-    input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
-    input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
-    await new Promise(r => setTimeout(r, 10));
+      if (postfixText) {
+        if (instant) {
+          input.value = `${input.value}${postfixText}`;
+          this._emitInputEvent(input);
+        } else {
+          await this._typeTextSequence(input, postfixText, perCharDelay);
+        }
+      }
 
-    if (document.activeElement !== input) input.focus();
-    const form = input.closest("form");
-    if (form && typeof form.requestSubmit === "function") {
-      form.requestSubmit();
+      const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
+      input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
+      input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
+      input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
+      await new Promise(r => setTimeout(r, 10));
+
+      const form = input.closest("form");
+      if (form && typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      }
+    } finally {
+      this._isTyping = false;
+      if (preserveHudFocus) {
+        const hudEl = this._currentHudTypingElement();
+        if (hudEl && document.body.contains(hudEl) && document.activeElement !== hudEl) {
+          try {
+            hudEl.focus({ preventScroll: true });
+          } catch (_) {
+            hudEl.focus();
+          }
+        }
+      } else if (document.body.contains(input) && document.activeElement !== input) {
+        input.focus();
+      }
     }
   }
 
 
   onCorrectWord(word) {
     if (!this.myTurn) return;
+    this._lastSubmittedBaseWord = "";
+    this._lastSubmittedFullWord = "";
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach(c => {
@@ -1113,7 +1187,12 @@ class Game {
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
     if (!myTurn) return;
-    if (word) this._roundFailed.add((word || "").toLowerCase());
+    const normalized = (word || "").toLowerCase().trim();
+    if (normalized) this._roundFailed.add(normalized);
+    const lastFull = (this._lastSubmittedFullWord || "").trim();
+    if (lastFull) this._roundFailed.add(lastFull.toLowerCase());
+    const lastBase = (this._lastSubmittedBaseWord || "").trim();
+    if (lastBase) this._roundFailed.add(lastBase.toLowerCase());
     if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});

@@ -365,6 +365,22 @@ function createOverlay(game) {
   });
   wrap.appendChild(box);
 
+  const hudTypingSelector = "input[type='text'], input[type='number'], input[type='search'], input[type='email'], input[type='url'], input[type='tel'], input[type='password'], input:not([type]), textarea";
+  wrap.addEventListener("focusin", (ev) => {
+    const target = ev.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.matches(hudTypingSelector) || target.isContentEditable) {
+      game.setHudTypingElement(target);
+    }
+  });
+  wrap.addEventListener("focusout", (ev) => {
+    const target = ev.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.matches(hudTypingSelector) || target.isContentEditable) {
+      game.clearHudTypingElement(target);
+    }
+  });
+
   // scale (range 20-70; default ~45)
   let hudScale = hudSizePercent / 100;
   const applyScale = () => { box.style.transform = `scale(${hudScale})`; };
@@ -397,14 +413,22 @@ function createOverlay(game) {
   const mainTabBtn = mkTab("Main");
   const covTabBtn  = mkTab("Coverage");
   const wordsTabBtn= mkTab("Words");
-  tabs.appendChild(mainTabBtn); tabs.appendChild(covTabBtn); tabs.appendChild(wordsTabBtn);
+  const chatTabBtn = mkTab("Chat");
+  tabs.appendChild(mainTabBtn);
+  tabs.appendChild(covTabBtn);
+  tabs.appendChild(wordsTabBtn);
+  tabs.appendChild(chatTabBtn);
   box.appendChild(tabs);
 
   // sections
   const mainSec = document.createElement("div");
   const covSec  = document.createElement("div");
   const wordsSec= document.createElement("div");
-  box.appendChild(mainSec); box.appendChild(covSec); box.appendChild(wordsSec);
+  const chatSec = document.createElement("div");
+  box.appendChild(mainSec);
+  box.appendChild(covSec);
+  box.appendChild(wordsSec);
+  box.appendChild(chatSec);
 
   // default to Words
   let active = "Words";
@@ -414,14 +438,17 @@ function createOverlay(game) {
     mainSec.style.display  = name==="Main" ? "block" : "none";
     covSec.style.display   = name==="Coverage" ? "block" : "none";
     wordsSec.style.display = name==="Words" ? "block" : "none";
+    chatSec.style.display  = name==="Chat" ? "block" : "none";
     mainTabBtn._setActive(name==="Main");
     covTabBtn._setActive(name==="Coverage");
     wordsTabBtn._setActive(name==="Words");
+    chatTabBtn._setActive(name==="Chat");
     if (name !== "Coverage") coverageEditMode = "off";
   };
   mainTabBtn.onclick = () => setActive("Main");
   covTabBtn.onclick  = () => setActive("Coverage");
   wordsTabBtn.onclick= () => setActive("Words");
+  chatTabBtn.onclick = () => setActive("Chat");
   setActive("Words");
 
   // helpers
@@ -681,6 +708,7 @@ function createOverlay(game) {
     mainSec.style.display  = collapsed ? "none" : (active==="Main"?"block":"none");
     covSec.style.display   = collapsed ? "none" : (active==="Coverage"?"block":"none");
     wordsSec.style.display = collapsed ? "none" : (active==="Words"?"block":"none");
+    chatSec.style.display  = collapsed ? "none" : (active==="Chat"?"block":"none");
     tabs.style.display     = collapsed ? "none" : "flex";
   });
 
@@ -985,6 +1013,205 @@ function createOverlay(game) {
   // update lists when suggestion slider changes
   suggRow._range.addEventListener("input", () => { render(); });
 
+  // =============== CHAT TAB =================
+  const chatGrid = document.createElement("div");
+  Object.assign(chatGrid.style, { display:"grid", gap:"16px" });
+  chatSec.appendChild(chatGrid);
+
+  const chatComposeCard = createCard("HUD chat");
+  const chatAvailability = document.createElement("div");
+  Object.assign(chatAvailability.style, { fontSize:"12px", color:"#86efac", fontWeight:"600" });
+  chatAvailability.textContent = "Ready to send immediately.";
+  chatComposeCard.appendChild(chatAvailability);
+
+  const chatTextarea = document.createElement("textarea");
+  chatTextarea.placeholder = "Type here to chat";
+  chatTextarea.rows = 4;
+  chatTextarea.spellcheck = true;
+  chatTextarea.autocomplete = "off";
+  Object.assign(chatTextarea.style, {
+    width:"100%",
+    minHeight:"96px",
+    resize:"vertical",
+    borderRadius:"12px",
+    border:"1px solid rgba(148,163,184,0.35)",
+    background:"rgba(15,23,42,0.65)",
+    color:"#e2e8f0",
+    fontFamily:"Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif",
+    fontSize:"14px",
+    lineHeight:"1.5",
+    padding:"10px 12px",
+    boxSizing:"border-box",
+    outline:"none"
+  });
+  chatTextarea.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey) {
+      ev.preventDefault();
+      handleManualChatSend();
+    }
+  });
+  chatComposeCard.appendChild(chatTextarea);
+
+  const chatControls = document.createElement("div");
+  Object.assign(chatControls.style, { display:"flex", alignItems:"center", gap:"12px", flexWrap:"wrap" });
+
+  const chatSendBtn = document.createElement("button");
+  chatSendBtn.textContent = "Send to chat";
+  Object.assign(chatSendBtn.style, {
+    padding:"8px 14px",
+    borderRadius:"10px",
+    border:"1px solid rgba(59,130,246,0.55)",
+    background:"rgba(59,130,246,0.28)",
+    color:"#bfdbfe",
+    fontWeight:"700",
+    cursor:"pointer",
+    transition:"opacity 0.15s ease"
+  });
+  chatControls.appendChild(chatSendBtn);
+
+  const chatHint = document.createElement("span");
+  chatHint.textContent = "Press Enter to send • Shift+Enter for newline";
+  Object.assign(chatHint.style, { fontSize:"11px", color:"#cbd5f5", opacity:"0.85" });
+  chatControls.appendChild(chatHint);
+
+  chatComposeCard.appendChild(chatControls);
+
+  const chatStatus = document.createElement("div");
+  Object.assign(chatStatus.style, { fontSize:"12px", minHeight:"18px", color:"#cbd5f5", fontWeight:"600" });
+  chatComposeCard.appendChild(chatStatus);
+
+  chatGrid.appendChild(chatComposeCard);
+
+  const chatSuggestionsCard = createCard("Chat suggestions");
+  const chatDynamicTitle = document.createElement("div");
+  Object.assign(chatDynamicTitle.style, { fontWeight:800, fontSize:"15px" });
+  chatSuggestionsCard.appendChild(chatDynamicTitle);
+
+  const chatTurnNotice = noticeBar();
+  chatSuggestionsCard.appendChild(chatTurnNotice);
+
+  const chatWordList = listBox(22);
+  chatSuggestionsCard.appendChild(chatWordList);
+
+  chatGrid.appendChild(chatSuggestionsCard);
+
+  const chatStatusColors = {
+    success: "#86efac",
+    error: "#fca5a5",
+    warn: "#fde68a",
+    info: "#cbd5f5"
+  };
+  chatStatus._set = (text, tone = "info") => {
+    chatStatus.textContent = text || "";
+    chatStatus.style.color = chatStatusColors[tone] || chatStatusColors.info;
+  };
+  chatStatus._set("");
+
+  const hudSleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  let chatSendInFlight = false;
+
+  const findSiteChatInput = () => {
+    const el = document.querySelector(".chat.pane textarea");
+    return (el && el.tagName === "TEXTAREA") ? el : null;
+  };
+
+  async function waitForChatWindow() {
+    await game.waitForTypingIdle();
+    if (game.paused) return true;
+    let guard = 0;
+    while (game.myTurn && !game.paused) {
+      await hudSleep(120);
+      await game.waitForTypingIdle();
+      guard += 1;
+      if (guard > 150) return false;
+    }
+    await game.waitForTypingIdle();
+    return true;
+  }
+
+  async function sendChatMessageToSite(message, textarea = null) {
+    const input = textarea || findSiteChatInput();
+    if (!input) throw new Error("Chat textarea not found");
+    const prevValue = input.value;
+    const prevActive = document.activeElement;
+    const shouldRestoreValue = prevActive === input ? prevValue : null;
+    input.focus();
+    input.value = message;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
+    input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
+    input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
+    input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
+    await hudSleep(16);
+    if (shouldRestoreValue !== null && input.value !== shouldRestoreValue) {
+      input.value = shouldRestoreValue;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if (prevActive && prevActive !== input && typeof prevActive.focus === "function") {
+      try {
+        prevActive.focus({ preventScroll: true });
+      } catch (_) {
+        prevActive.focus();
+      }
+    }
+  }
+
+  async function dispatchHudChat(message, options = {}) {
+    const { fromQuick = false } = options;
+    const trimmed = (message || "").trim();
+    if (!trimmed) {
+      if (!fromQuick) chatStatus._set("Enter a message before sending.", "warn");
+      return false;
+    }
+    if (chatSendInFlight) {
+      if (!fromQuick) chatStatus._set("Already sending a message…", "info");
+      return false;
+    }
+    chatSendInFlight = true;
+    render();
+    if (game.isTyping() || (game.myTurn && !game.paused)) {
+      chatStatus._set("Waiting for the bot to finish typing…", "info");
+    } else {
+      chatStatus._set("Sending…", "info");
+    }
+    try {
+      const safe = await waitForChatWindow();
+      if (!safe) {
+        chatStatus._set("Sending while turn is active…", "warn");
+      } else {
+        chatStatus._set("Sending…", "info");
+      }
+      const chatInput = findSiteChatInput();
+      if (!chatInput) throw new Error("Chat textarea not available");
+      await sendChatMessageToSite(trimmed, chatInput);
+      chatStatus._set("Message sent!", "success");
+      return true;
+    } catch (err) {
+      console.warn("[BombPartyShark] HUD chat send failed", err);
+      chatStatus._set("Failed to send message. See console for details.", "error");
+      return false;
+    } finally {
+      chatSendInFlight = false;
+      render();
+      if (!fromQuick && document.body.contains(chatTextarea)) {
+        chatTextarea.focus();
+      }
+    }
+  }
+
+  async function handleManualChatSend() {
+    const text = chatTextarea.value;
+    const sent = await dispatchHudChat(text);
+    if (sent) {
+      chatTextarea.value = "";
+    }
+  }
+
+  chatSendBtn.addEventListener("click", () => { handleManualChatSend(); });
+
+  const sendQuickWord = (word) => dispatchHudChat(word, { fromQuick: true });
+
   function toneStyle(tone) {
     if (tone === "foul") return { bg:"rgba(248,113,113,0.18)", border:"rgba(248,113,113,0.55)", color:"#fecaca" };
     if (tone === "pokemon") return { bg:"rgba(250,204,21,0.22)", border:"rgba(234,179,8,0.6)", color:"#fde047" };
@@ -997,17 +1224,21 @@ function createOverlay(game) {
     return { bg:"rgba(255,255,255,0.08)", border:"rgba(255,255,255,0.18)", color:"#f8fafc" };
   }
 
-  function clickableWords(container, entries, syllable) {
+  function clickableWords(container, entries, syllable, options = {}) {
     container.innerHTML = "";
-    if (!entries || !entries.length) { container.textContent = "(none)"; return; }
+    if (!entries || !entries.length) {
+      container.textContent = options.emptyText || "(none)";
+      return;
+    }
     const syl = (syllable || "").toLowerCase();
+    const mode = options.mode || "copy";
+    const onWord = typeof options.onWord === "function" ? options.onWord : null;
     entries.forEach((entry) => {
       const word = typeof entry === "string" ? entry : entry.word;
       const tone = typeof entry === "string" ? "default" : entry.tone || "default";
       const btn = document.createElement("button");
       btn.type = "button";
       btn.innerHTML = Game.highlightSyllable(word, syl);
-      btn.title = "Click to copy";
       const styles = toneStyle(tone);
       Object.assign(btn.style, {
         cursor:"pointer",
@@ -1023,12 +1254,31 @@ function createOverlay(game) {
         alignItems:"center",
         justifyContent:"center"
       });
+      const defaultTitle = mode === "send" ? "Click to send in chat" : "Click to copy";
+      btn.title = typeof options.titleBuilder === "function" ? options.titleBuilder(word, tone) : defaultTitle;
       btn.addEventListener("mouseenter", ()=>{ btn.style.transform = "translateY(-1px)"; });
       btn.addEventListener("mouseleave", ()=>{ btn.style.transform = "none"; });
       btn.addEventListener("click", async () => {
-        const ok = await copyPlain(word);
-        btn.style.boxShadow = ok ? "0 0 0 2px rgba(34,197,94,0.45)" : "0 0 0 2px rgba(239,68,68,0.45)";
-        setTimeout(()=>{ btn.style.boxShadow = "none"; }, 420);
+        if (mode === "send" && onWord) {
+          if (btn._busy) return;
+          btn._busy = true;
+          btn.style.opacity = "0.75";
+          try {
+            const ok = await onWord(word);
+            btn.style.boxShadow = ok ? "0 0 0 2px rgba(34,197,94,0.45)" : "0 0 0 2px rgba(239,68,68,0.45)";
+          } catch (err) {
+            console.warn("[BombPartyShark] Failed to send chat word", err);
+            btn.style.boxShadow = "0 0 0 2px rgba(239,68,68,0.45)";
+          } finally {
+            setTimeout(()=>{ btn.style.boxShadow = "none"; }, 420);
+            btn.style.opacity = "";
+            btn._busy = false;
+          }
+        } else {
+          const ok = await copyPlain(word);
+          btn.style.boxShadow = ok ? "0 0 0 2px rgba(34,197,94,0.45)" : "0 0 0 2px rgba(239,68,68,0.45)";
+          setTimeout(()=>{ btn.style.boxShadow = "none"; }, 420);
+        }
       });
       container.appendChild(btn);
     });
@@ -1329,7 +1579,38 @@ function createOverlay(game) {
     clickableWords(wordList, entries, syllable);
 
     const noticeContext = isMyTurn ? "self" : "spectator";
-    turnNotice._show(buildNotice(noticeContext));
+    const noticeText = buildNotice(noticeContext);
+    turnNotice._show(noticeText);
+    
+    if (chatDynamicTitle) {
+      chatDynamicTitle.textContent = dynamicTitle.textContent;
+    }
+    if (chatTurnNotice) {
+      chatTurnNotice._show(noticeText);
+    }
+    if (chatWordList) {
+      clickableWords(chatWordList, entries, syllable, { mode: "send", onWord: sendQuickWord });
+    }
+    if (chatSendBtn) {
+      chatSendBtn.disabled = chatSendInFlight;
+      chatSendBtn.style.cursor = chatSendInFlight ? "not-allowed" : "pointer";
+      chatSendBtn.style.opacity = chatSendInFlight ? "0.65" : "";
+    }
+    if (chatAvailability) {
+      if (chatSendInFlight) {
+        chatAvailability.textContent = "Sending message…";
+        chatAvailability.style.color = "#cbd5f5";
+      } else if (game.isTyping()) {
+        chatAvailability.textContent = "Bot is typing; message will queue until it's free.";
+        chatAvailability.style.color = "#fde68a";
+      } else if (game.myTurn && !game.paused) {
+        chatAvailability.textContent = "It's our turn; message will send after the word is played.";
+        chatAvailability.style.color = "#fde68a";
+      } else {
+        chatAvailability.textContent = "Ready to send immediately.";
+        chatAvailability.style.color = "#86efac";
+      }
+    }
   }
 
   const iv = setInterval(render, 160);
