@@ -32,6 +32,8 @@ const LOCAL_FOUL_LISTS = Object.freeze({
   "default": "words1/foul-words-en.txt"
 });
 
+const NON_TEXT_INPUT_TYPES = new Set(['button', 'submit', 'checkbox', 'radio', 'range', 'color', 'file', 'image', 'reset', 'hidden']);
+
 function pushWordCandidate(output, seen, candidate) {
   const word = (candidate ?? "").toString().trim().toLowerCase();
   if (!word || seen.has(word)) return;
@@ -153,6 +155,7 @@ class Game {
     // Round-local failure blacklist + last pool
     this._roundFailed = new Set();
     this._roundPool = [];
+    this._lastSubmittedCandidate = null;
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -1027,6 +1030,7 @@ class Game {
       await new Promise(r => setTimeout(r, this.thinkingDelaySec * 1000));
     }
     this._roundFailed.clear();
+    this._lastSubmittedCandidate = null;
     const picks = this.getTopCandidates(this.syllable, this.suggestionsLimit);
     this.lastTopPicksSelf = picks;
     const word = this._pickNextNotFailed();
@@ -1035,7 +1039,8 @@ class Game {
 
   _pickNextNotFailed() {
     for (const w of this._roundPool) {
-      if (!this._roundFailed.has(w)) return w;
+      const normalized = this._normalizeRoundWord(w);
+      if (!this._roundFailed.has(normalized)) return w;
     }
     return null;
   }
@@ -1043,13 +1048,35 @@ class Game {
   async typeAndSubmit(word, ignorePostfix=false) {
     const input = this._ensureInput(); if (!input) return;
 
-    input.focus();
-    await Promise.resolve();
+    const previousActive = document.activeElement;
+    const preserveFocus = this._shouldPreserveFocus(previousActive, input);
+    let selectionRestore = null;
+    if (!preserveFocus) {
+      input.focus();
+      await Promise.resolve();
+    } else {
+      await Promise.resolve();
+      if (previousActive && typeof previousActive.focus === 'function') {
+        const start = typeof previousActive.selectionStart === 'number' ? previousActive.selectionStart : null;
+        const end = typeof previousActive.selectionEnd === 'number' ? previousActive.selectionEnd : null;
+        selectionRestore = () => {
+          try {
+            if (!previousActive.isConnected) return;
+            previousActive.focus({ preventScroll: true });
+            if (start !== null && end !== null && typeof previousActive.setSelectionRange === 'function') {
+              previousActive.setSelectionRange(start, end);
+            }
+          } catch (_) { /* ignore */ }
+        };
+      }
+    }
     input.value = "";
     this._emitInputEvent(input);
 
     const perCharDelay = this._charDelayMs();
     const instant = !!this.instantMode;
+
+    this._lastSubmittedCandidate = this._normalizeRoundWord(word);
 
     if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
       if (instant) {
@@ -1088,7 +1115,13 @@ class Game {
     input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
     await new Promise(r => setTimeout(r, 10));
 
-    if (document.activeElement !== input) input.focus();
+    if (preserveFocus) {
+      if (typeof selectionRestore === 'function' && document.activeElement !== previousActive) {
+        selectionRestore();
+      }
+    } else if (document.activeElement !== input) {
+      input.focus();
+    }
     const form = input.closest("form");
     if (form && typeof form.requestSubmit === "function") {
       form.requestSubmit();
@@ -1098,6 +1131,7 @@ class Game {
 
   onCorrectWord(word) {
     if (!this.myTurn) return;
+    this._lastSubmittedCandidate = null;
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach(c => {
@@ -1113,10 +1147,47 @@ class Game {
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
     if (!myTurn) return;
-    if (word) this._roundFailed.add((word || "").toLowerCase());
+    const normalizedWord = this._normalizeRoundWord(word);
+    if (normalizedWord) {
+      this._roundFailed.add(normalizedWord);
+      if (this.postfixEnabled && this.postfixText) {
+        const postfixNorm = this._normalizeRoundWord(this.postfixText);
+        if (postfixNorm && normalizedWord.endsWith(postfixNorm)) {
+          const withoutPostfixRaw = normalizedWord.slice(0, normalizedWord.length - postfixNorm.length);
+          const withoutPostfix = this._normalizeRoundWord(withoutPostfixRaw);
+          if (withoutPostfix) this._roundFailed.add(withoutPostfix);
+        }
+      }
+    }
+    if (this._lastSubmittedCandidate) {
+      this._roundFailed.add(this._lastSubmittedCandidate);
+      this._lastSubmittedCandidate = null;
+    }
     if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});
+  }
+
+  _normalizeRoundWord(word) {
+    return (word ?? "").toString().trim().toLowerCase();
+  }
+
+  _isTextEntryElement(el) {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'textarea') return true;
+    if (tag === 'input') {
+      const type = (el.getAttribute('type') || 'text').toLowerCase();
+      return !NON_TEXT_INPUT_TYPES.has(type) && !el.readOnly && !el.disabled;
+    }
+    return false;
+  }
+
+  _shouldPreserveFocus(activeEl, gameInput) {
+    if (!activeEl || activeEl === document.body) return false;
+    if (activeEl === gameInput) return false;
+    return this._isTextEntryElement(activeEl);
   }
 
   async _reportInvalid(word, reason, myTurn) {
