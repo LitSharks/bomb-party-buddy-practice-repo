@@ -1,23 +1,35 @@
 ﻿// injected.js
 
-socket.on("setup", (data) => {
-  if (data.milestone.name != "round") return;
-  window.postMessage({
-    type: "setup",
-    myTurn: data.milestone.currentPlayerPeerId === selfPeerId,
-    syllable: data.milestone.syllable,
-    language: data.milestone.dictionaryManifest.name,
-  }, "*");
-});
+  const extractRoundNumber = (milestone) => {
+    if (!milestone) return null;
+    const keys = ["roundNumber", "roundIndex", "round", "number"];
+    for (const key of keys) {
+      const value = milestone[key];
+      if (typeof value === "number") return value;
+    }
+    return null;
+  };
+
+  socket.on("setup", (data) => {
+    if (data.milestone.name != "round") return;
+    window.postMessage({
+      type: "setup",
+      myTurn: data.milestone.currentPlayerPeerId === selfPeerId,
+      syllable: data.milestone.syllable,
+      language: data.milestone.dictionaryManifest.name,
+      roundNumber: extractRoundNumber(data.milestone),
+    }, "*");
+  });
 
 socket.on("setMilestone", (newMilestone) => {
   if (newMilestone.name != "round") return;
-  window.postMessage({
-    type: "setup",
-    myTurn: newMilestone.currentPlayerPeerId === selfPeerId,
-    syllable: newMilestone.syllable,
-    language: newMilestone.dictionaryManifest.name,
-  }, "*");
+    window.postMessage({
+      type: "setup",
+      myTurn: newMilestone.currentPlayerPeerId === selfPeerId,
+      syllable: newMilestone.syllable,
+      language: newMilestone.dictionaryManifest.name,
+      roundNumber: extractRoundNumber(newMilestone),
+    }, "*");
 });
 
 socket.on("nextTurn", (playerId, syllable) => {

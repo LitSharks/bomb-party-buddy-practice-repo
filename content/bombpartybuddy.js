@@ -356,13 +356,130 @@ function createOverlay(game) {
   toggleRefs.push(exTop);
   coverageCard.appendChild(exTop);
 
-  const help = document.createElement("div");
-  help.innerHTML = "Format examples: <b>a3 f2 c8 x0 z0</b> (0 = exclude). You can also set <b>majority5</b> to set a default for all letters; explicit tokens like <b>a3</b> override the majority.";
-  Object.assign(help.style, { color:"rgba(255,255,255,0.78)", fontSize:"12px" });
-  coverageCard.appendChild(help);
+  const wrapTabClick = (btn) => {
+    const prev = btn.onclick;
+    btn.onclick = () => {
+      setCoverageEditMode("off");
+      if (typeof prev === "function") prev();
+    };
+  };
+  wrapTabClick(mainTabBtn);
+  wrapTabClick(wordsTabBtn);
 
-  const exInputWrap = textInput("a3 f2 c8 x0 z0  majority0", game.excludeSpec || "x0 z0", (v)=>game.setExcludeSpec(v), { theme:"chrome" });
-  coverageCard.appendChild(exInputWrap);
+  const originalCoverageToggle = coverageToggle._btn.onclick;
+  coverageToggle._btn.onclick = () => {
+    setCoverageEditMode("off");
+    if (typeof originalCoverageToggle === "function") originalCoverageToggle();
+  };
+  const originalExToggle = exTop._btn.onclick;
+  exTop._btn.onclick = () => {
+    setCoverageEditMode("off");
+    if (typeof originalExToggle === "function") originalExToggle();
+  };
+
+  const coverageEditButtons = [];
+  let coverageEditMode = "off";
+  function setCoverageEditMode(mode) {
+    if (coverageEditMode === mode) return;
+    coverageEditMode = mode;
+    render();
+  }
+  function toggleCoverageEditMode(mode) {
+    const next = coverageEditMode === mode ? "off" : mode;
+    if (coverageEditMode === next) return;
+    coverageEditMode = next;
+    render();
+  }
+
+  const editControls = document.createElement("div");
+  Object.assign(editControls.style, {
+    display:"flex",
+    flexWrap:"wrap",
+    gap:"8px",
+    alignItems:"center",
+    background:"rgba(14,165,233,0.08)",
+    border:"1px solid rgba(14,165,233,0.25)",
+    borderRadius:"10px",
+    padding:"8px 10px"
+  });
+  const editLabel = document.createElement("span");
+  editLabel.textContent = "Edit mode";
+  editLabel.style.fontWeight = "700";
+  editControls.appendChild(editLabel);
+
+  function mkEditBtn(label, mode) {
+    const btn = document.createElement("button");
+    btn.dataset.label = label;
+    btn.dataset.mode = "label";
+    btn.type = "button";
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      toggleCoverageEditMode(mode);
+    });
+    coverageEditButtons.push({ btn, mode });
+    editControls.appendChild(btn);
+    return btn;
+  }
+  const editTalliesBtn = mkEditBtn("Tallies", "counts");
+  const editTargetsBtn = mkEditBtn("Goals", "targets");
+  coverageCard.appendChild(editControls);
+
+  const setAllWrap = document.createElement("div");
+  Object.assign(setAllWrap.style, {
+    display:"flex",
+    gap:"8px",
+    alignItems:"center",
+    flexWrap:"wrap"
+  });
+  const setAllLabel = document.createElement("span");
+  setAllLabel.textContent = "Set all goals to";
+  Object.assign(setAllLabel.style, { fontWeight:"600" });
+  const setAllInput = document.createElement("input");
+  setAllInput.type = "number";
+  setAllInput.min = "0";
+  setAllInput.max = "99";
+  setAllInput.value = String(game.targetCounts?.[0] ?? 1);
+  Object.assign(setAllInput.style, {
+    width:"70px",
+    padding:"6px 8px",
+    borderRadius:"8px",
+    border:"1px solid rgba(226,232,240,0.35)",
+    background:"rgba(255,255,255,0.08)",
+    color:"#e2e8f0",
+    fontWeight:"600"
+  });
+  setAllInput.addEventListener("click", (ev) => ev.stopPropagation());
+  setAllInput.addEventListener("keydown", (ev) => ev.stopPropagation());
+  const setAllBtn = document.createElement("button");
+  setAllBtn.textContent = "Apply";
+  Object.assign(setAllBtn.style, {
+    padding:"6px 12px",
+    borderRadius:"8px",
+    border:"1px solid rgba(14,165,233,0.45)",
+    background:"rgba(14,165,233,0.22)",
+    color:"#bae6fd",
+    fontWeight:"700",
+    cursor:"pointer"
+  });
+  setAllBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    setCoverageEditMode("off");
+    const parsed = parseInt(setAllInput.value, 10);
+    if (Number.isFinite(parsed)) {
+      game.setAllTargetCounts(parsed);
+      const sanitized = Math.max(0, Math.min(99, parsed));
+      setAllInput.value = String(sanitized);
+      render();
+    } else {
+      const fallback = Math.max(0, Math.min(99, Number(game.targetCounts?.[0] ?? 1)));
+      setAllInput.value = String(fallback);
+      render();
+    }
+  });
+  setAllWrap.appendChild(setAllLabel);
+  setAllWrap.appendChild(setAllInput);
+  setAllWrap.appendChild(setAllBtn);
+  coverageCard.appendChild(setAllWrap);
 
   const grid = document.createElement("div");
   Object.assign(grid.style, {
@@ -376,7 +493,11 @@ function createOverlay(game) {
   const resetBtn = document.createElement("button");
   resetBtn.textContent = "Reset A-Z progress";
   Object.assign(resetBtn.style,{ padding:"8px 12px", borderRadius:"10px", cursor:"pointer", background:"rgba(15,118,110,0.32)", color:"#ccfbf1", border:"1px solid rgba(20,184,166,0.55)", fontWeight:"700" });
-  resetBtn.onclick = ()=>game.resetCoverage();
+  resetBtn.onclick = () => {
+    setCoverageEditMode("off");
+    game.resetCoverage();
+    render();
+  };
   coverageCard.appendChild(resetBtn);
 
   covSec.appendChild(coverageCard);
@@ -504,6 +625,8 @@ function createOverlay(game) {
     grid.innerHTML = "";
     const counts = game.coverageCounts || new Array(26).fill(0);
     const targets = game.targetCounts || new Array(26).fill(1);
+    const isEditingTallies = coverageEditMode === "counts";
+    const isEditingTargets = coverageEditMode === "targets";
     for (let i = 0; i < 26; i++) {
       const box = document.createElement("div");
       Object.assign(box.style, {
@@ -511,20 +634,134 @@ function createOverlay(game) {
         borderRadius:"8px",
         border:"1px solid rgba(255,255,255,0.18)",
         background:"rgba(255,255,255,0.05)",
+        position:"relative"
       });
+      const letter = String.fromCharCode(97 + i);
+      const target = typeof game.coverageTargetFor === "function"
+        ? game.coverageTargetFor(i)
+        : (game.excludeEnabled ? targets[i] : 1);
+      const targetValue = Math.max(0, Math.min(99, Number(targets[i] ?? 1)));
+      const rawHave = Math.max(0, Number(counts[i] || 0));
+      const have = target > 0 ? Math.min(rawHave, target) : 0;
+
       const top = document.createElement("div");
-      const letter = String.fromCharCode(97+i);
-      const target = game.excludeEnabled ? targets[i] : 1;
-      const have = Math.min(counts[i] || 0, target);
-      top.textContent = target<=0 ? `${letter} (excluded)` : `${letter} ${have}/${target}`;
-      Object.assign(top.style, { fontWeight:800, marginBottom:"4px", color: target<=0 ? "#9ca3af" : "#fff", textDecoration: target<=0 ? "line-through" : "none" });
+      top.textContent = target <= 0 ? `${letter} (excluded)` : `${letter} ${have}/${target}`;
+      Object.assign(top.style, {
+        fontWeight:800,
+        marginBottom:"4px",
+        color: target<=0 ? "#9ca3af" : "#fff",
+        textDecoration: target<=0 ? "line-through" : "none"
+      });
+
       const bar = document.createElement("div");
-      Object.assign(bar.style, { height:"6px", width:"100%", borderRadius:"999px", background:"rgba(255,255,255,0.1)", overflow:"hidden" });
+      Object.assign(bar.style, {
+        height:"6px",
+        width:"100%",
+        borderRadius:"999px",
+        background:"rgba(255,255,255,0.1)",
+        overflow:"hidden"
+      });
       const fill = document.createElement("div");
-      const pct = target>0 ? Math.round((have/target)*100) : 0;
-      Object.assign(fill.style, { height:"100%", width:`${pct}%`, background: pct>=100 ? "rgba(34,197,94,0.9)" : "rgba(250,204,21,0.85)" });
+      const pct = target > 0 ? Math.min(100, Math.round((have / target) * 100)) : 0;
+      Object.assign(fill.style, {
+        height:"100%",
+        width:`${pct}%`,
+        background: pct >= 100 ? "rgba(34,197,94,0.9)" : "rgba(250,204,21,0.85)"
+      });
       bar.appendChild(fill);
-      box.appendChild(top); box.appendChild(bar);
+
+      if (isEditingTallies || isEditingTargets) {
+        box.style.cursor = "pointer";
+        box.style.border = isEditingTargets
+          ? "1px solid rgba(56,189,248,0.55)"
+          : "1px solid rgba(34,197,94,0.55)";
+        box.style.boxShadow = isEditingTargets
+          ? "0 0 0 1px rgba(56,189,248,0.35)"
+          : "0 0 0 1px rgba(34,197,94,0.25)";
+      } else {
+        box.style.cursor = "default";
+        box.style.boxShadow = "none";
+      }
+
+      box.appendChild(top);
+      box.appendChild(bar);
+
+      if (isEditingTargets) {
+        const inputWrap = document.createElement("div");
+        Object.assign(inputWrap.style, {
+          marginTop:"6px",
+          display:"flex",
+          gap:"6px",
+          alignItems:"center"
+        });
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.max = "99";
+        input.value = String(targetValue);
+        Object.assign(input.style, {
+          width:"60px",
+          padding:"4px 6px",
+          borderRadius:"6px",
+          border:"1px solid rgba(59,130,246,0.45)",
+          background:"rgba(59,130,246,0.12)",
+          color:"#dbeafe",
+          fontWeight:"600"
+        });
+        input.addEventListener("click", (ev) => ev.stopPropagation());
+        input.addEventListener("keydown", (ev) => ev.stopPropagation());
+        input.addEventListener("change", () => {
+          const next = parseInt(input.value, 10);
+          if (Number.isFinite(next)) {
+            game.setTargetCount(i, next);
+          }
+          render();
+        });
+        inputWrap.appendChild(input);
+        const hint = document.createElement("span");
+        hint.textContent = "Type value";
+        Object.assign(hint.style, { fontSize:"11px", color:"#bae6fd", fontWeight:"600" });
+        inputWrap.appendChild(hint);
+        box.appendChild(inputWrap);
+      }
+
+      if (isEditingTallies || isEditingTargets) {
+        const hint = document.createElement("div");
+        hint.textContent = isEditingTargets
+          ? "Left click: +1 • Right click: -1 • Type to set"
+          : "Left click: +1 • Right click: -1";
+        Object.assign(hint.style, {
+          marginTop:"6px",
+          fontSize:"11px",
+          color: isEditingTargets ? "#bae6fd" : "#bbf7d0",
+          fontWeight:"600"
+        });
+        box.appendChild(hint);
+      }
+
+      if (isEditingTallies || isEditingTargets) {
+        box.addEventListener("click", (ev) => {
+          if (isEditingTargets && ev.target.tagName === "INPUT") return;
+          if (isEditingTargets) {
+            const current = Number(game.targetCounts?.[i] ?? targetValue);
+            game.setTargetCount(i, current + 1);
+          } else {
+            game.adjustCoverageCount(i, 1);
+          }
+          render();
+        });
+        box.addEventListener("contextmenu", (ev) => {
+          ev.preventDefault();
+          if (isEditingTargets) {
+            const current = Number(game.targetCounts?.[i] ?? targetValue);
+            game.setTargetCount(i, current - 1);
+          } else {
+            game.adjustCoverageCount(i, -1);
+          }
+          render();
+        });
+      }
+
       grid.appendChild(box);
     }
   }
@@ -561,6 +798,8 @@ function createOverlay(game) {
     dualToggleRows.forEach(row => {
       row._buttons.forEach(info => applyToggleBtn(info.btn, info.getOn(), info.scheme, info.mode));
     });
+
+    coverageEditButtons.forEach(info => applyToggleBtn(info.btn, coverageEditMode === info.mode, "teal", "label"));
 
     renderCoverageGrid();
 
@@ -631,6 +870,17 @@ async function setupBuddy() {
     const data = event.data;
 
     if ("myTurn" in data) game.myTurn = data.myTurn;
+
+    if (typeof data.roundNumber === "number") {
+      if (game.lastRoundNumber !== null && data.roundNumber < game.lastRoundNumber) {
+        setCoverageEditMode("off");
+        game.resetCoverage();
+      } else if (game.lastRoundNumber !== null && data.roundNumber === 1 && game.lastRoundNumber > 1) {
+        setCoverageEditMode("off");
+        game.resetCoverage();
+      }
+      game.lastRoundNumber = data.roundNumber;
+    }
 
     if (data.type === "setup") {
       await game.setLang(data.language);

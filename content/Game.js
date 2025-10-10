@@ -154,6 +154,8 @@ class Game {
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
 
+    this.lastRoundNumber = null;
+  
     // HUD lists
     this.lastTopPicksSelf = [];
     this.lastTopPicksSelfDisplay = [];
@@ -393,38 +395,128 @@ class Game {
   }
 
   setExcludeEnabled(b) { this.excludeEnabled = !!b; this.recomputeTargets(); }
-  setExcludeSpec(spec) { this.excludeSpec = (spec || ""); this.recomputeTargets(); }
-  resetCoverage() { this.coverageCounts.fill(0); this._roundFailed.clear(); }
+  setExcludeSpec(spec) {
+    this.excludeSpec = (spec || "");
+    this.recomputeTargets();
+    this.excludeSpec = Game.encodeTargetSpec(this.targetCounts);
+  }
+  resetCoverage() {
+    this.coverageCounts.fill(0);
+    this._roundFailed.clear();
+  }
 
-  recomputeTargets() {
-    const tgt = new Array(26).fill(1);
-    // Supported:
-    //  - tokens "a3 f2 x0"
-    //  - bare letters "xz" (means x0 z0)
-    //  - "majorityN" sets all to N before overrides
-    const s = (this.excludeSpec || "").toLowerCase().replace(/\s+/g, " ").trim();
-    if (s) {
-      const maj = s.match(/majority(\d{1,2})/);
-      if (maj) {
-        const base = Math.max(0, Math.min(99, parseInt(maj[1], 10)));
-        for (let i = 0; i < 26; i++) tgt[i] = base;
-      }
-      const pairRe = /([a-z])\s*(\d{1,2})/g;
-      let m;
-      while ((m = pairRe.exec(s))) {
-        const idx = m[1].charCodeAt(0) - 97;
-        const val = Math.max(0, Math.min(99, parseInt(m[2], 10)));
-        if (idx >= 0 && idx < 26) tgt[idx] = val;
-      }
-      const bare = s.replace(/majority\d{1,2}/g, "")
-                    .replace(/([a-z])\s*\d{1,2}/g, "")
-                    .replace(/\s+/g, "");
-      for (const ch of bare) {
-        const idx = ch.charCodeAt(0) - 97;
-        if (idx >= 0 && idx < 26) tgt[idx] = 0;
+  static _sanitizeTargetValue(v) {
+    const n = Math.floor(Number(v));
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(99, n));
+  }
+
+  static encodeTargetSpec(counts) {
+    if (!Array.isArray(counts) || counts.length !== 26) return "";
+    const sanitized = counts.map((v) => Game._sanitizeTargetValue(typeof v === "number" ? v : 1));
+    const freq = new Map();
+    sanitized.forEach((val) => {
+      freq.set(val, (freq.get(val) || 0) + 1);
+    });
+    let base = 1;
+    let bestCount = freq.get(1) || 0;
+    for (const [val, count] of freq.entries()) {
+      if (count > bestCount) {
+        base = val;
+        bestCount = count;
       }
     }
-    this.targetCounts = tgt;
+    const parts = [];
+    if (base !== 1) parts.push(`majority${base}`);
+    sanitized.forEach((val, idx) => {
+      if (val !== base) {
+        const letter = String.fromCharCode(97 + idx);
+        parts.push(`${letter}${val}`);
+      }
+    });
+    return parts.join(" ").trim();
+  }
+
+  static parseTargetSpec(spec) {
+    const tgt = new Array(26).fill(1);
+    const s = (spec || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if (!s) return tgt;
+    const maj = s.match(/majority(\d{1,2})/);
+    if (maj) {
+      const base = Game._sanitizeTargetValue(parseInt(maj[1], 10));
+      for (let i = 0; i < 26; i++) tgt[i] = base;
+    }
+    const pairRe = /([a-z])\s*(\d{1,2})/g;
+    let m;
+    while ((m = pairRe.exec(s))) {
+      const idx = m[1].charCodeAt(0) - 97;
+      const val = Game._sanitizeTargetValue(parseInt(m[2], 10));
+      if (idx >= 0 && idx < 26) tgt[idx] = val;
+    }
+    const bare = s.replace(/majority\d{1,2}/g, "")
+                  .replace(/([a-z])\s*\d{1,2}/g, "")
+                  .replace(/\s+/g, "");
+    for (const ch of bare) {
+      const idx = ch.charCodeAt(0) - 97;
+      if (idx >= 0 && idx < 26) tgt[idx] = 0;
+    }
+    return tgt;
+  }
+
+  recomputeTargets() {
+    this.targetCounts = Game.parseTargetSpec(this.excludeSpec);
+    if (this.excludeEnabled) {
+      for (let i = 0; i < 26; i++) {
+        const target = this.coverageTargetFor(i);
+        if (target <= 0) this.coverageCounts[i] = 0;
+        else if ((this.coverageCounts[i] || 0) > target) this.coverageCounts[i] = target;
+      }
+    }
+  }
+
+  coverageTargetFor(idx) {
+    const raw = Game._sanitizeTargetValue(this.targetCounts[idx] ?? 1);
+    if (!this.excludeEnabled) return 1;
+    return raw;
+  }
+
+  setCoverageCount(idx, value) {
+    if (idx < 0 || idx >= 26) return;
+    const target = this.coverageTargetFor(idx);
+    const max = target > 0 ? target : 0;
+    const val = Math.max(0, Math.min(max, Game._sanitizeTargetValue(value)));
+    this.coverageCounts[idx] = val;
+  }
+
+  adjustCoverageCount(idx, delta) {
+    if (idx < 0 || idx >= 26) return;
+    const have = Game._sanitizeTargetValue(this.coverageCounts[idx] || 0);
+    this.setCoverageCount(idx, have + Number(delta || 0));
+  }
+
+  setTargetCount(idx, value) {
+    if (idx < 0 || idx >= 26) return;
+    const val = Game._sanitizeTargetValue(value);
+    this.targetCounts[idx] = val;
+    this.excludeSpec = Game.encodeTargetSpec(this.targetCounts);
+    if (this.excludeEnabled) {
+      const target = this.coverageTargetFor(idx);
+      if (target <= 0) this.coverageCounts[idx] = 0;
+      else if ((this.coverageCounts[idx] || 0) > target) this.coverageCounts[idx] = target;
+    }
+  }
+
+  setAllTargetCounts(value) {
+    const val = Game._sanitizeTargetValue(value);
+    for (let i = 0; i < 26; i++) this.targetCounts[i] = val;
+    this.excludeSpec = Game.encodeTargetSpec(this.targetCounts);
+    if (this.excludeEnabled) {
+      for (let i = 0; i < 26; i++) {
+        const target = this.coverageTargetFor(i);
+        if (target <= 0) this.coverageCounts[i] = 0;
+        else if ((this.coverageCounts[i] || 0) > target) this.coverageCounts[i] = target;
+      }
+    }
   }
 
 
@@ -450,7 +542,7 @@ class Game {
   _maybeResetCoverageOnComplete() {
     let hasPositiveTarget = false;
     for (let i = 0; i < 26; i++) {
-      const target = this.targetCounts[i] || 0;
+      const target = this.coverageTargetFor(i) || 0;
       if (target > 0) {
         hasPositiveTarget = true;
         if ((this.coverageCounts[i] || 0) < target) {
@@ -472,7 +564,7 @@ class Game {
     letters.forEach(c => {
       const idx = c.charCodeAt(0) - 97;
       const have = this.coverageCounts[idx] || 0;
-      const want = this.targetCounts[idx] || 0;
+      const want = this.coverageTargetFor(idx) || 0;
       if (want <= 0) return;            // excluded/ignored
       if (have < want) {
         const w = this.letterWeights[idx] || 1;
@@ -801,8 +893,11 @@ class Game {
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach(c => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += 1;
+      if (idx >= 0 && idx < 26) {
+        const target = this.coverageTargetFor(idx);
+        if (target > 0 && (this.coverageCounts[idx] || 0) < target) {
+          this.coverageCounts[idx] += 1;
+        }
       }
     });
     this._maybeResetCoverageOnComplete();
