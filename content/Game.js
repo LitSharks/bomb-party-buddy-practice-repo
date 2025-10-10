@@ -156,6 +156,10 @@ class Game {
 
     this._isTyping = false;
     this._hudTypingEl = null;
+    this._hudTypingActive = false;
+    this._hudTypingLastActive = 0;
+    this._hudTypingGraceMs = 4000;
+    this._hudFocusRestoreTimer = null;
     this._lastSubmittedBaseWord = "";
     this._lastSubmittedFullWord = "";
 
@@ -1004,22 +1008,82 @@ class Game {
     return null;
   }
 
+  _cancelHudFocusRestore() {
+    if (this._hudFocusRestoreTimer) {
+      clearTimeout(this._hudFocusRestoreTimer);
+      this._hudFocusRestoreTimer = null;
+    }
+  }
+
+  noteHudTypingActivity(el = null) {
+    if (el && document.body.contains(el)) {
+      this._hudTypingEl = el;
+    }
+    if (this._currentHudTypingElement()) {
+      this._hudTypingActive = true;
+      this._hudTypingLastActive = Date.now();
+      this._cancelHudFocusRestore();
+    }
+  }
+
   setHudTypingElement(el) {
     if (el && typeof el.focus === "function" && document.body.contains(el)) {
       this._hudTypingEl = el;
+      this._hudTypingActive = true;
+      this._hudTypingLastActive = Date.now();
+      this._cancelHudFocusRestore();
     } else if (!el) {
+      this._cancelHudFocusRestore();
       this._hudTypingEl = null;
+      this._hudTypingActive = false;
+      this._hudTypingLastActive = 0;
     }
   }
 
   clearHudTypingElement(el) {
-    if (!el || this._hudTypingEl === el) {
+    if (!el) {
+      this._cancelHudFocusRestore();
       this._hudTypingEl = null;
+      this._hudTypingActive = false;
+      this._hudTypingLastActive = 0;
+      return;
+    }
+    if (this._hudTypingEl === el) {
+      this._hudTypingActive = false;
+      this._hudTypingLastActive = Date.now();
+      this._cancelHudFocusRestore();
     }
   }
 
   hudTypingActive() {
-    return !!this._currentHudTypingElement();
+    const el = this._currentHudTypingElement();
+    if (!el) return false;
+    if (this._hudTypingActive) return true;
+    if (!this._hudTypingLastActive) return false;
+    return (Date.now() - this._hudTypingLastActive) <= this._hudTypingGraceMs;
+  }
+
+  requestHudFocusRestore(delayMs = 0) {
+    const el = this._currentHudTypingElement();
+    if (!el) return;
+    const focusNow = () => {
+      this._hudFocusRestoreTimer = null;
+      if (!document.body.contains(el)) return;
+      if (document.activeElement === el) return;
+      try {
+        el.focus({ preventScroll: true });
+      } catch (_) {
+        el.focus();
+      }
+      this._hudTypingActive = true;
+      this._hudTypingLastActive = Date.now();
+    };
+    this._cancelHudFocusRestore();
+    if (delayMs > 0) {
+      this._hudFocusRestoreTimer = setTimeout(focusNow, delayMs);
+    } else {
+      focusNow();
+    }
   }
 
   isTyping() {
@@ -1153,14 +1217,7 @@ class Game {
     } finally {
       this._isTyping = false;
       if (preserveHudFocus) {
-        const hudEl = this._currentHudTypingElement();
-        if (hudEl && document.body.contains(hudEl) && document.activeElement !== hudEl) {
-          try {
-            hudEl.focus({ preventScroll: true });
-          } catch (_) {
-            hudEl.focus();
-          }
-        }
+        this.requestHudFocusRestore(0);
       } else if (document.body.contains(input) && document.activeElement !== input) {
         input.focus();
       }

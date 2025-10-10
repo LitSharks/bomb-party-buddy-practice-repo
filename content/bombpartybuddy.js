@@ -366,20 +366,31 @@ function createOverlay(game) {
   wrap.appendChild(box);
 
   const hudTypingSelector = "input[type='text'], input[type='number'], input[type='search'], input[type='email'], input[type='url'], input[type='tel'], input[type='password'], input:not([type]), textarea";
+  const isHudTypingTarget = (el) => {
+    return el instanceof HTMLElement && (el.matches(hudTypingSelector) || el.isContentEditable);
+  };
+
   wrap.addEventListener("focusin", (ev) => {
     const target = ev.target;
-    if (!(target instanceof HTMLElement)) return;
-    if (target.matches(hudTypingSelector) || target.isContentEditable) {
-      game.setHudTypingElement(target);
-    }
+    if (!isHudTypingTarget(target)) return;
+    game.setHudTypingElement(target);
+    game.noteHudTypingActivity(target);
   });
   wrap.addEventListener("focusout", (ev) => {
     const target = ev.target;
-    if (!(target instanceof HTMLElement)) return;
-    if (target.matches(hudTypingSelector) || target.isContentEditable) {
-      game.clearHudTypingElement(target);
-    }
+    if (!isHudTypingTarget(target)) return;
+    game.clearHudTypingElement(target);
   });
+  wrap.addEventListener("keydown", (ev) => {
+    const target = ev.target;
+    if (!isHudTypingTarget(target)) return;
+    game.noteHudTypingActivity(target);
+  }, true);
+  wrap.addEventListener("input", (ev) => {
+    const target = ev.target;
+    if (!isHudTypingTarget(target)) return;
+    game.noteHudTypingActivity(target);
+  }, true);
 
   // scale (range 20-70; default ~45)
   let hudScale = hudSizePercent / 100;
@@ -1110,10 +1121,30 @@ function createOverlay(game) {
   const hudSleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   let chatSendInFlight = false;
+  let cachedSiteChatInput = null;
 
   const findSiteChatInput = () => {
-    const el = document.querySelector(".chat.pane textarea");
-    return (el && el.tagName === "TEXTAREA") ? el : null;
+    if (cachedSiteChatInput && document.body.contains(cachedSiteChatInput)) {
+      return cachedSiteChatInput;
+    }
+    const selectors = [
+      ".chat.pane textarea",
+      ".chat textarea",
+      "textarea[placeholder='Type here to chat']",
+      "textarea[data-placeholder-text='typeHereToChat']",
+      "textarea[maxlength='300']"
+    ];
+    for (const selector of selectors) {
+      const list = document.querySelectorAll(selector);
+      for (const el of list) {
+        if (!(el && el.tagName === "TEXTAREA")) continue;
+        if (wrap.contains(el)) continue;
+        cachedSiteChatInput = el;
+        return el;
+      }
+    }
+    cachedSiteChatInput = null;
+    return null;
   };
 
   async function waitForChatWindow() {
@@ -1196,6 +1227,9 @@ function createOverlay(game) {
       render();
       if (!fromQuick && document.body.contains(chatTextarea)) {
         chatTextarea.focus();
+      }
+      if (!fromQuick && game.hudTypingActive()) {
+        game.requestHudFocusRestore(0);
       }
     }
   }
@@ -1650,7 +1684,12 @@ async function setupBuddy() {
     if (!event.origin.endsWith("jklm.fun")) return;
     const data = event.data;
 
-    if ("myTurn" in data) game.myTurn = data.myTurn;
+    if ("myTurn" in data) {
+      game.myTurn = data.myTurn;
+      if (data.myTurn && game.hudTypingActive()) {
+        game.requestHudFocusRestore(60);
+      }
+    }
 
     if (data.type === "setup") {
       await game.setLang(data.language);
