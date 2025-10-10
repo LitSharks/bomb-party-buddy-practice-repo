@@ -82,6 +82,7 @@ function createOverlay(game) {
   game.instantMode = getBool(savedSettings?.instantMode, game.instantMode);
   game.mistakesEnabled = getBool(savedSettings?.mistakesEnabled, game.mistakesEnabled);
   game.autoSuicide = getBool(savedSettings?.autoSuicide, game.autoSuicide);
+  game.setAutoJoinAlways(getBool(savedSettings?.autoJoinAlways, game.autoJoinAlways));
   game.foulMode = getBool(savedSettings?.foulMode, game.foulMode);
   game.coverageMode = getBool(savedSettings?.coverageMode, game.coverageMode);
   game.lengthMode = getBool(savedSettings?.lengthMode, game.lengthMode);
@@ -134,6 +135,7 @@ function createOverlay(game) {
     instantMode: !!game.instantMode,
     mistakesEnabled: !!game.mistakesEnabled,
     autoSuicide: !!game.autoSuicide,
+    autoJoinAlways: !!game.autoJoinAlways,
     foulMode: !!game.foulMode,
     coverageMode: !!game.coverageMode,
     excludeEnabled: !!game.excludeEnabled,
@@ -197,6 +199,148 @@ function createOverlay(game) {
   game._notifySettingsChanged = (opts = {}) => {
     requestSave(opts);
   };
+
+  const autoJoinManager = (() => {
+    let enabled = false;
+    let checkTimer = null;
+    let bodyObserver = null;
+    let buttonObserver = null;
+    let observedButton = null;
+    let lastClickTime = 0;
+
+    const ATTRIBUTE_NAMES = [
+      "aria-pressed",
+      "aria-checked",
+      "data-active",
+      "data-selected",
+      "data-state",
+      "data-enabled",
+      "data-checked",
+      "data-pressed"
+    ];
+    const ATTRIBUTE_FILTER = ["class", ...ATTRIBUTE_NAMES];
+    const TRUTHY_VALUES = new Set(["true", "1", "on", "yes", "y"]);
+    const FALSY_VALUES = new Set(["false", "0", "off", "no", "n"]);
+    const CLASS_INDICATORS = ["red", "selected", "active", "enabled", "on", "pressed", "checked"];
+    const DATA_KEYS = ["active", "selected", "state", "enabled", "checked", "pressed"];
+
+    const interpret = (value) => {
+      if (typeof value !== "string") return null;
+      const normalized = value.trim().toLowerCase();
+      if (TRUTHY_VALUES.has(normalized)) return true;
+      if (FALSY_VALUES.has(normalized)) return false;
+      return null;
+    };
+
+    const isButtonActive = (btn) => {
+      if (!btn) return false;
+      for (const cls of CLASS_INDICATORS) {
+        if (btn.classList.contains(cls)) return true;
+      }
+      for (const attr of ATTRIBUTE_NAMES) {
+        const interpreted = interpret(btn.getAttribute(attr));
+        if (interpreted !== null) return interpreted;
+      }
+      const dataset = btn.dataset || {};
+      for (const key of DATA_KEYS) {
+        const interpreted = interpret(dataset[key]);
+        if (interpreted !== null) return interpreted;
+      }
+      return false;
+    };
+
+    const detachButtonObserver = () => {
+      if (buttonObserver) {
+        buttonObserver.disconnect();
+        buttonObserver = null;
+      }
+      observedButton = null;
+    };
+
+    const ensureButtonObserved = (btn) => {
+      if (!btn || observedButton === btn) return;
+      detachButtonObserver();
+      observedButton = btn;
+      buttonObserver = new MutationObserver(() => ensureAutoJoin());
+      try {
+        buttonObserver.observe(btn, {
+          attributes: true,
+          attributeFilter: ATTRIBUTE_FILTER,
+          childList: true,
+          characterData: true,
+          subtree: true
+        });
+      } catch (err) {
+        console.warn("[BombPartyShark] Failed to observe auto-join button", err);
+      }
+    };
+
+    const clickButton = (btn) => {
+      if (!btn) return;
+      if (typeof btn.click === "function") {
+        btn.click();
+      } else {
+        btn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      }
+    };
+
+    const ensureAutoJoin = () => {
+      if (!enabled) return;
+      const btn = document.querySelector("button.autojoinButton");
+      if (!btn) {
+        detachButtonObserver();
+        return;
+      }
+      ensureButtonObserved(btn);
+      if (isButtonActive(btn)) return;
+      const now = Date.now();
+      if (now - lastClickTime < 200) return;
+      lastClickTime = now;
+      clickButton(btn);
+    };
+
+    const start = () => {
+      if (!bodyObserver) {
+        bodyObserver = new MutationObserver(() => ensureAutoJoin());
+        bodyObserver.observe(document.body, { childList: true, subtree: true });
+      }
+      if (!checkTimer) {
+        checkTimer = window.setInterval(ensureAutoJoin, 2000);
+      }
+      ensureAutoJoin();
+    };
+
+    const stop = () => {
+      if (bodyObserver) {
+        bodyObserver.disconnect();
+        bodyObserver = null;
+      }
+      if (checkTimer) {
+        clearInterval(checkTimer);
+        checkTimer = null;
+      }
+      detachButtonObserver();
+    };
+
+    return {
+      update(value) {
+        const next = !!value;
+        if (next === enabled) {
+          if (enabled) ensureAutoJoin();
+          return;
+        }
+        enabled = next;
+        if (enabled) start();
+        else stop();
+      },
+      poke() {
+        if (enabled) ensureAutoJoin();
+      },
+      disconnect() {
+        stop();
+      }
+    };
+  })();
 
   game.setTalliesChangedCallback(() => {
     scheduleTalliesSave();
@@ -547,6 +691,16 @@ function createOverlay(game) {
     mkRow("Butterfingers", () => game.toggleMistakes(), () => game.mistakesEnabled, "yellow"),
     mkRow("Auto /suicide", () => game.toggleAutoSuicide(), () => game.autoSuicide, "red"),
   ];
+  const autoJoinToggle = mkRow(
+    "Always auto-join",
+    () => game.toggleAutoJoinAlways(),
+    () => game.autoJoinAlways,
+    "green",
+    "status",
+    { after: () => autoJoinManager.update(game.autoJoinAlways) }
+  );
+  rows.push(autoJoinToggle);
+
   const toggleRefs = [...rows];
   const dualToggleRows = [];
 
@@ -1179,9 +1333,13 @@ function createOverlay(game) {
   }
 
   const iv = setInterval(render, 160);
-  window.addEventListener("beforeunload", () => clearInterval(iv));
+  window.addEventListener("beforeunload", () => {
+    clearInterval(iv);
+    autoJoinManager.disconnect();
+  });
 
   document.body.appendChild(wrap);
+  autoJoinManager.update(game.autoJoinAlways);
   return { render };
 }
 

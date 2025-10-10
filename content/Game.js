@@ -102,6 +102,7 @@ class Game {
     this.coverageMode = false;
     this.mistakesEnabled = false;
     this.autoSuicide = false;
+    this.autoJoinAlways = false;
     this.hyphenMode = false;
     this.containsMode = false;
     this.containsText = "";
@@ -441,6 +442,8 @@ class Game {
   toggleCoverageMode() { this.coverageMode = !this.coverageMode; }
   toggleMistakes() { this.mistakesEnabled = !this.mistakesEnabled; }
   toggleAutoSuicide() { this.autoSuicide = !this.autoSuicide; }
+  toggleAutoJoinAlways() { this.autoJoinAlways = !this.autoJoinAlways; }
+  setAutoJoinAlways(v) { this.autoJoinAlways = !!v; }
   toggleHyphenMode() { this.hyphenMode = !this.hyphenMode; }
   togglePokemonMode() { this.pokemonMode = !this.pokemonMode; }
   toggleMineralsMode() { this.mineralsMode = !this.mineralsMode; }
