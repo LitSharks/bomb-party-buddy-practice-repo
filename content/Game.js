@@ -113,10 +113,14 @@ class Game {
     // Length (self)
     this.lengthMode = false;
     this.targetLen = 8;
+    this.targetLenIsMax = false;
+    this.lastEffectiveTargetSelf = this.targetLen;
 
     // Spectator modes
     this.specLengthMode = false;
     this.specTargetLen = 8;
+    this.specTargetLenIsMax = false;
+    this.lastEffectiveTargetSpec = this.specTargetLen;
     this.specFoulMode = false;
     this.specHyphenMode = false;
     this.specContainsMode = false;
@@ -138,6 +142,11 @@ class Game {
     // Butterfingers
     this.mistakesProb = 0.08;     // 0..0.30 (set by slider)
 
+    // Super realistic typing
+    this.superRealisticEnabled = false;
+    this.superRealisticAggression = 0.35;
+    this.superRealisticThinkDelaySec = 0.6;
+
     // Messages
     this.preMsgEnabled = false;
     this.preMsgText = "";
@@ -153,6 +162,7 @@ class Game {
     // Round-local failure blacklist + last pool
     this._roundFailed = new Set();
     this._roundPool = [];
+    this._lastSubmittedWord = null;
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -434,7 +444,7 @@ class Game {
   // ---------- setters used by HUD ----------
   setSpeed(v) { this.speed = Math.max(1, Math.min(12, Math.floor(v))); }
   setThinkingDelaySec(v) { const n = Math.max(0, Math.min(5, Number(v))); this.thinkingDelaySec = isFinite(n) ? n : 0; }
-  setSuggestionsLimit(v) { this.suggestionsLimit = Math.max(1, Math.min(10, Math.floor(v))); }
+  setSuggestionsLimit(v) { this.suggestionsLimit = Math.max(1, Math.min(20, Math.floor(v))); }
 
   togglePause() { this.paused = !this.paused; }
   toggleInstantMode() { this.instantMode = !this.instantMode; }
@@ -450,12 +460,30 @@ class Game {
   toggleRareMode() { this.rareMode = !this.rareMode; }
 
   toggleLengthMode() { this.lengthMode = !this.lengthMode; }
-  setTargetLen(n) { this.targetLen = Math.max(3, Math.min(20, Math.floor(n))); }
+  setTargetLen(n) {
+    if (n === 'max') {
+      this.targetLenIsMax = true;
+      this.targetLen = 99;
+      return;
+    }
+    const num = Math.max(3, Math.min(20, Math.floor(Number(n))));
+    this.targetLenIsMax = false;
+    this.targetLen = num;
+  }
   toggleContainsMode() { this.containsMode = !this.containsMode; }
   setContainsText(t) { this.containsText = (t ?? ""); }
 
   toggleSpecLength() { this.specLengthMode = !this.specLengthMode; }
-  setSpecTargetLen(n) { this.specTargetLen = Math.max(3, Math.min(20, Math.floor(n))); }
+  setSpecTargetLen(n) {
+    if (n === 'max') {
+      this.specTargetLenIsMax = true;
+      this.specTargetLen = 99;
+      return;
+    }
+    const num = Math.max(3, Math.min(20, Math.floor(Number(n))));
+    this.specTargetLenIsMax = false;
+    this.specTargetLen = num;
+  }
   toggleSpecFoul() { this.specFoulMode = !this.specFoulMode; }
   toggleSpecHyphenMode() { this.specHyphenMode = !this.specHyphenMode; }
   toggleSpecContainsMode() { this.specContainsMode = !this.specContainsMode; }
@@ -472,6 +500,16 @@ class Game {
   setMistakesProb(p) { // p is 0..0.30
     const n = Math.max(0, Math.min(0.30, Number(p)));
     this.mistakesProb = isFinite(n) ? n : 0.08;
+  }
+
+  toggleSuperRealistic() { this.superRealisticEnabled = !this.superRealisticEnabled; }
+  setSuperRealisticAggression(value) {
+    const n = Math.max(0, Math.min(1, Number(value)));
+    this.superRealisticAggression = Number.isFinite(n) ? n : 0;
+  }
+  setSuperRealisticThinkDelaySec(value) {
+    const n = Math.max(0, Math.min(5, Number(value)));
+    this.superRealisticThinkDelaySec = Number.isFinite(n) ? n : 0;
   }
 
   priorityFeatures() { return ["contains", "foul", "coverage", "hyphen", "length"]; }
@@ -679,7 +717,7 @@ class Game {
   }
 
   _generateCandidates(context, syllable, limit) {
-    const lim = Math.max(1, Math.min(10, limit | 0));
+    const lim = Math.max(1, Math.min(20, limit | 0));
     const syl = (syllable || "").toLowerCase();
     if (!syl) {
       return { orderedWords: [], limitedWords: [], displayEntries: [], flags: {} };
@@ -689,6 +727,7 @@ class Game {
     const coverageMode = isSelf ? this.coverageMode : false;
     const lengthMode = isSelf ? this.lengthMode : this.specLengthMode;
     const targetLen = isSelf ? this.targetLen : this.specTargetLen;
+    const targetLenIsMax = isSelf ? this.targetLenIsMax : this.specTargetLenIsMax;
     const foulMode = isSelf ? this.foulMode : this.specFoulMode;
     const pokemonMode = isSelf ? this.pokemonMode : this.specPokemonMode;
     const mineralsMode = isSelf ? this.mineralsMode : this.specMineralsMode;
@@ -743,6 +782,23 @@ class Game {
       return { orderedWords: [], limitedWords: [], displayEntries: [], flags };
     }
 
+    let effectiveTargetLen = targetLen;
+    if (lengthMode && targetLenIsMax) {
+      effectiveTargetLen = 0;
+      for (const info of candidateMap.values()) {
+        const len = (info.word || '').length || 0;
+        if (len > effectiveTargetLen) effectiveTargetLen = len;
+      }
+      if (effectiveTargetLen <= 0) {
+        effectiveTargetLen = targetLen;
+      }
+    }
+    if (isSelf) {
+      this.lastEffectiveTargetSelf = effectiveTargetLen;
+    } else {
+      this.lastEffectiveTargetSpec = effectiveTargetLen;
+    }
+
     const specialPriority = ['foul', 'pokemon', 'minerals', 'rare'];
     const specialRanks = { foul: 4, pokemon: 3, minerals: 2, rare: 1 };
 
@@ -776,19 +832,19 @@ class Game {
 
       let lengthCategory = 0;
       let lengthTone = null;
-      let lengthDistance = Math.abs(word.length - targetLen);
+      let lengthDistance = Math.abs(word.length - effectiveTargetLen);
       if (lengthMode) {
         if (coverageMode) {
-          if (word.length <= targetLen) {
+          if (word.length <= effectiveTargetLen) {
             lengthCategory = 2;
             withinCapCount++;
           }
         } else {
-          if (word.length === targetLen) {
+          if (word.length === effectiveTargetLen) {
             lengthCategory = 2;
             lengthTone = 'lengthExact';
             exactCount++;
-          } else if (Math.abs(word.length - targetLen) <= 6) {
+          } else if (Math.abs(word.length - effectiveTargetLen) <= 6) {
             lengthCategory = 1;
             lengthTone = 'lengthFlex';
             nearCount++;
@@ -819,7 +875,7 @@ class Game {
 
     let workingCandidates = candidates;
     if (coverageMode && lengthMode) {
-      const withinCap = candidates.filter(c => c.word.length <= targetLen);
+      const withinCap = candidates.filter(c => c.word.length <= effectiveTargetLen);
       if (withinCap.length) {
         workingCandidates = withinCap;
         flags.lenCapApplied = true;
@@ -996,24 +1052,123 @@ class Game {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
+  _randomDifferentLetter(ch) {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz";
+    const lower = (ch || "").toString().toLowerCase();
+    const candidates = alphabet.replace(lower, "");
+    if (!candidates.length) return "a";
+    const idx = Math.floor(Math.random() * candidates.length);
+    return candidates[idx] || "a";
+  }
+
+  _prepareSuperRealisticPlan(seq) {
+    if (!this.superRealisticEnabled || this.autoSuicide) return null;
+    const aggression = Math.max(0, Math.min(1, Number(this.superRealisticAggression) || 0));
+    if (aggression <= 0) return null;
+    if (Math.random() >= aggression) return null;
+    const text = typeof seq === "string" ? seq : String(seq || "");
+    if (text.length < 2) return null;
+
+    const routes = [];
+    if (text.length >= 4) routes.push("pause");
+    if (text.length >= 3) routes.push("lateFix");
+    routes.push("stutter");
+    if (!routes.length) return null;
+
+    const chosen = routes[Math.floor(Math.random() * routes.length)];
+    if (chosen === "pause") {
+      const baseIndex = Math.max(0, Math.floor(text.length / 2));
+      const jitter = Math.random() < 0.5 ? 0 : 1;
+      const index = Math.min(text.length - 1, baseIndex + jitter);
+      return {
+        type: "pause",
+        index,
+        pauseMs: Math.max(0, Number(this.superRealisticThinkDelaySec) * 1000 || 0),
+        done: false
+      };
+    }
+    if (chosen === "lateFix") {
+      const index = Math.floor(Math.random() * text.length);
+      return {
+        type: "lateFix",
+        index,
+        wrongChar: this._randomDifferentLetter(text[index]),
+        triggered: false
+      };
+    }
+    const index = Math.floor(Math.random() * text.length);
+    const baseMistakes = Math.max(1, Math.round(aggression * 3));
+    const mistakes = Math.max(1, Math.min(3, baseMistakes + (Math.random() < 0.5 ? 0 : 1)));
+    return { type: "stutter", index, mistakes, done: false };
+  }
+
   async _typeTextSequence(input, text, perCharDelay, options = {}) {
     if (!input || text === undefined || text === null) return;
     const seq = typeof text === "string" ? text : String(text);
     if (!seq.length) return;
     const allowMistakes = options.allowMistakes !== false;
-    for (let i = 0; i < seq.length; i++) {
-      const ch = seq[i];
-      if (allowMistakes && this.mistakesEnabled && !this.autoSuicide && Math.random() < this.mistakesProb) {
-        input.value += ch;
+    const allowButterfingers = allowMistakes && this.mistakesEnabled && !this.autoSuicide;
+    const plan = allowMistakes ? this._prepareSuperRealisticPlan(seq) : null;
+
+    const typeChar = async (char, opts = {}) => {
+      const allowButter = opts.allowButter !== undefined ? opts.allowButter : allowButterfingers;
+      if (allowButter && Math.random() < this.mistakesProb) {
+        input.value += char;
         this._emitInputEvent(input);
         await this._sleep(perCharDelay);
         input.value = input.value.slice(0, -1);
         this._emitInputEvent(input);
         await this._sleep(perCharDelay);
       }
-      input.value += ch;
+      input.value += char;
       this._emitInputEvent(input);
       await this._sleep(perCharDelay);
+    };
+
+    const backspace = async (count = 1) => {
+      const times = Math.max(0, Math.floor(count));
+      for (let i = 0; i < times; i++) {
+        input.value = input.value.slice(0, -1);
+        this._emitInputEvent(input);
+        await this._sleep(perCharDelay);
+      }
+    };
+
+    for (let i = 0; i < seq.length; i++) {
+      const ch = seq[i];
+      if (plan && plan.type === "lateFix" && i === plan.index) {
+        await typeChar(plan.wrongChar, { allowButter: false });
+        plan.triggered = true;
+        continue;
+      }
+      if (plan && plan.type === "stutter" && !plan.done && i === plan.index) {
+        await this._sleep(perCharDelay * (0.4 + Math.random() * 0.4));
+        for (let attempt = 0; attempt < plan.mistakes; attempt++) {
+          const wrongChar = this._randomDifferentLetter(ch);
+          await typeChar(wrongChar, { allowButter: false });
+          await this._sleep(perCharDelay * (0.5 + Math.random() * 0.6));
+          await backspace(1);
+        }
+        await typeChar(ch, { allowButter: false });
+        plan.done = true;
+        continue;
+      }
+      await typeChar(ch);
+      if (plan && plan.type === "pause" && !plan.done && i === plan.index) {
+        plan.done = true;
+        if (plan.pauseMs > 0) {
+          await this._sleep(plan.pauseMs);
+        }
+      }
+    }
+
+    if (plan && plan.type === "lateFix" && plan.triggered) {
+      await this._sleep(Math.max(60, perCharDelay * 2));
+      const suffix = seq.slice(plan.index);
+      await backspace(suffix.length);
+      for (const ch of suffix) {
+        await typeChar(ch, { allowButter: false });
+      }
     }
   }
 
@@ -1027,6 +1182,7 @@ class Game {
       await new Promise(r => setTimeout(r, this.thinkingDelaySec * 1000));
     }
     this._roundFailed.clear();
+    this._lastSubmittedWord = null;
     const picks = this.getTopCandidates(this.syllable, this.suggestionsLimit);
     this.lastTopPicksSelf = picks;
     const word = this._pickNextNotFailed();
@@ -1047,6 +1203,8 @@ class Game {
     await Promise.resolve();
     input.value = "";
     this._emitInputEvent(input);
+
+    this._lastSubmittedWord = word || "";
 
     const perCharDelay = this._charDelayMs();
     const instant = !!this.instantMode;
@@ -1098,6 +1256,7 @@ class Game {
 
   onCorrectWord(word) {
     if (!this.myTurn) return;
+    this._lastSubmittedWord = null;
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach(c => {
@@ -1113,7 +1272,10 @@ class Game {
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
     if (!myTurn) return;
-    if (word) this._roundFailed.add((word || "").toLowerCase());
+    const normalizedIncoming = (word || "").toLowerCase().trim();
+    const normalizedFallback = (this._lastSubmittedWord || "").toLowerCase().trim();
+    const fallbackWord = normalizedIncoming || normalizedFallback;
+    if (fallbackWord) this._roundFailed.add(fallbackWord);
     if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});
