@@ -1092,6 +1092,40 @@ class Game {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
+  _inputMaxLength(input) {
+    if (!input) return null;
+    const attr = input.getAttribute?.("maxlength");
+    if (!attr) return null;
+    const max = Number(attr);
+    return Number.isFinite(max) && max > 0 ? max : null;
+  }
+
+  _truncateToMax(input, text) {
+    const raw = text ?? "";
+    const max = this._inputMaxLength(input);
+    if (max === null) return raw;
+    if (raw.length <= max) return raw;
+    return raw.slice(0, max);
+  }
+
+  _setInputValueRespectingMax(input, text) {
+    if (!input) return "";
+    const finalValue = this._truncateToMax(input, text);
+    input.value = finalValue;
+    this._emitInputEvent(input);
+    return finalValue;
+  }
+
+  async _waitForInput(timeoutMs = 1500) {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    let input = this._ensureInput();
+    while (!input && Date.now() < deadline) {
+      await this._sleep(25);
+      input = this._ensureInput();
+    }
+    return input;
+  }
+
   _randomLetterExcept(correct) {
     const pool = 'abcdefghijklmnopqrstuvwxyz';
     const lowerCorrect = (correct || '').toLowerCase();
@@ -1118,9 +1152,12 @@ class Game {
     const seq = typeof text === "string" ? text : String(text);
     if (!seq.length) return;
     const allowMistakes = options.allowMistakes !== false;
+    const maxLen = this._inputMaxLength(input);
+    const canTypeChar = () => maxLen === null || input.value.length < maxLen;
     for (let i = 0; i < seq.length; i++) {
       const ch = seq[i];
-      if (allowMistakes && this.mistakesEnabled && !this.autoSuicide && Math.random() < this.mistakesProb) {
+      if (!canTypeChar()) break;
+      if (allowMistakes && this.mistakesEnabled && !this.autoSuicide && Math.random() < this.mistakesProb && canTypeChar()) {
         input.value += ch;
         this._emitInputEvent(input);
         await this._sleep(perCharDelay);
@@ -1128,6 +1165,7 @@ class Game {
         this._emitInputEvent(input);
         await this._sleep(perCharDelay);
       }
+      if (!canTypeChar()) break;
       input.value += ch;
       this._emitInputEvent(input);
       await this._sleep(perCharDelay);
@@ -1210,8 +1248,9 @@ class Game {
       return;
     }
 
-    if (input.value !== raw) {
-      input.value = raw;
+    const targetValue = this._truncateToMax(input, raw);
+    if (input.value !== targetValue) {
+      input.value = targetValue;
       this._emitInputEvent(input);
     }
     await this._sleep(Math.max(baseDelay * 0.6, 40));
@@ -1287,12 +1326,11 @@ class Game {
   }
 
   async typeAndSubmit(word, ignorePostfix=false) {
-    const input = this._ensureInput(); if (!input) return;
+    const input = await this._waitForInput(); if (!input) return;
 
     input.focus();
     await Promise.resolve();
-    input.value = "";
-    this._emitInputEvent(input);
+    this._setInputValueRespectingMax(input, "");
 
     const perCharDelay = this._charDelayMs();
     const instant = !!this.instantMode;
@@ -1300,30 +1338,25 @@ class Game {
 
     if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
       if (instant) {
-        input.value = this.preMsgText;
-        this._emitInputEvent(input);
+        this._setInputValueRespectingMax(input, this.preMsgText);
         await this._sleep(Math.max(40, perCharDelay));
-        input.value = "";
-        this._emitInputEvent(input);
+        this._setInputValueRespectingMax(input, "");
       } else {
         await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts);
         await this._sleep(Math.max(80, perCharDelay * 4));
-        input.value = "";
-        this._emitInputEvent(input);
+        this._setInputValueRespectingMax(input, "");
       }
     }
 
     if (instant) {
-      input.value = word;
-      this._emitInputEvent(input);
+      this._setInputValueRespectingMax(input, word);
     } else {
       await this._typeWordWithRealism(input, word, perCharDelay);
     }
 
     if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
       if (instant) {
-        input.value = `${input.value}${this.postfixText}`;
-        this._emitInputEvent(input);
+        this._setInputValueRespectingMax(input, `${input.value}${this.postfixText}`);
       } else {
         await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts);
       }
