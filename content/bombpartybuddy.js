@@ -16,19 +16,77 @@ function getInput() {
   return selfTurns[0].getElementsByTagName("input")[0];
 }
 
-// Clipboard fallback (permissions policy blocks navigator.clipboard)
+// Clipboard helper (attempt navigator.clipboard, fall back to execCommand)
 async function copyPlain(text) {
+  const payload = typeof text === "string" ? text : String(text ?? "");
+  if (!payload) return false;
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(payload);
+      return true;
+    } catch (err) {
+      console.debug("[BombPartyShark] navigator.clipboard.writeText failed, falling back", err);
+    }
+  }
+
+  let ta = null;
   try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.left = "-9999px";
+    ta = document.createElement("textarea");
+    ta.value = payload;
+    Object.assign(ta.style, {
+      position: "fixed",
+      left: "-9999px",
+      top: "0",
+      opacity: "0"
+    });
     document.body.appendChild(ta);
-    ta.focus(); ta.select();
+    ta.focus();
+    ta.select();
     const ok = document.execCommand("copy");
-    ta.remove();
     return ok;
-  } catch { return false; }
+  } catch (err) {
+    console.warn("[BombPartyShark] execCommand copy failed", err);
+    return false;
+  } finally {
+    if (ta && ta.parentNode) {
+      ta.remove();
+    }
+  }
+}
+
+function showCopyToast(anchor, message = "Copied!") {
+  if (!anchor || !anchor.getBoundingClientRect) return;
+  const rect = anchor.getBoundingClientRect();
+  const toast = document.createElement("div");
+  toast.textContent = message;
+  Object.assign(toast.style, {
+    position: "fixed",
+    left: `${rect.left + rect.width / 2}px`,
+    top: `${rect.top}px`,
+    transform: "translate(-50%, -120%)",
+    background: "rgba(34,197,94,0.92)",
+    color: "#f8fafc",
+    padding: "4px 8px",
+    borderRadius: "999px",
+    fontSize: "11px",
+    fontWeight: "700",
+    pointerEvents: "none",
+    zIndex: "2147483647",
+    boxShadow: "0 4px 12px rgba(16,185,129,0.35)",
+    opacity: "0",
+    transition: "opacity 0.18s ease, transform 0.18s ease"
+  });
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.style.opacity = "1";
+    toast.style.transform = "translate(-50%, -160%)";
+  });
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translate(-50%, -100%)";
+  }, 850);
+  setTimeout(() => { toast.remove(); }, 1100);
 }
 
 function createOverlay(game) {
@@ -1144,13 +1202,26 @@ function createOverlay(game) {
         transition:"transform 0.15s ease, background 0.15s ease",
         display:"inline-flex",
         alignItems:"center",
-        justifyContent:"center"
+        justifyContent:"center",
+        position:"relative",
+        maxWidth:"100%",
+        minWidth:"0",
+        textAlign:"center",
+        whiteSpace:"normal",
+        wordBreak:"break-word",
+        overflowWrap:"anywhere",
+        lineHeight:"1.25"
       });
       btn.addEventListener("mouseenter", ()=>{ btn.style.transform = "translateY(-1px)"; });
       btn.addEventListener("mouseleave", ()=>{ btn.style.transform = "none"; });
       btn.addEventListener("click", async () => {
         const ok = await copyPlain(word);
-        btn.style.boxShadow = ok ? "0 0 0 2px rgba(34,197,94,0.45)" : "0 0 0 2px rgba(239,68,68,0.45)";
+        if (ok) {
+          btn.style.boxShadow = "0 0 0 2px rgba(34,197,94,0.45)";
+          showCopyToast(btn);
+        } else {
+          btn.style.boxShadow = "0 0 0 2px rgba(239,68,68,0.45)";
+        }
         setTimeout(()=>{ btn.style.boxShadow = "none"; }, 420);
       });
       container.appendChild(btn);
@@ -1339,6 +1410,13 @@ function createOverlay(game) {
     }
     if ((context==="self" && game.rareMode) || (context==="spectator" && game.specRareMode)) {
       if (rareFallback) parts.push("No rare words matched this prompt; showing normal suggestions.");
+    }
+    if (context === "self" && game.lastHistorySuppressedSelf) {
+      if (game.lastHistoryExhaustedSelf) {
+        parts.push("All suggestions for this prompt were already used this session.");
+      } else {
+        parts.push("Skipping suggestions you've already used this session.");
+      }
     }
     if (context==="self" && game.lengthMode && game.coverageMode && capApplied)
       parts.push(`Limiting to words of <= ${formatTargetLenLabel(targetPref, targetActual)} letters while maximizing alphabet coverage.`);

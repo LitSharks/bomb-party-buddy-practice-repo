@@ -160,6 +160,7 @@ class Game {
     this._roundPool = [];
     this._roundCandidatesDetailed = [];
     this._roundSelectionContext = null;
+    this._usedWords = new Set();
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -184,6 +185,8 @@ class Game {
     this.lastPokemonFallbackSpectator = false;
     this.lastMineralsFallbackSpectator = false;
     this.lastRareFallbackSpectator = false;
+    this.lastHistorySuppressedSelf = false;
+    this.lastHistoryExhaustedSelf = false;
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
@@ -780,7 +783,9 @@ class Game {
       lenCapRelaxed: false,
       lenSuppressed: false,
       containsFallback: false,
-      hyphenFallback: false
+      hyphenFallback: false,
+      historySuppressed: false,
+      historyExhausted: false
     };
 
     const priority = this._ensurePriorityOrder();
@@ -881,6 +886,19 @@ class Game {
     if (hyphenMode && hyphenMatches === 0) flags.hyphenFallback = true;
 
     let workingCandidates = candidates;
+    if (isSelf && this._usedWords && this._usedWords.size > 0) {
+      const filtered = workingCandidates.filter(c => !this._usedWords.has(c.lower));
+      if (filtered.length > 0) {
+        if (filtered.length !== workingCandidates.length) {
+          flags.historySuppressed = true;
+        }
+        workingCandidates = filtered;
+      } else if (workingCandidates.length > 0) {
+        flags.historySuppressed = true;
+        flags.historyExhausted = true;
+        workingCandidates = [];
+      }
+    }
     if (coverageMode && lengthMode) {
       const withinCap = candidates.filter(c => c.word.length <= targetLen);
       if (withinCap.length) {
@@ -1032,6 +1050,8 @@ class Game {
     this.lastLenSuppressedByFoulSelf = !!result.flags.lenSuppressed;
     this.lastContainsFallbackSelf = !!result.flags.containsFallback;
     this.lastHyphenFallbackSelf = !!result.flags.hyphenFallback;
+    this.lastHistorySuppressedSelf = !!result.flags.historySuppressed;
+    this.lastHistoryExhaustedSelf = !!result.flags.historyExhausted;
 
     this._roundPool = result.orderedWords.slice();
     this._roundCandidatesDetailed = Array.isArray(result.candidateDetails) ? result.candidateDetails.slice() : [];
@@ -1237,7 +1257,11 @@ class Game {
     const detailed = Array.isArray(this._roundCandidatesDetailed) ? this._roundCandidatesDetailed : [];
     const context = this._roundSelectionContext || {};
     if (detailed.length) {
-      const available = detailed.filter(c => !this._roundFailed.has(c.lower));
+      const available = detailed.filter(c => {
+        if (this._roundFailed.has(c.lower)) return false;
+        if (this._usedWords && this._usedWords.has(c.lower)) return false;
+        return true;
+      });
       if (available.length) {
         const priority = Array.isArray(context.priority) ? context.priority : this._ensurePriorityOrder();
         let pool = available.slice();
@@ -1288,6 +1312,11 @@ class Game {
 
   async typeAndSubmit(word, ignorePostfix=false) {
     const input = this._ensureInput(); if (!input) return;
+
+    const normalizedWord = typeof word === 'string' ? word.toLowerCase().trim() : String(word ?? '').toLowerCase().trim();
+    if (normalizedWord) {
+      this._usedWords.add(normalizedWord);
+    }
 
     input.focus();
     await Promise.resolve();
