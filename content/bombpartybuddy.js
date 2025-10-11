@@ -738,6 +738,9 @@ function createOverlay(game) {
   const toggleRefs = [...rows];
   const dualToggleRows = [];
   let wordModesCollapsed = false;
+  let superRealWrap = null;
+  let superAggRow = null;
+  let superPauseRow = null;
 
   const mainGrid = document.createElement("div");
   Object.assign(mainGrid.style, { display:"grid", gap:"16px" });
@@ -745,24 +748,42 @@ function createOverlay(game) {
 
   const automationCard = createCard("Automation");
   rows.forEach(r => automationCard.appendChild(r));
-  mainGrid.appendChild(automationCard);
-
-  const hudCard = createCard("HUD & Rhythm");
-  const hudSizeRow = sliderRow("HUD size", 20, 70, hudSizePercent, 1, (v)=>{ hudSizePercent = v; hudScale = v/100; applyScale(); }, { accent: "#3b82f6", valueColor: "#93c5fd", onChange: () => requestSave() });
-  hudCard.appendChild(hudSizeRow);
-  hudCard.appendChild(sliderRow("Speed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v), { accent: "#22c55e", valueColor: "#4ade80", onChange: () => requestSave() }));
-  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` }));
-  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` }));
   const superRealToggle = mkRow("Super realistic", () => game.toggleSuperRealistic(), () => game.superRealisticEnabled, "yellow");
   toggleRefs.push(superRealToggle);
-  hudCard.appendChild(superRealToggle);
-  const superRealWrap = document.createElement("div");
-  Object.assign(superRealWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
-  const superAggRow = sliderRow("Aggressiveness (%)", 0, 100, Math.round(game.superRealisticAggression * 100), 1, (v)=>game.setSuperRealisticAggression(v/100), { accent: "#facc15", valueColor: "#fde047", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` });
-  const superPauseRow = sliderRow("Mid-word pause (s)", 0, 3, Math.round(game.superRealisticPauseSec * 10) / 10, 0.1, (v)=>game.setSuperRealisticPauseSec(v), { accent: "#facc15", valueColor: "#fde68a", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` });
+  automationCard.appendChild(superRealToggle);
+
+  superRealWrap = document.createElement("div");
+  Object.assign(superRealWrap.style, {
+    display:"grid",
+    gap:"12px 16px",
+    gridTemplateColumns:"repeat(auto-fit, minmax(240px, 1fr))",
+    marginTop:"4px"
+  });
+
+  superAggRow = sliderRow("Aggressiveness (%)", 0, 100, Math.round(game.superRealisticAggression * 100), 1, (v)=>game.setSuperRealisticAggression(v/100), { accent: "#facc15", valueColor: "#fde047", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` });
+  superPauseRow = sliderRow("Mid-word pause (s)", 0, 3, Math.round(game.superRealisticPauseSec * 10) / 10, 0.1, (v)=>game.setSuperRealisticPauseSec(v), { accent: "#facc15", valueColor: "#fde68a", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` });
+
+  const polishSliderLayout = (row) => {
+    if (!row) return;
+    Object.assign(row.style, {
+      width:"100%",
+      margin:"6px 0",
+      gridTemplateColumns:"minmax(150px, 1fr) minmax(0, 1fr) auto"
+    });
+    if (row.firstChild) {
+      Object.assign(row.firstChild.style, { whiteSpace:"normal", lineHeight:"1.3" });
+    }
+    if (row._valueEl) {
+      row._valueEl.style.justifySelf = "end";
+    }
+  };
+  polishSliderLayout(superAggRow);
+  polishSliderLayout(superPauseRow);
+
   superRealWrap.appendChild(superAggRow);
   superRealWrap.appendChild(superPauseRow);
-  hudCard.appendChild(superRealWrap);
+  automationCard.appendChild(superRealWrap);
+
   if (!game.superRealisticEnabled) {
     superRealWrap.style.opacity = "0.55";
     superRealWrap.style.pointerEvents = "none";
@@ -775,6 +796,14 @@ function createOverlay(game) {
       superPauseRow._range.setAttribute("aria-disabled", "true");
     }
   }
+  mainGrid.appendChild(automationCard);
+
+  const hudCard = createCard("HUD & Rhythm");
+  const hudSizeRow = sliderRow("HUD size", 20, 70, hudSizePercent, 1, (v)=>{ hudSizePercent = v; hudScale = v/100; applyScale(); }, { accent: "#3b82f6", valueColor: "#93c5fd", onChange: () => requestSave() });
+  hudCard.appendChild(hudSizeRow);
+  hudCard.appendChild(sliderRow("Speed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v), { accent: "#22c55e", valueColor: "#4ade80", onChange: () => requestSave() }));
+  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` }));
+  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` }));
   mainGrid.appendChild(hudCard);
 
   const messageCard = createCard("Messages");
