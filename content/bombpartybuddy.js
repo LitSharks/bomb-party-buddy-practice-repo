@@ -18,9 +18,16 @@ function getInput() {
 
 // Clipboard fallback (permissions policy blocks navigator.clipboard)
 async function copyPlain(text) {
+  const payload = text ?? "";
+  if (navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(payload);
+      return true;
+    } catch (_) { /* fall through to execCommand */ }
+  }
   try {
     const ta = document.createElement("textarea");
-    ta.value = text;
+    ta.value = payload;
     ta.style.position = "fixed";
     ta.style.left = "-9999px";
     document.body.appendChild(ta);
@@ -1144,15 +1151,64 @@ function createOverlay(game) {
         transition:"transform 0.15s ease, background 0.15s ease",
         display:"inline-flex",
         alignItems:"center",
-        justifyContent:"center"
+        justifyContent:"center",
+        position:"relative",
+        overflow:"visible"
       });
       btn.addEventListener("mouseenter", ()=>{ btn.style.transform = "translateY(-1px)"; });
       btn.addEventListener("mouseleave", ()=>{ btn.style.transform = "none"; });
-      btn.addEventListener("click", async () => {
-        const ok = await copyPlain(word);
-        btn.style.boxShadow = ok ? "0 0 0 2px rgba(34,197,94,0.45)" : "0 0 0 2px rgba(239,68,68,0.45)";
-        setTimeout(()=>{ btn.style.boxShadow = "none"; }, 420);
-      });
+      const showCopyNotice = (ok) => {
+        const existing = btn.querySelector(".bps-copy-pop");
+        if (existing) existing.remove();
+        const pop = document.createElement("span");
+        pop.className = "bps-copy-pop";
+        pop.textContent = ok ? "Copied" : "Copy failed";
+        Object.assign(pop.style, {
+          position:"absolute",
+          left:"50%",
+          top:"-18px",
+          transform:"translate(-50%, 0)",
+          background:"rgba(15,118,110,0.92)",
+          color:"#ecfeff",
+          padding:"2px 8px",
+          borderRadius:"999px",
+          fontSize:"0.7rem",
+          fontWeight:"600",
+          pointerEvents:"none",
+          opacity:"0",
+          transition:"opacity 0.18s ease, transform 0.18s ease",
+          zIndex:"2"
+        });
+        if (!ok) {
+          pop.style.background = "rgba(190,18,60,0.92)";
+          pop.style.color = "#fff1f2";
+        }
+        btn.appendChild(pop);
+        requestAnimationFrame(() => {
+          pop.style.opacity = "1";
+          pop.style.transform = "translate(-50%, -6px)";
+        });
+        setTimeout(() => {
+          pop.style.opacity = "0";
+          pop.style.transform = "translate(-50%, -14px)";
+        }, 600);
+        setTimeout(() => { pop.remove(); }, 900);
+      };
+      const handleCopy = async (event) => {
+        if (event) event.preventDefault();
+        if (btn.dataset.copyBusy === "1") return;
+        btn.dataset.copyBusy = "1";
+        try {
+          const ok = await copyPlain(word);
+          btn.style.boxShadow = ok ? "0 0 0 2px rgba(34,197,94,0.45)" : "0 0 0 2px rgba(239,68,68,0.45)";
+          showCopyNotice(ok);
+          setTimeout(()=>{ btn.style.boxShadow = "none"; }, 420);
+        } finally {
+          setTimeout(() => { delete btn.dataset.copyBusy; }, 120);
+        }
+      };
+      btn.addEventListener("pointerdown", handleCopy);
+      btn.addEventListener("click", handleCopy);
       container.appendChild(btn);
     });
   }
