@@ -78,9 +78,17 @@ function createOverlay(game) {
 
   const setIfString = (val, setter) => { if (typeof val === "string") setter(val); };
 
+  const formatTargetLenLabel = (pref, actual) => {
+    if (pref >= 21) {
+      return actual ? `${actual} (max)` : "max";
+    }
+    return `${pref}`;
+  };
+
   game.paused = !getBool(savedSettings?.autoTypeEnabled, true);
   game.instantMode = getBool(savedSettings?.instantMode, game.instantMode);
   game.mistakesEnabled = getBool(savedSettings?.mistakesEnabled, game.mistakesEnabled);
+  game.superRealisticEnabled = getBool(savedSettings?.superRealisticEnabled, game.superRealisticEnabled);
   game.autoSuicide = getBool(savedSettings?.autoSuicide, game.autoSuicide);
   game.setAutoJoinAlways(getBool(savedSettings?.autoJoinAlways, game.autoJoinAlways));
   game.foulMode = getBool(savedSettings?.foulMode, game.foulMode);
@@ -105,9 +113,15 @@ function createOverlay(game) {
   game.setThinkingDelaySec(clampNumber(savedSettings?.thinkingDelaySec, 0, 5, game.thinkingDelaySec));
   const savedMistakeProb = typeof savedSettings?.mistakesProb === "number" ? savedSettings.mistakesProb : game.mistakesProb;
   game.setMistakesProb(Math.max(0, Math.min(0.30, Number(savedMistakeProb))));
-  game.setSuggestionsLimit(clampNumber(savedSettings?.suggestionsLimit, 1, 10, game.suggestionsLimit));
-  game.setTargetLen(clampNumber(savedSettings?.targetLen, 3, 20, game.targetLen));
-  game.setSpecTargetLen(clampNumber(savedSettings?.specTargetLen, 3, 20, game.specTargetLen));
+  const savedRealAgg = typeof savedSettings?.superRealisticAggression === "number" ? savedSettings.superRealisticAggression : game.superRealisticAggression;
+  game.setSuperRealisticAggression(savedRealAgg);
+  const savedRealPause = typeof savedSettings?.superRealisticPauseSec === "number" ? savedSettings.superRealisticPauseSec : game.superRealisticPauseSec;
+  game.setSuperRealisticPauseSec(savedRealPause);
+  game.setSuggestionsLimit(clampNumber(savedSettings?.suggestionsLimit, 1, 20, game.suggestionsLimit));
+  const defaultTargetPref = Number.isFinite(game.targetLenPref) ? game.targetLenPref : game.targetLen;
+  const defaultSpecTargetPref = Number.isFinite(game.specTargetLenPref) ? game.specTargetLenPref : game.specTargetLen;
+  game.setTargetLen(clampNumber(savedSettings?.targetLen, 3, 21, defaultTargetPref));
+  game.setSpecTargetLen(clampNumber(savedSettings?.specTargetLen, 3, 21, defaultSpecTargetPref));
 
   setIfString(savedSettings?.preMsgText, (val) => game.setPreMsgText(val));
   setIfString(savedSettings?.postfixText, (val) => game.setPostfixText(val));
@@ -155,9 +169,12 @@ function createOverlay(game) {
     speed: game.speed,
     thinkingDelaySec: game.thinkingDelaySec,
     mistakesProb: game.mistakesProb,
+    superRealisticEnabled: !!game.superRealisticEnabled,
+    superRealisticAggression: game.superRealisticAggression,
+    superRealisticPauseSec: game.superRealisticPauseSec,
     suggestionsLimit: game.suggestionsLimit,
-    targetLen: game.targetLen,
-    specTargetLen: game.specTargetLen,
+    targetLen: Number.isFinite(game.targetLenPref) ? game.targetLenPref : game.targetLen,
+    specTargetLen: Number.isFinite(game.specTargetLenPref) ? game.specTargetLenPref : game.specTargetLen,
     preMsgEnabled: !!game.preMsgEnabled,
     preMsgText: game.preMsgText || "",
     postfixEnabled: !!game.postfixEnabled,
@@ -572,18 +589,35 @@ function createOverlay(game) {
     input.type = "range"; input.min = String(min); input.max = String(max); input.step = String(step); input.value = String(val);
     const accent = options.accent || "#60a5fa";
     input.style.accentColor = accent;
-    const valEl = document.createElement("span"); valEl.textContent = String(val); valEl.style.opacity = "0.9"; valEl.style.fontWeight = "700";
+    const valEl = document.createElement("span"); valEl.style.opacity = "0.9"; valEl.style.fontWeight = "700";
     if (options.valueColor) valEl.style.color = options.valueColor;
+    const formatValue = typeof options.formatValue === "function" ? options.formatValue : (value) => String(value);
+    const coerceValue = (raw) => {
+      let num = typeof raw === "number" ? raw : Number.parseFloat(raw);
+      if (!Number.isFinite(num)) num = min;
+      if (Math.abs(step - 1) < 1e-9) {
+        num = Math.round(num);
+      } else {
+        num = Math.round(num * 1000) / 1000;
+      }
+      return Math.max(min, Math.min(max, num));
+    };
+    const updateDisplay = (value) => {
+      valEl.textContent = formatValue(value);
+    };
+    updateDisplay(val);
     input.addEventListener("input", (e)=>{
-      const v = step===1?parseInt(input.value,10):parseFloat(input.value);
+      const v = coerceValue(input.value);
       oninput(v);
-      valEl.textContent = String(v);
+      updateDisplay(v);
       if (typeof options.onChange === "function") options.onChange(v);
       e.stopPropagation();
     });
     row.appendChild(span); row.appendChild(input); row.appendChild(valEl);
     row._range = input;
     row._valueEl = valEl;
+    row._formatValue = formatValue;
+    row._coerceValue = coerceValue;
     return row;
   }
   function textInput(placeholder, value, oninput, options = {}){
@@ -703,6 +737,7 @@ function createOverlay(game) {
 
   const toggleRefs = [...rows];
   const dualToggleRows = [];
+  let wordModesCollapsed = false;
 
   const mainGrid = document.createElement("div");
   Object.assign(mainGrid.style, { display:"grid", gap:"16px" });
@@ -716,8 +751,30 @@ function createOverlay(game) {
   const hudSizeRow = sliderRow("HUD size", 20, 70, hudSizePercent, 1, (v)=>{ hudSizePercent = v; hudScale = v/100; applyScale(); }, { accent: "#3b82f6", valueColor: "#93c5fd", onChange: () => requestSave() });
   hudCard.appendChild(hudSizeRow);
   hudCard.appendChild(sliderRow("Speed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v), { accent: "#22c55e", valueColor: "#4ade80", onChange: () => requestSave() }));
-  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74", onChange: () => requestSave() }));
-  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15", onChange: () => requestSave() }));
+  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` }));
+  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` }));
+  const superRealToggle = mkRow("Super realistic", () => game.toggleSuperRealistic(), () => game.superRealisticEnabled, "yellow");
+  toggleRefs.push(superRealToggle);
+  hudCard.appendChild(superRealToggle);
+  const superRealWrap = document.createElement("div");
+  Object.assign(superRealWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
+  const superAggRow = sliderRow("Aggressiveness (%)", 0, 100, Math.round(game.superRealisticAggression * 100), 1, (v)=>game.setSuperRealisticAggression(v/100), { accent: "#facc15", valueColor: "#fde047", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` });
+  const superPauseRow = sliderRow("Mid-word pause (s)", 0, 3, Math.round(game.superRealisticPauseSec * 10) / 10, 0.1, (v)=>game.setSuperRealisticPauseSec(v), { accent: "#facc15", valueColor: "#fde68a", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` });
+  superRealWrap.appendChild(superAggRow);
+  superRealWrap.appendChild(superPauseRow);
+  hudCard.appendChild(superRealWrap);
+  if (!game.superRealisticEnabled) {
+    superRealWrap.style.opacity = "0.55";
+    superRealWrap.style.pointerEvents = "none";
+    if (superAggRow?._range) {
+      superAggRow._range.disabled = true;
+      superAggRow._range.setAttribute("aria-disabled", "true");
+    }
+    if (superPauseRow?._range) {
+      superPauseRow._range.disabled = true;
+      superPauseRow._range.setAttribute("aria-disabled", "true");
+    }
+  }
   mainGrid.appendChild(hudCard);
 
   const messageCard = createCard("Messages");
@@ -806,7 +863,7 @@ function createOverlay(game) {
   coverageCard.appendChild(editNotice);
 
   const setAllWrap = document.createElement("div");
-  Object.assign(setAllWrap.style, { display:"flex", flexWrap:"wrap", gap:"8px", alignItems:"center", marginTop:"6px" });
+  Object.assign(setAllWrap.style, { display:"none", flexWrap:"wrap", gap:"8px", alignItems:"center", marginTop:"6px" });
   const setAllLabel = document.createElement("span");
   setAllLabel.textContent = "Set all goals to:";
   Object.assign(setAllLabel.style, { fontWeight:"600" });
@@ -894,15 +951,52 @@ function createOverlay(game) {
   colorGuide.addEventListener("click", () => { colorGuide.style.display = "none"; });
   overviewCard.appendChild(colorGuide);
 
-  const suggRow = sliderRow("Suggestions", 1, 10, game.suggestionsLimit, 1, (v)=>game.setSuggestionsLimit(v), { accent: "#e2e8f0", valueColor: "#cbd5f5", onChange: () => requestSave({ recompute: true }) });
+  const suggRow = sliderRow("Suggestions", 1, 20, game.suggestionsLimit, 1, (v)=>game.setSuggestionsLimit(v), { accent: "#e2e8f0", valueColor: "#cbd5f5", onChange: () => requestSave({ recompute: true }), formatValue: (val) => `${Math.round(val)}` });
   overviewCard.appendChild(suggRow);
+
+  const modesToggleBtn = document.createElement("button");
+  modesToggleBtn.type = "button";
+  Object.assign(modesToggleBtn.style, {
+    display:"flex",
+    alignItems:"center",
+    justifyContent:"space-between",
+    gap:"12px",
+    padding:"6px 10px",
+    borderRadius:"10px",
+    border:"1px solid rgba(148,163,184,0.35)",
+    background:"rgba(15,23,42,0.5)",
+    color:"#e2e8f0",
+    fontWeight:"700",
+    cursor:"pointer"
+  });
+  const modesLabel = document.createElement("span");
+  modesLabel.textContent = "Word modes";
+  const modesArrow = document.createElement("span");
+  modesArrow.textContent = "▾";
+  modesArrow.style.fontSize = "16px";
+  modesToggleBtn.appendChild(modesLabel);
+  modesToggleBtn.appendChild(modesArrow);
+  modesToggleBtn.setAttribute("aria-expanded", "true");
+  modesToggleBtn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    wordModesCollapsed = !wordModesCollapsed;
+    render();
+  });
+  overviewCard.appendChild(modesToggleBtn);
+
+  const wordModesBody = document.createElement("div");
+  wordModesBody.id = "wordModesSection";
+  modesToggleBtn.setAttribute("aria-controls", wordModesBody.id);
+  Object.assign(wordModesBody.style, { display:"flex", flexDirection:"column", gap:"8px", marginTop:"8px" });
+  wordModesBody.setAttribute("aria-hidden", "false");
+  overviewCard.appendChild(wordModesBody);
 
   const foulDualRow = mkDualRow("Foul words", [
     { label: "Me", onClick: () => game.toggleFoulMode(), getOn: () => game.foulMode, scheme: "red", recompute: true },
     { label: "Spectator", onClick: () => game.toggleSpecFoul(), getOn: () => game.specFoulMode, scheme: "red", recompute: true }
   ]);
   dualToggleRows.push(foulDualRow);
-  overviewCard.appendChild(foulDualRow);
+  wordModesBody.appendChild(foulDualRow);
   attachPriorityControl(foulDualRow, "foul");
 
   const pokemonRow = mkDualRow("Pokémon words", [
@@ -910,36 +1004,44 @@ function createOverlay(game) {
     { label: "Spectator", onClick: () => game.toggleSpecPokemonMode(), getOn: () => game.specPokemonMode, scheme: "gold", recompute: true }
   ]);
   dualToggleRows.push(pokemonRow);
-  overviewCard.appendChild(pokemonRow);
+  wordModesBody.appendChild(pokemonRow);
 
   const mineralsRow = mkDualRow("Minerals", [
     { label: "Me", onClick: () => game.toggleMineralsMode(), getOn: () => game.mineralsMode, scheme: "brown", recompute: true },
     { label: "Spectator", onClick: () => game.toggleSpecMineralsMode(), getOn: () => game.specMineralsMode, scheme: "brown", recompute: true }
   ]);
   dualToggleRows.push(mineralsRow);
-  overviewCard.appendChild(mineralsRow);
+  wordModesBody.appendChild(mineralsRow);
 
   const rareRow = mkDualRow("Rare words", [
     { label: "Me", onClick: () => game.toggleRareMode(), getOn: () => game.rareMode, scheme: "cyan", recompute: true },
     { label: "Spectator", onClick: () => game.toggleSpecRareMode(), getOn: () => game.specRareMode, scheme: "cyan", recompute: true }
   ]);
   dualToggleRows.push(rareRow);
-  overviewCard.appendChild(rareRow);
+  wordModesBody.appendChild(rareRow);
 
   const lenDualRow = mkDualRow("Target length", [
     { label: "Me", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green", recompute: true },
     { label: "Spectator", onClick: () => game.toggleSpecLength(), getOn: () => game.specLengthMode, scheme: "green", recompute: true }
   ]);
   dualToggleRows.push(lenDualRow);
-  overviewCard.appendChild(lenDualRow);
+  wordModesBody.appendChild(lenDualRow);
   attachPriorityControl(lenDualRow, "length");
+  const lenSliderWrap = document.createElement("div");
+  Object.assign(lenSliderWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
+  const lenValueDisplay = (v) => (v >= 21 ? "Max" : `${Math.round(v)}`);
+  const lenSliderMain = sliderRow("Me", 3, 21, Number.isFinite(game.targetLenPref) ? game.targetLenPref : game.targetLen, 1, (v)=>game.setTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }), formatValue: lenValueDisplay });
+  const specLenSlider = sliderRow("Spectator", 3, 21, Number.isFinite(game.specTargetLenPref) ? game.specTargetLenPref : game.specTargetLen, 1, (v)=>game.setSpecTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }), formatValue: lenValueDisplay });
+  lenSliderWrap.appendChild(lenSliderMain);
+  lenSliderWrap.appendChild(specLenSlider);
+  wordModesBody.appendChild(lenSliderWrap);
 
   const hyphenRow = mkDualRow("Hyphen only", [
     { label: "Me", onClick: () => game.toggleHyphenMode(), getOn: () => game.hyphenMode, scheme: "pink", recompute: true },
     { label: "Spectator", onClick: () => game.toggleSpecHyphenMode(), getOn: () => game.specHyphenMode, scheme: "pink", recompute: true }
   ]);
   dualToggleRows.push(hyphenRow);
-  overviewCard.appendChild(hyphenRow);
+  wordModesBody.appendChild(hyphenRow);
   attachPriorityControl(hyphenRow, "hyphen");
 
   const containsRow = mkDualRow("Contains", [
@@ -947,7 +1049,7 @@ function createOverlay(game) {
     { label: "Spectator", onClick: () => game.toggleSpecContainsMode(), getOn: () => game.specContainsMode, scheme: "default", recompute: true }
   ]);
   dualToggleRows.push(containsRow);
-  overviewCard.appendChild(containsRow);
+  wordModesBody.appendChild(containsRow);
   attachPriorityControl(containsRow, "contains");
 
   const containsInputWrap = document.createElement("div");
@@ -956,15 +1058,7 @@ function createOverlay(game) {
   const containsSpecInput = textInput("Letters or fragment (spectator)", game.specContainsText, (v)=>game.setSpecContainsText(v), { theme:"blue", onChange: () => requestSave({ recompute: true }) });
   containsInputWrap.appendChild(containsMeInput);
   containsInputWrap.appendChild(containsSpecInput);
-  overviewCard.appendChild(containsInputWrap);
-
-  const lenSliderWrap = document.createElement("div");
-  Object.assign(lenSliderWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
-  const lenSliderMain = sliderRow("Me", 3, 20, game.targetLen, 1, (v)=>game.setTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }) });
-  const specLenSlider = sliderRow("Spectator", 3, 20, game.specTargetLen, 1, (v)=>game.setSpecTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }) });
-  lenSliderWrap.appendChild(lenSliderMain);
-  lenSliderWrap.appendChild(specLenSlider);
-  overviewCard.appendChild(lenSliderWrap);
+  wordModesBody.appendChild(containsInputWrap);
 
   const lenNoticeMain = noticeBar();
   overviewCard.appendChild(lenNoticeMain);
@@ -1201,6 +1295,8 @@ function createOverlay(game) {
     const pokemonFallback = context==="self" ? game.lastPokemonFallbackSelf : game.lastPokemonFallbackSpectator;
     const mineralsFallback = context==="self" ? game.lastMineralsFallbackSelf : game.lastMineralsFallbackSpectator;
     const rareFallback = context==="self" ? game.lastRareFallbackSelf : game.lastRareFallbackSpectator;
+    const targetPref = context==="self" ? (Number.isFinite(game.targetLenPref) ? game.targetLenPref : game.targetLen) : (Number.isFinite(game.specTargetLenPref) ? game.specTargetLenPref : game.specTargetLen);
+    const targetActual = context==="self" ? game.targetLen : game.specTargetLen;
 
     const parts = [];
     if ((context==="self" && game.foulMode) || (context==="spectator" && game.specFoulMode)) {
@@ -1216,12 +1312,18 @@ function createOverlay(game) {
       if (rareFallback) parts.push("No rare words matched this prompt; showing normal suggestions.");
     }
     if (context==="self" && game.lengthMode && game.coverageMode && capApplied)
-      parts.push(`Limiting to words of <= ${game.targetLen} letters while maximizing alphabet coverage.`);
+      parts.push(`Limiting to words of <= ${formatTargetLenLabel(targetPref, targetActual)} letters while maximizing alphabet coverage.`);
     if (context==="self" && game.lengthMode && game.coverageMode && capRelaxed)
-      parts.push(`No words of <= ${game.targetLen} letters found; using best coverage regardless of length.`);
+      parts.push(`No words of <= ${formatTargetLenLabel(targetPref, targetActual)} letters found; using best coverage regardless of length.`);
     if ((context==="self" && game.lengthMode && !game.coverageMode) ||
         (context==="spectator" && game.specLengthMode)) {
-      if (lenFallback) parts.push(`No words with exactly ${context==="self"?game.targetLen:game.specTargetLen} letters; trying nearby lengths.`);
+      if (lenFallback) {
+        if (targetPref >= 21) {
+          parts.push("No words at the maximum length; trying nearby lengths.");
+        } else {
+          parts.push(`No words with exactly ${formatTargetLenLabel(targetPref, targetActual)} letters; trying nearby lengths.`);
+        }
+      }
       if (lenSuppressed) parts.push("Target length ignored because higher-priority lists supplied enough options.");
     }
     if ((context==="self" && game.containsMode) || (context==="spectator" && game.specContainsMode)) {
@@ -1239,6 +1341,17 @@ function createOverlay(game) {
       row._buttons.forEach(info => applyToggleBtn(info.btn, info.getOn(), info.scheme, info.mode));
     });
 
+    if (modesArrow) {
+      modesArrow.textContent = wordModesCollapsed ? "▸" : "▾";
+    }
+    if (modesToggleBtn) {
+      modesToggleBtn.setAttribute("aria-expanded", wordModesCollapsed ? "false" : "true");
+    }
+    if (wordModesBody) {
+      wordModesBody.style.display = wordModesCollapsed ? "none" : "flex";
+      wordModesBody.setAttribute("aria-hidden", wordModesCollapsed ? "true" : "false");
+    }
+
     renderCoverageGrid();
     coverageEditButtons.forEach(({ key, btn }) => {
       applyToggleStyle(btn, coverageEditMode === key, "teal", "label");
@@ -1254,16 +1367,49 @@ function createOverlay(game) {
       editNotice.textContent = "";
     }
 
+    if (setAllWrap) {
+      const showSetAll = coverageEditMode === "goal";
+      setAllWrap.style.display = showSetAll ? "flex" : "none";
+      if (setAllInput) {
+        setAllInput.disabled = !showSetAll;
+        setAllInput.setAttribute("aria-disabled", showSetAll ? "false" : "true");
+      }
+      if (setAllBtn) {
+        setAllBtn.disabled = !showSetAll;
+        setAllBtn.setAttribute("aria-disabled", showSetAll ? "false" : "true");
+      }
+    }
+
     const updateSlider = (row, value) => {
       if (!row || !row._range) return;
-      const str = String(value);
+      const coerced = row._coerceValue ? row._coerceValue(value) : value;
+      const str = String(coerced);
       if (row._range.value !== str) row._range.value = str;
-      if (row._valueEl && row._valueEl.textContent !== str) row._valueEl.textContent = str;
+      if (row._valueEl) {
+        const formatted = row._formatValue ? row._formatValue(coerced) : str;
+        if (row._valueEl.textContent !== formatted) row._valueEl.textContent = formatted;
+      }
     };
     updateSlider(hudSizeRow, hudSizePercent);
-    updateSlider(lenSliderMain, game.targetLen);
-    updateSlider(specLenSlider, game.specTargetLen);
+    updateSlider(lenSliderMain, Number.isFinite(game.targetLenPref) ? game.targetLenPref : game.targetLen);
+    updateSlider(specLenSlider, Number.isFinite(game.specTargetLenPref) ? game.specTargetLenPref : game.specTargetLen);
     updateSlider(suggRow, game.suggestionsLimit);
+    updateSlider(superAggRow, Math.round((game.superRealisticAggression || 0) * 100));
+    updateSlider(superPauseRow, Math.round((game.superRealisticPauseSec || 0) * 10) / 10);
+
+    const superEnabled = !!game.superRealisticEnabled;
+    if (superRealWrap) {
+      superRealWrap.style.opacity = superEnabled ? "1" : "0.55";
+      superRealWrap.style.pointerEvents = superEnabled ? "auto" : "none";
+    }
+    if (superAggRow?._range) {
+      superAggRow._range.disabled = !superEnabled;
+      superAggRow._range.setAttribute("aria-disabled", superEnabled ? "false" : "true");
+    }
+    if (superPauseRow?._range) {
+      superPauseRow._range.disabled = !superEnabled;
+      superPauseRow._range.setAttribute("aria-disabled", superEnabled ? "false" : "true");
+    }
 
     if (containsMeInput && containsMeInput._input) {
       const val = game.containsText || "";
@@ -1299,12 +1445,13 @@ function createOverlay(game) {
       }
     });
 
+    const targetPrefSelf = Number.isFinite(game.targetLenPref) ? game.targetLenPref : game.targetLen;
     const noticeParts = [];
     if (game.lengthMode) {
       if (game.coverageMode && game.foulMode) {
-        noticeParts.push(`Target length (me): with coverage on it acts as a max (<= ${game.targetLen}); foul words still take priority.`);
+        noticeParts.push(`Target length (me): with coverage on it acts as a max (<= ${formatTargetLenLabel(targetPrefSelf, game.targetLen)}); foul words still take priority.`);
       } else if (game.coverageMode) {
-        noticeParts.push(`Target length (me): acts as a max (<= ${game.targetLen}) while optimizing alphabet coverage.`);
+        noticeParts.push(`Target length (me): acts as a max (<= ${formatTargetLenLabel(targetPrefSelf, game.targetLen)}) while optimizing alphabet coverage.`);
       } else if (game.foulMode) {
         noticeParts.push("Target length (me): ignored when foul words are available; used only if none match.");
       } else {
