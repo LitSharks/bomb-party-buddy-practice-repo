@@ -101,6 +101,7 @@ class Game {
     this.foulMode = false;
     this.coverageMode = false;
     this.mistakesEnabled = false;
+    this.superRealisticEnabled = false;
     this.autoSuicide = false;
     this.autoJoinAlways = false;
     this.hyphenMode = false;
@@ -113,10 +114,12 @@ class Game {
     // Length (self)
     this.lengthMode = false;
     this.targetLen = 8;
+    this.targetLenPref = 8;
 
     // Spectator modes
     this.specLengthMode = false;
     this.specTargetLen = 8;
+    this.specTargetLenPref = 8;
     this.specFoulMode = false;
     this.specHyphenMode = false;
     this.specContainsMode = false;
@@ -134,6 +137,8 @@ class Game {
     // Timing
     this.speed = 5;               // 1..12 (fastest unchanged; slowest slower)
     this.thinkingDelaySec = 0.0;  // 0..5
+    this.superRealisticAggression = 0.25; // 0..1 probability per word
+    this.superRealisticPauseSec = 0.6;    // pause duration for realistic stop
 
     // Butterfingers
     this.mistakesProb = 0.08;     // 0..0.30 (set by slider)
@@ -194,6 +199,8 @@ class Game {
     this.spectatorSuggestions = [];
     this.spectatorSuggestionsDisplay = [];
     this.lastSpectatorSyllable = "";
+
+    this.maxWordLength = 0;
 
     // Back-compat
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
@@ -398,6 +405,9 @@ class Game {
       while (this.letterWeights.length < 26) this.letterWeights.push(1);
     }
     this._lastLoadedLang = data.lang;
+    this.maxWordLength = this.words.reduce((max, word) => Math.max(max, (word || '').length || 0), 0);
+    this.setTargetLen(this.targetLenPref ?? this.targetLen);
+    this.setSpecTargetLen(this.specTargetLenPref ?? this.specTargetLen);
   }
 
   static computeLetterWeights(words) {
@@ -434,7 +444,18 @@ class Game {
   // ---------- setters used by HUD ----------
   setSpeed(v) { this.speed = Math.max(1, Math.min(12, Math.floor(v))); }
   setThinkingDelaySec(v) { const n = Math.max(0, Math.min(5, Number(v))); this.thinkingDelaySec = isFinite(n) ? n : 0; }
-  setSuggestionsLimit(v) { this.suggestionsLimit = Math.max(1, Math.min(10, Math.floor(v))); }
+  setSuggestionsLimit(v) { this.suggestionsLimit = Math.max(1, Math.min(20, Math.floor(v))); }
+  toggleSuperRealistic() { this.superRealisticEnabled = !this.superRealisticEnabled; }
+  setSuperRealisticAggression(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return;
+    this.superRealisticAggression = Math.max(0, Math.min(1, n));
+  }
+  setSuperRealisticPauseSec(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return;
+    this.superRealisticPauseSec = Math.max(0, Math.min(5, n));
+  }
 
   togglePause() { this.paused = !this.paused; }
   toggleInstantMode() { this.instantMode = !this.instantMode; }
@@ -450,12 +471,28 @@ class Game {
   toggleRareMode() { this.rareMode = !this.rareMode; }
 
   toggleLengthMode() { this.lengthMode = !this.lengthMode; }
-  setTargetLen(n) { this.targetLen = Math.max(3, Math.min(20, Math.floor(n))); }
+  _normalizeTargetLenPref(value) {
+    const pref = Math.max(3, Math.min(21, Math.floor(value)));
+    if (pref === 21) {
+      const fallback = Math.max(3, this.maxWordLength || 0);
+      return { pref, actual: fallback > 0 ? fallback : 20 };
+    }
+    return { pref, actual: pref };
+  }
+  setTargetLen(n) {
+    const { pref, actual } = this._normalizeTargetLenPref(Number.isFinite(n) ? n : this.targetLenPref);
+    this.targetLenPref = pref;
+    this.targetLen = actual;
+  }
   toggleContainsMode() { this.containsMode = !this.containsMode; }
   setContainsText(t) { this.containsText = (t ?? ""); }
 
   toggleSpecLength() { this.specLengthMode = !this.specLengthMode; }
-  setSpecTargetLen(n) { this.specTargetLen = Math.max(3, Math.min(20, Math.floor(n))); }
+  setSpecTargetLen(n) {
+    const { pref, actual } = this._normalizeTargetLenPref(Number.isFinite(n) ? n : this.specTargetLenPref);
+    this.specTargetLenPref = pref;
+    this.specTargetLen = actual;
+  }
   toggleSpecFoul() { this.specFoulMode = !this.specFoulMode; }
   toggleSpecHyphenMode() { this.specHyphenMode = !this.specHyphenMode; }
   toggleSpecContainsMode() { this.specContainsMode = !this.specContainsMode; }
@@ -679,7 +716,7 @@ class Game {
   }
 
   _generateCandidates(context, syllable, limit) {
-    const lim = Math.max(1, Math.min(10, limit | 0));
+    const lim = Math.max(1, Math.min(20, limit | 0));
     const syl = (syllable || "").toLowerCase();
     if (!syl) {
       return { orderedWords: [], limitedWords: [], displayEntries: [], flags: {} };
@@ -996,6 +1033,27 @@ class Game {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
+  _randomLetterExcept(correct) {
+    const pool = 'abcdefghijklmnopqrstuvwxyz';
+    const lowerCorrect = (correct || '').toLowerCase();
+    let idx = Math.floor(Math.random() * pool.length);
+    let ch = pool[idx];
+    if (ch === lowerCorrect) {
+      ch = pool[(idx + 7) % pool.length];
+    }
+    return ch;
+  }
+
+  async _backspaceChars(input, count, delayMs) {
+    if (!input || !count || count <= 0) return;
+    const delay = Math.max(30, Math.floor(delayMs || 0));
+    for (let i = 0; i < count; i++) {
+      input.value = input.value.slice(0, -1);
+      this._emitInputEvent(input);
+      await this._sleep(delay);
+    }
+  }
+
   async _typeTextSequence(input, text, perCharDelay, options = {}) {
     if (!input || text === undefined || text === null) return;
     const seq = typeof text === "string" ? text : String(text);
@@ -1015,6 +1073,91 @@ class Game {
       this._emitInputEvent(input);
       await this._sleep(perCharDelay);
     }
+  }
+
+
+  async _typeWordWithRealism(input, word, perCharDelay) {
+    const raw = typeof word === 'string' ? word : String(word ?? '');
+    if (!raw.length) return;
+    if (!this.superRealisticEnabled || this.instantMode || raw.startsWith('/')) {
+      await this._typeTextSequence(input, raw, perCharDelay);
+      return;
+    }
+
+    const aggression = Math.max(0, Math.min(1, this.superRealisticAggression || 0));
+    if (Math.random() >= aggression) {
+      await this._typeTextSequence(input, raw, perCharDelay);
+      return;
+    }
+
+    const options = [];
+    if (raw.length >= 4) options.push('pause');
+    if (raw.length >= 3) options.push('overrun');
+    if (raw.length >= 2) options.push('stutter');
+    if (!options.length) {
+      await this._typeTextSequence(input, raw, perCharDelay);
+      return;
+    }
+
+    const scenario = options[Math.floor(Math.random() * options.length)];
+    const baseDelay = Math.max(35, perCharDelay | 0);
+    try {
+      if (scenario === 'pause') {
+        const pivot = Math.max(1, Math.floor(raw.length / 2));
+        await this._typeTextSequence(input, raw.slice(0, pivot), perCharDelay);
+        const pauseMs = Math.max(0, (this.superRealisticPauseSec || 0) * 1000);
+        if (pauseMs > 0) {
+          const jitter = pauseMs * (0.6 * Math.random());
+          await this._sleep(pauseMs + jitter);
+        }
+        await this._typeTextSequence(input, raw.slice(pivot), perCharDelay);
+        return;
+      }
+
+      if (scenario === 'overrun' && raw.length >= 3) {
+        const maxIdx = raw.length - 2;
+        const minIdx = 1;
+        const idx = minIdx + Math.floor(Math.random() * (maxIdx - minIdx + 1));
+        const before = raw.slice(0, idx);
+        const correct = raw[idx];
+        const after = raw.slice(idx + 1);
+        const wrong = this._randomLetterExcept(correct);
+
+        await this._typeTextSequence(input, before, perCharDelay);
+        await this._typeTextSequence(input, wrong, perCharDelay, { allowMistakes: false });
+        await this._typeTextSequence(input, after, perCharDelay);
+        await this._sleep(Math.max(baseDelay * 2, 120));
+        await this._backspaceChars(input, after.length + 1, Math.max(baseDelay * 0.9, 45));
+        await this._sleep(Math.max(baseDelay, 60));
+        await this._typeTextSequence(input, correct, perCharDelay, { allowMistakes: false });
+        await this._typeTextSequence(input, after, perCharDelay);
+        return;
+      }
+
+      if (scenario === 'stutter') {
+        const idx = Math.floor(Math.random() * raw.length);
+        const before = raw.slice(0, idx);
+        const target = raw[idx];
+        const after = raw.slice(idx + 1);
+        await this._typeTextSequence(input, before, perCharDelay);
+        const repeats = 2 + Math.floor(Math.random() * 2);
+        for (let attempt = 0; attempt < repeats - 1; attempt++) {
+          const wrong = this._randomLetterExcept(target);
+          await this._typeTextSequence(input, wrong, perCharDelay, { allowMistakes: false });
+          await this._sleep(Math.max(baseDelay * 0.75, 40));
+          await this._backspaceChars(input, 1, Math.max(baseDelay * 0.8, 40));
+        }
+        await this._typeTextSequence(input, target, perCharDelay, { allowMistakes: false });
+        if (after.length) {
+          await this._typeTextSequence(input, after, perCharDelay);
+        }
+        return;
+      }
+    } catch (err) {
+      console.debug('[BombPartyShark] super realistic typing fell back', err);
+    }
+
+    await this._typeTextSequence(input, raw, perCharDelay);
   }
 
 
@@ -1070,7 +1213,7 @@ class Game {
       input.value = word;
       this._emitInputEvent(input);
     } else {
-      await this._typeTextSequence(input, word, perCharDelay);
+      await this._typeWordWithRealism(input, word, perCharDelay);
     }
 
     if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
@@ -1113,7 +1256,18 @@ class Game {
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
     if (!myTurn) return;
-    if (word) this._roundFailed.add((word || "").toLowerCase());
+    if (word) {
+      const normalizedRaw = (word || "").toLowerCase();
+      const normalized = normalizedRaw.trim();
+      if (normalized) this._roundFailed.add(normalized);
+      if (this.postfixEnabled && this.postfixText) {
+        const postfixLower = this.postfixText.toLowerCase();
+        if (postfixLower && normalizedRaw.endsWith(postfixLower)) {
+          const trimmed = normalizedRaw.slice(0, -postfixLower.length).trim();
+          if (trimmed) this._roundFailed.add(trimmed);
+        }
+      }
+    }
     if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});
