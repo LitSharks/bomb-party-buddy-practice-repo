@@ -18,17 +18,33 @@ function getInput() {
 
 // Clipboard fallback (permissions policy blocks navigator.clipboard)
 async function copyPlain(text) {
+  const payload = text === undefined || text === null ? "" : String(text);
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(payload);
+      return true;
+    } catch (err) {
+      console.warn("[BombPartyShark] navigator.clipboard.writeText failed, falling back", err);
+    }
+  }
   try {
     const ta = document.createElement("textarea");
-    ta.value = text;
+    ta.value = payload;
+    ta.setAttribute("readonly", "");
     ta.style.position = "fixed";
     ta.style.left = "-9999px";
+    ta.style.opacity = "0";
     document.body.appendChild(ta);
-    ta.focus(); ta.select();
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
     const ok = document.execCommand("copy");
     ta.remove();
     return ok;
-  } catch { return false; }
+  } catch (err) {
+    console.warn("[BombPartyShark] execCommand copy failed", err);
+    return false;
+  }
 }
 
 function createOverlay(game) {
@@ -1124,6 +1140,50 @@ function createOverlay(game) {
     container.innerHTML = "";
     if (!entries || !entries.length) { container.textContent = "(none)"; return; }
     const syl = (syllable || "").toLowerCase();
+    const showCopyHint = (button, message, success) => {
+      if (!button) return;
+      if (button._copyHintTimer) {
+        clearTimeout(button._copyHintTimer);
+        button._copyHintTimer = null;
+      }
+      if (button._copyHintEl) {
+        button._copyHintEl.remove();
+        button._copyHintEl = null;
+      }
+      const pill = document.createElement("span");
+      pill.textContent = message;
+      Object.assign(pill.style, {
+        position:"absolute",
+        top:"-18px",
+        left:"50%",
+        transform:"translate(-50%, -4px)",
+        background: success ? "rgba(34,197,94,0.92)" : "rgba(239,68,68,0.92)",
+        color:"#f8fafc",
+        padding:"2px 6px",
+        borderRadius:"8px",
+        fontSize:"10px",
+        fontWeight:"600",
+        letterSpacing:"0.2px",
+        pointerEvents:"none",
+        boxShadow:"0 4px 10px rgba(15,23,42,0.25)",
+        opacity:"0",
+        transition:"opacity 0.2s ease, transform 0.2s ease"
+      });
+      button.appendChild(pill);
+      button._copyHintEl = pill;
+      requestAnimationFrame(() => {
+        pill.style.opacity = "1";
+        pill.style.transform = "translate(-50%, -12px)";
+      });
+      button._copyHintTimer = setTimeout(() => {
+        pill.style.opacity = "0";
+        pill.style.transform = "translate(-50%, -18px)";
+        setTimeout(() => {
+          if (button._copyHintEl === pill) button._copyHintEl = null;
+          pill.remove();
+        }, 180);
+      }, success ? 900 : 1200);
+    };
     entries.forEach((entry) => {
       const word = typeof entry === "string" ? entry : entry.word;
       const tone = typeof entry === "string" ? "default" : entry.tone || "default";
@@ -1135,7 +1195,7 @@ function createOverlay(game) {
       Object.assign(btn.style, {
         cursor:"pointer",
         borderRadius:"999px",
-        padding:"6px 12px",
+        padding:"8px 14px",
         border:`1px solid ${styles.border}`,
         background:styles.bg,
         color:styles.color,
@@ -1144,14 +1204,26 @@ function createOverlay(game) {
         transition:"transform 0.15s ease, background 0.15s ease",
         display:"inline-flex",
         alignItems:"center",
-        justifyContent:"center"
+        justifyContent:"center",
+        position:"relative",
+        overflow:"visible",
+        textAlign:"center",
+        whiteSpace:"normal",
+        wordBreak:"break-word",
+        overflowWrap:"anywhere",
+        lineHeight:"1.25",
+        flex:"0 1 220px",
+        maxWidth:"220px",
+        minWidth:"0"
       });
       btn.addEventListener("mouseenter", ()=>{ btn.style.transform = "translateY(-1px)"; });
       btn.addEventListener("mouseleave", ()=>{ btn.style.transform = "none"; });
       btn.addEventListener("click", async () => {
         const ok = await copyPlain(word);
         btn.style.boxShadow = ok ? "0 0 0 2px rgba(34,197,94,0.45)" : "0 0 0 2px rgba(239,68,68,0.45)";
-        setTimeout(()=>{ btn.style.boxShadow = "none"; }, 420);
+        if (btn._copyBoxTimer) clearTimeout(btn._copyBoxTimer);
+        showCopyHint(btn, ok ? "Copied" : "Copy failed", ok);
+        btn._copyBoxTimer = setTimeout(()=>{ btn.style.boxShadow = "none"; btn._copyBoxTimer = null; }, 420);
       });
       container.appendChild(btn);
     });

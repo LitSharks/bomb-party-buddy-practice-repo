@@ -160,6 +160,8 @@ class Game {
     this._roundPool = [];
     this._roundCandidatesDetailed = [];
     this._roundSelectionContext = null;
+    this._sessionTriedWords = new Set();
+    this._inputMaxLength = null;
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -654,13 +656,27 @@ class Game {
   }
 
 
+  static escapeHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, (ch) => {
+      switch (ch) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        case "'": return '&#39;';
+        default: return ch;
+      }
+    });
+  }
+
   static highlightSyllable(word, syl) {
-    if (!syl) return word;
-    const i = word.indexOf(syl);
-    if (i < 0) return word;
-    const pre = word.slice(0, i);
-    const mid = word.slice(i, i + syl.length);
-    const post = word.slice(i + syl.length);
+    const rawWord = String(word ?? '');
+    if (!syl) return Game.escapeHtml(rawWord);
+    const idx = rawWord.indexOf(syl);
+    if (idx < 0) return Game.escapeHtml(rawWord);
+    const pre = Game.escapeHtml(rawWord.slice(0, idx));
+    const mid = Game.escapeHtml(rawWord.slice(idx, idx + syl.length));
+    const post = Game.escapeHtml(rawWord.slice(idx + syl.length));
     return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em">${mid}</b>${post}`;
   }
 
@@ -742,6 +758,7 @@ class Game {
     const containsNeedleRaw = (isSelf ? this.containsText : this.specContainsText) || '';
     const containsNeedle = containsNeedleRaw.trim().toLowerCase();
     const containsActive = containsMode && containsNeedle.length > 0;
+    const maxAllowedLength = isSelf ? this._maxAllowedWordLength(false) : null;
 
     const foulPool = foulMode ? this._pickCandidatesBase(syllable, this.foulWords) : [];
     const pokemonPool = pokemonMode ? this._pickCandidatesBase(syllable, this.pokemonWords) : [];
@@ -756,6 +773,8 @@ class Game {
         const word = (rawWord || '').toString().trim();
         if (!word) continue;
         const key = word.toLowerCase();
+        if (isSelf && this._sessionTriedWords.has(key)) continue;
+        if (isSelf && Number.isFinite(maxAllowedLength) && word.length > maxAllowedLength) continue;
         if (!candidateMap.has(key)) {
           candidateMap.set(key, { word, sources: new Set([source]) });
         } else {
@@ -1072,7 +1091,62 @@ class Game {
     } else {
       this.input = document.querySelector("input") || null;
     }
+    if (this.input) this._updateInputMaxLength(this.input);
+    else this._inputMaxLength = null;
     return this.input;
+  }
+
+  _updateInputMaxLength(input) {
+    if (!input) return;
+    let maxLen = Number.isFinite(input.maxLength) ? input.maxLength : -1;
+    if (!Number.isFinite(maxLen) || maxLen <= 0) {
+      const attr = input.getAttribute && input.getAttribute('maxlength');
+      const parsed = Number.parseInt(attr, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        maxLen = parsed;
+      }
+    }
+    this._inputMaxLength = Number.isFinite(maxLen) && maxLen > 0 ? maxLen : null;
+  }
+
+  _getInputMaxLength() {
+    if (this._inputMaxLength === null) {
+      const input = this._ensureInput();
+      if (input) this._updateInputMaxLength(input);
+    }
+    return this._inputMaxLength;
+  }
+
+  _maxAllowedWordLength(ignorePostfix = false) {
+    const maxLen = this._getInputMaxLength();
+    if (!Number.isFinite(maxLen) || maxLen <= 0) return null;
+    if (ignorePostfix) return maxLen;
+    const postfixLen = (this.postfixEnabled && this.postfixText && !this.autoSuicide) ? this.postfixText.length : 0;
+    return Math.max(0, maxLen - postfixLen);
+  }
+
+  _normalizeWordKey(word) {
+    if (typeof word !== 'string') word = String(word ?? '');
+    return word.trim().toLowerCase();
+  }
+
+  _recordWordAttempt(word) {
+    const normalized = this._normalizeWordKey(word);
+    if (!normalized || normalized.startsWith('/')) return;
+    this._sessionTriedWords.add(normalized);
+  }
+
+  _recordWordAttemptWithVariants(word) {
+    if (!word) return;
+    const rawLower = String(word).toLowerCase();
+    this._recordWordAttempt(rawLower);
+    const postfixLower = (this.postfixText || '').toLowerCase();
+    if (postfixLower && rawLower.endsWith(postfixLower)) {
+      const trimmed = rawLower.slice(0, -postfixLower.length).trim();
+      if (trimmed && !trimmed.startsWith('/')) {
+        this._sessionTriedWords.add(trimmed);
+      }
+    }
   }
 
   // Map speed(1..12) -> per-char delay ms (slowest much slower; fastest ~8ms)
@@ -1237,7 +1311,7 @@ class Game {
     const detailed = Array.isArray(this._roundCandidatesDetailed) ? this._roundCandidatesDetailed : [];
     const context = this._roundSelectionContext || {};
     if (detailed.length) {
-      const available = detailed.filter(c => !this._roundFailed.has(c.lower));
+      const available = detailed.filter(c => !this._roundFailed.has(c.lower) && !this._sessionTriedWords.has(c.lower));
       if (available.length) {
         const priority = Array.isArray(context.priority) ? context.priority : this._ensurePriorityOrder();
         let pool = available.slice();
@@ -1281,6 +1355,8 @@ class Game {
     }
 
     for (const w of this._roundPool) {
+      const normalized = this._normalizeWordKey(w);
+      if (this._sessionTriedWords.has(normalized)) continue;
       if (!this._roundFailed.has(w)) return w;
     }
     return null;
@@ -1288,6 +1364,24 @@ class Game {
 
   async typeAndSubmit(word, ignorePostfix=false) {
     const input = this._ensureInput(); if (!input) return;
+
+    const baseWord = (word === undefined || word === null) ? '' : (typeof word === 'string' ? word : String(word));
+    this._recordWordAttempt(baseWord);
+    const wordLimit = this._maxAllowedWordLength(ignorePostfix);
+    let safeWord = baseWord;
+    if (Number.isFinite(wordLimit) && wordLimit >= 0 && safeWord.length > wordLimit) {
+      safeWord = safeWord.slice(0, Math.max(0, wordLimit));
+    }
+    const postfixActive = !ignorePostfix && !this.autoSuicide && this.postfixEnabled && this.postfixText;
+    let postfixToType = postfixActive ? this.postfixText : '';
+    const absoluteLimit = this._getInputMaxLength();
+    if (Number.isFinite(absoluteLimit) && absoluteLimit > 0 && postfixToType) {
+      const remaining = absoluteLimit - safeWord.length;
+      if (remaining <= 0 || postfixToType.length > remaining) {
+        postfixToType = '';
+      }
+    }
+    if (!safeWord.length && !postfixToType.length) return;
 
     input.focus();
     await Promise.resolve();
@@ -1314,18 +1408,18 @@ class Game {
     }
 
     if (instant) {
-      input.value = word;
+      input.value = safeWord;
       this._emitInputEvent(input);
     } else {
-      await this._typeWordWithRealism(input, word, perCharDelay);
+      await this._typeWordWithRealism(input, safeWord, perCharDelay);
     }
 
-    if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
+    if (postfixToType) {
       if (instant) {
-        input.value = `${input.value}${this.postfixText}`;
+        input.value = `${input.value}${postfixToType}`;
         this._emitInputEvent(input);
       } else {
-        await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts);
+        await this._typeTextSequence(input, postfixToType, perCharDelay, plainTypingOpts);
       }
     }
 
@@ -1345,6 +1439,7 @@ class Game {
 
   onCorrectWord(word) {
     if (!this.myTurn) return;
+    this._recordWordAttemptWithVariants(word);
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach((count, c) => {
@@ -1372,6 +1467,7 @@ class Game {
         }
       }
     }
+    this._recordWordAttemptWithVariants(word);
     if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});
