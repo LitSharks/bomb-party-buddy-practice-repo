@@ -154,6 +154,7 @@ class Game {
     this.syllable = "";
     this.selfRound = 0;
     this.spectatorRound = 0;
+    this._typeRetryTimer = null;
 
     // Round-local failure blacklist + last pool
     this._roundFailed = new Set();
@@ -1092,6 +1093,65 @@ class Game {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
+  _inputMaxLength(input) {
+    if (!input) return null;
+    const attr = input.getAttribute?.("maxlength");
+    if (!attr) return null;
+    const max = Number(attr);
+    return Number.isFinite(max) && max > 0 ? max : null;
+  }
+
+  _inputIsUsable(input) {
+    if (!input) return false;
+    try {
+      if (typeof document !== 'undefined') {
+        const body = document.body;
+        if (!body || typeof body.contains !== 'function') return false;
+        if (!body.contains(input)) return false;
+      }
+    } catch (_) {
+      return false;
+    }
+    if (input.disabled || input.readOnly) return false;
+    const ariaDisabled = input.getAttribute?.('aria-disabled');
+    if (ariaDisabled && ariaDisabled !== 'false') return false;
+    try {
+      if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+        const style = window.getComputedStyle(input);
+        if (style && (style.visibility === 'hidden' || style.display === 'none')) return false;
+      }
+    } catch (_) { /* ignore */ }
+    return true;
+  }
+
+  _truncateToMax(input, text) {
+    const raw = text ?? "";
+    const max = this._inputMaxLength(input);
+    if (max === null) return raw;
+    if (raw.length <= max) return raw;
+    return raw.slice(0, max);
+  }
+
+  _setInputValueRespectingMax(input, text) {
+    if (!input) return "";
+    const finalValue = this._truncateToMax(input, text);
+    input.value = finalValue;
+    this._emitInputEvent(input);
+    return finalValue;
+  }
+
+  async _waitForInput(timeoutMs = 2200) {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    let input = this._ensureInput();
+    while (Date.now() < deadline) {
+      if (!this.myTurn && !this.autoSuicide) return null;
+      if (this._inputIsUsable(input)) return input;
+      await this._sleep(20);
+      input = this._ensureInput();
+    }
+    return this._inputIsUsable(input) ? input : null;
+  }
+
   _randomLetterExcept(correct) {
     const pool = 'abcdefghijklmnopqrstuvwxyz';
     const lowerCorrect = (correct || '').toLowerCase();
@@ -1118,9 +1178,12 @@ class Game {
     const seq = typeof text === "string" ? text : String(text);
     if (!seq.length) return;
     const allowMistakes = options.allowMistakes !== false;
+    const maxLen = this._inputMaxLength(input);
+    const canTypeChar = () => maxLen === null || input.value.length < maxLen;
     for (let i = 0; i < seq.length; i++) {
       const ch = seq[i];
-      if (allowMistakes && this.mistakesEnabled && !this.autoSuicide && Math.random() < this.mistakesProb) {
+      if (!canTypeChar()) break;
+      if (allowMistakes && this.mistakesEnabled && !this.autoSuicide && Math.random() < this.mistakesProb && canTypeChar()) {
         input.value += ch;
         this._emitInputEvent(input);
         await this._sleep(perCharDelay);
@@ -1128,6 +1191,7 @@ class Game {
         this._emitInputEvent(input);
         await this._sleep(perCharDelay);
       }
+      if (!canTypeChar()) break;
       input.value += ch;
       this._emitInputEvent(input);
       await this._sleep(perCharDelay);
@@ -1210,8 +1274,9 @@ class Game {
       return;
     }
 
-    if (input.value !== raw) {
-      input.value = raw;
+    const targetValue = this._truncateToMax(input, raw);
+    if (input.value !== targetValue) {
+      input.value = targetValue;
       this._emitInputEvent(input);
     }
     await this._sleep(Math.max(baseDelay * 0.6, 40));
@@ -1286,13 +1351,33 @@ class Game {
     return null;
   }
 
-  async typeAndSubmit(word, ignorePostfix=false) {
-    const input = this._ensureInput(); if (!input) return;
+  async typeAndSubmit(word, ignorePostfix=false, attempt=0) {
+    if (this._typeRetryTimer) {
+      clearTimeout(this._typeRetryTimer);
+      this._typeRetryTimer = null;
+    }
+
+    const input = await this._waitForInput();
+    if (!input) {
+      if (!this.paused && this.myTurn && attempt < 5) {
+        const delay = 120 + attempt * 80;
+        this._typeRetryTimer = setTimeout(() => {
+          this._typeRetryTimer = null;
+          if (this.paused || !this.myTurn) return;
+          this.typeAndSubmit(word, ignorePostfix, attempt + 1).catch(() => {});
+        }, delay);
+      }
+      return;
+    }
+
+    if (this._typeRetryTimer) {
+      clearTimeout(this._typeRetryTimer);
+      this._typeRetryTimer = null;
+    }
 
     input.focus();
     await Promise.resolve();
-    input.value = "";
-    this._emitInputEvent(input);
+    this._setInputValueRespectingMax(input, "");
 
     const perCharDelay = this._charDelayMs();
     const instant = !!this.instantMode;
@@ -1300,30 +1385,25 @@ class Game {
 
     if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
       if (instant) {
-        input.value = this.preMsgText;
-        this._emitInputEvent(input);
+        this._setInputValueRespectingMax(input, this.preMsgText);
         await this._sleep(Math.max(40, perCharDelay));
-        input.value = "";
-        this._emitInputEvent(input);
+        this._setInputValueRespectingMax(input, "");
       } else {
         await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts);
         await this._sleep(Math.max(80, perCharDelay * 4));
-        input.value = "";
-        this._emitInputEvent(input);
+        this._setInputValueRespectingMax(input, "");
       }
     }
 
     if (instant) {
-      input.value = word;
-      this._emitInputEvent(input);
+      this._setInputValueRespectingMax(input, word);
     } else {
       await this._typeWordWithRealism(input, word, perCharDelay);
     }
 
     if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
       if (instant) {
-        input.value = `${input.value}${this.postfixText}`;
-        this._emitInputEvent(input);
+        this._setInputValueRespectingMax(input, `${input.value}${this.postfixText}`);
       } else {
         await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts);
       }
