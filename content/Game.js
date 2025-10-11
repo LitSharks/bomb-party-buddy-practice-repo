@@ -158,6 +158,8 @@ class Game {
     // Round-local failure blacklist + last pool
     this._roundFailed = new Set();
     this._roundPool = [];
+    this._roundCandidatesDetailed = [];
+    this._roundSelectionContext = null;
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -663,12 +665,14 @@ class Game {
   }
 
   _lettersOf(word) {
-    const set = new Set();
+    const counts = new Map();
     for (let i = 0; i < word.length; i++) {
-      const c = word[i], code = c.charCodeAt(0);
-      if (code >= 97 && code <= 122) set.add(c);
+      const c = word[i];
+      const code = c.charCodeAt(0);
+      if (code < 97 || code > 122) continue;
+      counts.set(c, (counts.get(c) || 0) + 1);
     }
-    return set;
+    return counts;
   }
 
   _maybeResetCoverageOnComplete() {
@@ -693,19 +697,22 @@ class Game {
   _coverageScore(word) {
     const letters = this._lettersOf(word);
     let score = 0;
-    letters.forEach(c => {
+    letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
       const have = this.coverageCounts[idx] || 0;
       const want = this.targetCounts[idx] || 0;
       if (want <= 0) return;            // excluded/ignored
-      if (have < want) {
-        const w = this.letterWeights[idx] || 1;
-        score += 1 * w;
-        if (have === want - 1) score += 1 * w; // finishing this letter
+      if (have >= want) return;
+      const need = Math.max(0, want - have);
+      const contribution = Math.min(count, need);
+      if (contribution <= 0) return;
+      const w = this.letterWeights[idx] || 1;
+      score += contribution * w;
+      if (have + contribution >= want) {
+        score += 1 * w; // finishing this letter
       }
     });
-    // prefer words that cover more *distinct* needed letters; length is neutral
-    return score + Math.random() * 0.01;
+    return score;
   }
 
   _pickCandidatesBase(syllable, pool) {
@@ -776,8 +783,27 @@ class Game {
       hyphenFallback: false
     };
 
+    const priority = this._ensurePriorityOrder();
+
     if (!candidateMap.size) {
-      return { orderedWords: [], limitedWords: [], displayEntries: [], flags };
+      return {
+        orderedWords: [],
+        limitedWords: [],
+        displayEntries: [],
+        flags,
+        candidateDetails: [],
+        selectionContext: {
+          coverageMode,
+          lengthMode,
+          hyphenMode,
+          containsActive,
+          foulMode,
+          pokemonMode,
+          mineralsMode,
+          rareMode,
+          priority
+        }
+      };
     }
 
     const specialPriority = ['foul', 'pokemon', 'minerals', 'rare'];
@@ -865,7 +891,6 @@ class Game {
       }
     }
 
-    const priority = this._ensurePriorityOrder();
     const comparators = {
       contains: (a, b) => {
         if (!containsActive) return 0;
@@ -950,14 +975,46 @@ class Game {
       }
     }
 
+    workingCandidates.forEach((c, idx) => {
+      c.rank = idx;
+    });
+
     const orderedWords = workingCandidates.map(c => c.word);
     const displayEntries = workingCandidates.slice(0, lim).map(c => ({ word: c.word, tone: c.tone }));
+    const candidateDetails = workingCandidates.map(c => ({
+      word: c.word,
+      lower: c.lower,
+      rank: c.rank,
+      specialType: c.specialType,
+      specialRank: c.specialRank,
+      containsMatch: c.containsMatch,
+      containsIdx: c.containsIdx,
+      hyphenMatch: c.hyphenMatch,
+      lengthCategory: c.lengthCategory,
+      lengthDistance: c.lengthDistance,
+      coverageScore: c.coverageScore,
+      tone: c.tone
+    }));
+
+    const selectionContext = {
+      coverageMode,
+      lengthMode,
+      hyphenMode,
+      containsActive,
+      foulMode,
+      pokemonMode,
+      mineralsMode,
+      rareMode,
+      priority
+    };
 
     return {
       orderedWords,
       limitedWords: orderedWords.slice(0, lim),
       displayEntries,
-      flags
+      flags,
+      candidateDetails,
+      selectionContext
     };
   }
 
@@ -977,6 +1034,8 @@ class Game {
     this.lastHyphenFallbackSelf = !!result.flags.hyphenFallback;
 
     this._roundPool = result.orderedWords.slice();
+    this._roundCandidatesDetailed = Array.isArray(result.candidateDetails) ? result.candidateDetails.slice() : [];
+    this._roundSelectionContext = result.selectionContext || null;
     this.lastTopPicksSelf = result.limitedWords.slice();
     this.lastTopPicksSelfDisplay = result.displayEntries.slice();
     return this.lastTopPicksSelf;
@@ -1079,85 +1138,83 @@ class Game {
   async _typeWordWithRealism(input, word, perCharDelay) {
     const raw = typeof word === 'string' ? word : String(word ?? '');
     if (!raw.length) return;
-    if (!this.superRealisticEnabled || this.instantMode || raw.startsWith('/')) {
+    const realismActive = this.superRealisticEnabled && !this.instantMode && !this.autoSuicide && !raw.startsWith('/');
+    if (!realismActive) {
       await this._typeTextSequence(input, raw, perCharDelay);
       return;
     }
 
     const aggression = Math.max(0, Math.min(1, this.superRealisticAggression || 0));
-    if (Math.random() >= aggression) {
-      await this._typeTextSequence(input, raw, perCharDelay);
+    const pauseMsConfigured = Math.max(0, (this.superRealisticPauseSec || 0) * 1000);
+    const scenarioPool = [];
+    if (raw.length >= 4 && pauseMsConfigured > 10) scenarioPool.push('pause');
+    if (raw.length >= 3) scenarioPool.push('overrun');
+    if (raw.length >= 2) scenarioPool.push('stutter');
+
+    const shouldAddFlair = Math.random() < aggression && scenarioPool.length > 0;
+    const typingOpts = { allowMistakes: false };
+    if (!shouldAddFlair) {
+      await this._typeTextSequence(input, raw, perCharDelay, typingOpts);
       return;
     }
 
-    const options = [];
-    if (raw.length >= 4) options.push('pause');
-    if (raw.length >= 3) options.push('overrun');
-    if (raw.length >= 2) options.push('stutter');
-    if (!options.length) {
-      await this._typeTextSequence(input, raw, perCharDelay);
-      return;
-    }
-
-    const scenario = options[Math.floor(Math.random() * options.length)];
+    const scenario = scenarioPool[Math.floor(Math.random() * scenarioPool.length)];
     const baseDelay = Math.max(35, perCharDelay | 0);
     try {
       if (scenario === 'pause') {
         const pivot = Math.max(1, Math.floor(raw.length / 2));
-        await this._typeTextSequence(input, raw.slice(0, pivot), perCharDelay);
-        const pauseMs = Math.max(0, (this.superRealisticPauseSec || 0) * 1000);
-        if (pauseMs > 0) {
-          const jitter = pauseMs * (0.6 * Math.random());
-          await this._sleep(pauseMs + jitter);
+        await this._typeTextSequence(input, raw.slice(0, pivot), perCharDelay, typingOpts);
+        const jitter = pauseMsConfigured * (0.35 + Math.random() * 0.4);
+        if (pauseMsConfigured > 0) {
+          await this._sleep(pauseMsConfigured + jitter);
         }
-        await this._typeTextSequence(input, raw.slice(pivot), perCharDelay);
-        return;
-      }
-
-      if (scenario === 'overrun' && raw.length >= 3) {
+        await this._typeTextSequence(input, raw.slice(pivot), perCharDelay, typingOpts);
+      } else if (scenario === 'overrun') {
         const maxIdx = raw.length - 2;
         const minIdx = 1;
-        const idx = minIdx + Math.floor(Math.random() * (maxIdx - minIdx + 1));
+        const idx = minIdx + Math.floor(Math.random() * Math.max(1, maxIdx - minIdx + 1));
         const before = raw.slice(0, idx);
         const correct = raw[idx];
         const after = raw.slice(idx + 1);
         const wrong = this._randomLetterExcept(correct);
 
-        await this._typeTextSequence(input, before, perCharDelay);
+        await this._typeTextSequence(input, before, perCharDelay, typingOpts);
         await this._typeTextSequence(input, wrong, perCharDelay, { allowMistakes: false });
-        await this._typeTextSequence(input, after, perCharDelay);
-        await this._sleep(Math.max(baseDelay * 2, 120));
-        await this._backspaceChars(input, after.length + 1, Math.max(baseDelay * 0.9, 45));
-        await this._sleep(Math.max(baseDelay, 60));
-        await this._typeTextSequence(input, correct, perCharDelay, { allowMistakes: false });
-        await this._typeTextSequence(input, after, perCharDelay);
-        return;
-      }
-
-      if (scenario === 'stutter') {
+        await this._sleep(Math.max(baseDelay * 0.6, 40));
+        await this._backspaceChars(input, 1, Math.max(baseDelay * 0.8, 40));
+        await this._sleep(Math.max(baseDelay * 0.75, 45));
+        await this._typeTextSequence(input, correct, perCharDelay, typingOpts);
+        if (after.length) {
+          await this._typeTextSequence(input, after, perCharDelay, typingOpts);
+        }
+      } else if (scenario === 'stutter') {
         const idx = Math.floor(Math.random() * raw.length);
         const before = raw.slice(0, idx);
         const target = raw[idx];
         const after = raw.slice(idx + 1);
-        await this._typeTextSequence(input, before, perCharDelay);
+        await this._typeTextSequence(input, before, perCharDelay, typingOpts);
         const repeats = 2 + Math.floor(Math.random() * 2);
         for (let attempt = 0; attempt < repeats - 1; attempt++) {
-          const wrong = this._randomLetterExcept(target);
-          await this._typeTextSequence(input, wrong, perCharDelay, { allowMistakes: false });
-          await this._sleep(Math.max(baseDelay * 0.75, 40));
-          await this._backspaceChars(input, 1, Math.max(baseDelay * 0.8, 40));
+          await this._typeTextSequence(input, target, perCharDelay, typingOpts);
+          await this._sleep(Math.max(baseDelay * 0.6, 35));
+          await this._backspaceChars(input, 1, Math.max(baseDelay * 0.75, 40));
         }
-        await this._typeTextSequence(input, target, perCharDelay, { allowMistakes: false });
+        await this._typeTextSequence(input, target, perCharDelay, typingOpts);
         if (after.length) {
-          await this._typeTextSequence(input, after, perCharDelay);
+          await this._typeTextSequence(input, after, perCharDelay, typingOpts);
         }
-        return;
       }
     } catch (err) {
       console.debug('[BombPartyShark] super realistic typing fell back', err);
+      await this._typeTextSequence(input, raw, perCharDelay, typingOpts);
+      return;
     }
 
-    await this._typeTextSequence(input, raw, perCharDelay);
+    if (input.value !== raw) {
+      input.value = raw;
+      this._emitInputEvent(input);
+    }
+    await this._sleep(Math.max(baseDelay * 0.6, 40));
   }
 
 
@@ -1177,6 +1234,52 @@ class Game {
   }
 
   _pickNextNotFailed() {
+    const detailed = Array.isArray(this._roundCandidatesDetailed) ? this._roundCandidatesDetailed : [];
+    const context = this._roundSelectionContext || {};
+    if (detailed.length) {
+      const available = detailed.filter(c => !this._roundFailed.has(c.lower));
+      if (available.length) {
+        const priority = Array.isArray(context.priority) ? context.priority : this._ensurePriorityOrder();
+        let pool = available.slice();
+        for (const feature of priority) {
+          if (feature === 'contains' && context.containsActive) {
+            const matches = pool.filter(c => c.containsMatch > 0);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'foul' && (context.foulMode || context.pokemonMode || context.mineralsMode || context.rareMode)) {
+            const bestRank = Math.max(...pool.map(c => c.specialRank || 0));
+            const matches = pool.filter(c => (c.specialRank || 0) === bestRank);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'coverage' && context.coverageMode) {
+            const maxScore = Math.max(...pool.map(c => c.coverageScore || 0));
+            const matches = pool.filter(c => (c.coverageScore || 0) === maxScore);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'hyphen' && context.hyphenMode) {
+            const matches = pool.filter(c => c.hyphenMatch > 0);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'length' && context.lengthMode) {
+            const bestCategory = Math.max(...pool.map(c => c.lengthCategory || 0));
+            if (bestCategory > 0) {
+              let matches = pool.filter(c => (c.lengthCategory || 0) === bestCategory);
+              if (context.coverageMode) {
+                const bestLen = Math.min(...matches.map(c => c.word.length));
+                matches = matches.filter(c => c.word.length === bestLen);
+              } else {
+                const bestDistance = Math.min(...matches.map(c => c.lengthDistance ?? Number.POSITIVE_INFINITY));
+                matches = matches.filter(c => (c.lengthDistance ?? Number.POSITIVE_INFINITY) === bestDistance);
+              }
+              if (matches.length) { pool = matches; continue; }
+            }
+          }
+        }
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        if (pick) return pick.word;
+      }
+    }
+
     for (const w of this._roundPool) {
       if (!this._roundFailed.has(w)) return w;
     }
@@ -1193,6 +1296,7 @@ class Game {
 
     const perCharDelay = this._charDelayMs();
     const instant = !!this.instantMode;
+    const plainTypingOpts = this.superRealisticEnabled ? { allowMistakes: false } : undefined;
 
     if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
       if (instant) {
@@ -1202,7 +1306,7 @@ class Game {
         input.value = "";
         this._emitInputEvent(input);
       } else {
-        await this._typeTextSequence(input, this.preMsgText, perCharDelay);
+        await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts);
         await this._sleep(Math.max(80, perCharDelay * 4));
         input.value = "";
         this._emitInputEvent(input);
@@ -1221,7 +1325,7 @@ class Game {
         input.value = `${input.value}${this.postfixText}`;
         this._emitInputEvent(input);
       } else {
-        await this._typeTextSequence(input, this.postfixText, perCharDelay);
+        await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts);
       }
     }
 
@@ -1243,10 +1347,10 @@ class Game {
     if (!this.myTurn) return;
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
-    letters.forEach(c => {
+    letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
       if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += 1;
+        this.coverageCounts[idx] += count;
       }
     });
     this._maybeResetCoverageOnComplete();
