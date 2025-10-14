@@ -16,10 +16,32 @@ function getInput() {
   return selfTurns[0].getElementsByTagName("input")[0];
 }
 
-// Clipboard fallback (permissions policy blocks navigator.clipboard)
+function canUseAsyncClipboard() {
+  if (!(navigator?.clipboard?.writeText)) return false;
+  try {
+    const policy = document?.permissionsPolicy || document?.featurePolicy;
+    if (policy && typeof policy.allowsFeature === "function") {
+      let allowed = true;
+      try {
+        allowed = policy.allowsFeature.length >= 2
+          ? policy.allowsFeature("clipboard-write", window?.location?.origin || "")
+          : policy.allowsFeature("clipboard-write");
+      } catch (_) {
+        allowed = false;
+      }
+      if (!allowed) return false;
+    }
+  } catch (_) {
+    // Ignore feature policy errors and fall back to execCommand
+    return false;
+  }
+  return true;
+}
+
+// Clipboard fallback (permissions policy may block navigator.clipboard)
 async function copyPlain(text) {
   const payload = text ?? "";
-  if (navigator?.clipboard?.writeText) {
+  if (canUseAsyncClipboard()) {
     try {
       await navigator.clipboard.writeText(payload);
       return true;
@@ -1601,7 +1623,7 @@ async function setupBuddy() {
     if (!event.origin.endsWith("jklm.fun")) return;
     const data = event.data;
 
-    if ("myTurn" in data) game.myTurn = data.myTurn;
+    if ("myTurn" in data) game.setMyTurn(data.myTurn);
 
     if (data.type === "setup") {
       await game.setLang(data.language);
