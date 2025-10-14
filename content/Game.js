@@ -204,10 +204,24 @@ class Game {
 
     this.maxWordLength = 0;
 
+    // Submission watchdog (retries when the game swallows a word)
+    this._pendingSubmission = null;
+    this._pendingSubmissionTimer = null;
+    this._pendingSubmissionRetryDelayMs = 1000;
+
     // Back-compat
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
 
     this._lastLoadedLang = null;
+  }
+
+  setMyTurn(isMine) {
+    const prev = !!this.myTurn;
+    const next = !!isMine;
+    this.myTurn = next;
+    if (prev && !next) {
+      this._clearPendingSubmission();
+    }
   }
 
   apiBase() { return "https://extensions.litshark.ca/api"; }
@@ -1116,6 +1130,70 @@ class Game {
     return finalValue;
   }
 
+  _cancelPendingSubmissionTimer() {
+    if (this._pendingSubmissionTimer) {
+      clearTimeout(this._pendingSubmissionTimer);
+      this._pendingSubmissionTimer = null;
+    }
+  }
+
+  _clearPendingSubmission() {
+    this._cancelPendingSubmissionTimer();
+    this._pendingSubmission = null;
+  }
+
+  clearPendingSubmission() {
+    this._clearPendingSubmission();
+  }
+
+  _trackPendingSubmission(word, ignorePostfix, baseAttempt = 0) {
+    this._cancelPendingSubmissionTimer();
+    const attemptBase = Math.max(0, Number(baseAttempt) || 0);
+    this._pendingSubmission = {
+      word: word,
+      ignorePostfix: !!ignorePostfix,
+      syllable: this.syllable,
+      round: this.selfRound,
+      attempt: attemptBase + 1,
+      submittedAt: Date.now(),
+    };
+    this._pendingSubmissionTimer = setTimeout(() => {
+      this._handlePendingSubmissionTimeout();
+    }, this._pendingSubmissionRetryDelayMs);
+  }
+
+  _handlePendingSubmissionTimeout() {
+    this._pendingSubmissionTimer = null;
+    const pending = this._pendingSubmission;
+    if (!pending) return;
+
+    if (!pending.word) {
+      this._clearPendingSubmission();
+      return;
+    }
+
+    if (!this.myTurn || this.selfRound !== pending.round || (this.syllable || "") !== (pending.syllable || "")) {
+      this._clearPendingSubmission();
+      return;
+    }
+
+    if (this.paused) {
+      this._pendingSubmissionTimer = setTimeout(() => {
+        this._handlePendingSubmissionTimeout();
+      }, this._pendingSubmissionRetryDelayMs);
+      return;
+    }
+
+    const attempt = Math.max(0, Number(pending.attempt) || 0);
+    console.debug('[BombPartyShark] Resubmitting word after missing game response', {
+      word: pending.word,
+      attempt: attempt + 1,
+    });
+    this.typeAndSubmit(pending.word, pending.ignorePostfix, { attempt }).catch((err) => {
+      console.warn('[BombPartyShark] Failed to retry submission', err);
+    });
+  }
+
   async _waitForInput(timeoutMs = 1500) {
     const deadline = Date.now() + Math.max(0, timeoutMs);
     let input = this._ensureInput();
@@ -1325,8 +1403,19 @@ class Game {
     return null;
   }
 
-  async typeAndSubmit(word, ignorePostfix=false) {
-    const input = await this._waitForInput(); if (!input) return;
+  async typeAndSubmit(word, ignorePostfix=false, retryMeta=null) {
+    this._cancelPendingSubmissionTimer();
+    const attemptSeed = retryMeta && Number.isFinite(retryMeta.attempt)
+      ? retryMeta.attempt
+      : (this._pendingSubmission && this._pendingSubmission.word === word
+        ? this._pendingSubmission.attempt || 0
+        : 0);
+
+    const input = await this._waitForInput();
+    if (!input) {
+      this._clearPendingSubmission();
+      return;
+    }
 
     input.focus();
     await Promise.resolve();
@@ -1373,10 +1462,13 @@ class Game {
     if (form && typeof form.requestSubmit === "function") {
       form.requestSubmit();
     }
+
+    this._trackPendingSubmission(word, ignorePostfix, attemptSeed);
   }
 
 
   onCorrectWord(word) {
+    this._clearPendingSubmission();
     if (!this.myTurn) return;
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
@@ -1392,6 +1484,7 @@ class Game {
 
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
+    this._clearPendingSubmission();
     if (!myTurn) return;
     if (word) {
       const normalizedRaw = (word || "").toLowerCase();
