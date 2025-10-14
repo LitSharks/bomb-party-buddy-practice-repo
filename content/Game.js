@@ -1116,14 +1116,23 @@ class Game {
     return finalValue;
   }
 
-  async _waitForInput(timeoutMs = 1500) {
+  _isInputReady(input) {
+    if (!input) return false;
+    if (input.disabled) return false;
+    if (typeof input.hasAttribute === 'function' && input.hasAttribute('disabled')) return false;
+    if (input.readOnly) return false;
+    if (typeof input.matches === 'function' && input.matches('[aria-disabled="true"]')) return false;
+    return true;
+  }
+
+  async _waitForInput(timeoutMs = 2500) {
     const deadline = Date.now() + Math.max(0, timeoutMs);
     let input = this._ensureInput();
-    while (!input && Date.now() < deadline) {
+    while ((!input || !this._isInputReady(input)) && Date.now() < deadline) {
       await this._sleep(25);
       input = this._ensureInput();
     }
-    return input;
+    return this._isInputReady(input) ? input : null;
   }
 
   _randomLetterExcept(correct) {

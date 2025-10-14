@@ -17,9 +17,23 @@ function getInput() {
 }
 
 // Clipboard fallback (permissions policy blocks navigator.clipboard)
+function isClipboardWritePermitted() {
+  try {
+    const policy = document?.permissionsPolicy || document?.featurePolicy;
+    if (policy?.allowsFeature) {
+      if (!policy.allowsFeature('clipboard-write')) return false;
+    } else if (policy?.allowedFeatures) {
+      const features = policy.allowedFeatures();
+      if (Array.isArray(features) && !features.includes('clipboard-write')) return false;
+    }
+  } catch (_) { /* ignore */ }
+  return true;
+}
+
 async function copyPlain(text) {
   const payload = text ?? "";
-  if (navigator?.clipboard?.writeText) {
+  const canUseNavigatorClipboard = !!(navigator?.clipboard?.writeText) && isClipboardWritePermitted() && window.isSecureContext !== false;
+  if (canUseNavigatorClipboard) {
     try {
       await navigator.clipboard.writeText(payload);
       return true;
