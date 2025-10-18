@@ -204,6 +204,13 @@ class Game {
 
     this.maxWordLength = 0;
 
+    // Word reuse tracking
+    this.preventWordReuseEnabled = true;
+    this.wordReuseLog = [];
+    this._usedWordSet = new Set();
+    this._wordReuseLogLimit = 150;
+    this._onWordReuseLogChanged = null;
+
     // Submission watchdog (retries when the game swallows a word)
     this._pendingSubmission = null;
     this._pendingSubmissionTimer = null;
@@ -213,6 +220,8 @@ class Game {
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
 
     this._lastLoadedLang = null;
+    this._typingQueue = Promise.resolve();
+    this._onLanguageChanged = null;
   }
 
   setMyTurn(isMine) {
@@ -228,18 +237,41 @@ class Game {
 
   normalizeLang(name) {
     const s = (name || "").toString().trim().toLowerCase();
+    const stripped = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const compact = stripped.replace(/\s+/g, ' ').trim();
     const map = {
-      "english":"en","en":"en",
-      "german":"de","de":"de",
-      "french":"fr","fr":"fr",
-      "spanish":"es","es":"es",
-      "portuguese":"pt-br","pt-br":"pt-br","br":"pt-br",
-      "nahuatl":"nah","nah":"nah",
-      "pokemon (en)":"pok-en","pok-en":"pok-en",
-      "pokemon (fr)":"pok-fr","pok-fr":"pok-fr",
-      "pokemon (de)":"pok-de","pok-de":"pok-de"
+      "english": "en", "en": "en",
+      "german": "de", "de": "de",
+      "french": "fr", "fr": "fr",
+      "spanish": "es", "es": "es",
+      "portuguese": "pt-br",
+      "portuguese (br)": "pt-br",
+      "portuguese (brasil)": "pt-br",
+      "portuguese (brazil)": "pt-br",
+      "portuguese brasil": "pt-br",
+      "portuguese br": "pt-br",
+      "portuguese-brasil": "pt-br",
+      "portuguese-br": "pt-br",
+      "portugues": "pt-br",
+      "portugues (brasil)": "pt-br",
+      "portugues (br)": "pt-br",
+      "portugues brasil": "pt-br",
+      "portugues br": "pt-br",
+      "portugues-brasil": "pt-br",
+      "portugues-br": "pt-br",
+      "pt": "pt-br",
+      "pt br": "pt-br",
+      "pt brasil": "pt-br",
+      "brasil": "pt-br",
+      "brazilian": "pt-br",
+      "br": "pt-br",
+      "pt-br": "pt-br",
+      "nahuatl": "nah", "nah": "nah",
+      "pokemon (en)": "pok-en", "pok-en": "pok-en",
+      "pokemon (fr)": "pok-fr", "pok-fr": "pok-fr",
+      "pokemon (de)": "pok-de", "pok-de": "pok-de"
     };
-    return map[s] || "en";
+    return map[compact] || map[s] || "en";
   }
 
   async setLang(lang) {
@@ -251,6 +283,11 @@ class Game {
       await this.loadWordlists();
       if (!previousLang || previousLang !== normalized) {
         this.resetCoverage();
+        this.resetWordReuseLog();
+      }
+      if (typeof this._onLanguageChanged === 'function') {
+        try { this._onLanguageChanged(this.lang); }
+        catch (err) { console.warn('[BombPartyShark] language change callback failed', err); }
       }
     } catch (err) {
       console.error('[BombPartyShark] Failed to load word lists for', normalized, err);
@@ -770,6 +807,7 @@ class Game {
         const word = (rawWord || '').toString().trim();
         if (!word) continue;
         const key = word.toLowerCase();
+        if (this.preventWordReuseEnabled && this._usedWordSet.has(key)) continue;
         if (!candidateMap.has(key)) {
           candidateMap.set(key, { word, sources: new Set([source]) });
         } else {
@@ -1405,70 +1443,86 @@ class Game {
 
   async typeAndSubmit(word, ignorePostfix=false, retryMeta=null) {
     this._cancelPendingSubmissionTimer();
-    const attemptSeed = retryMeta && Number.isFinite(retryMeta.attempt)
-      ? retryMeta.attempt
-      : (this._pendingSubmission && this._pendingSubmission.word === word
-        ? this._pendingSubmission.attempt || 0
-        : 0);
-
-    const input = await this._waitForInput();
-    if (!input) {
+    const preparedWord = this._prepareSubmissionWord(word);
+    if (!preparedWord) {
+      console.warn('[BombPartyShark] Refused to submit invalid word payload', word);
       this._clearPendingSubmission();
       return;
     }
 
-    input.focus();
-    await Promise.resolve();
-    this._setInputValueRespectingMax(input, "");
+    const execute = async () => {
+      const attemptSeed = retryMeta && Number.isFinite(retryMeta.attempt)
+        ? retryMeta.attempt
+        : (this._pendingSubmission && this._pendingSubmission.word === preparedWord
+          ? this._pendingSubmission.attempt || 0
+          : 0);
 
-    const perCharDelay = this._charDelayMs();
-    const instant = !!this.instantMode;
-    const plainTypingOpts = this.superRealisticEnabled ? { allowMistakes: false } : undefined;
-
-    if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
-      if (instant) {
-        this._setInputValueRespectingMax(input, this.preMsgText);
-        await this._sleep(Math.max(40, perCharDelay));
-        this._setInputValueRespectingMax(input, "");
-      } else {
-        await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts);
-        await this._sleep(Math.max(80, perCharDelay * 4));
-        this._setInputValueRespectingMax(input, "");
+      const input = await this._waitForInput();
+      if (!input) {
+        this._clearPendingSubmission();
+        return;
       }
-    }
 
-    if (instant) {
-      this._setInputValueRespectingMax(input, word);
-    } else {
-      await this._typeWordWithRealism(input, word, perCharDelay);
-    }
+      input.focus();
+      await Promise.resolve();
+      this._setInputValueRespectingMax(input, "");
 
-    if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
-      if (instant) {
-        this._setInputValueRespectingMax(input, `${input.value}${this.postfixText}`);
-      } else {
-        await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts);
+      const perCharDelay = this._charDelayMs();
+      const instant = !!this.instantMode;
+      const plainTypingOpts = this.superRealisticEnabled ? { allowMistakes: false } : undefined;
+
+      if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
+        if (instant) {
+          this._setInputValueRespectingMax(input, this.preMsgText);
+          await this._sleep(Math.max(40, perCharDelay));
+          this._setInputValueRespectingMax(input, "");
+        } else {
+          await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts);
+          await this._sleep(Math.max(80, perCharDelay * 4));
+          this._setInputValueRespectingMax(input, "");
+        }
       }
-    }
 
-    const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
-    input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
-    input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
-    input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
-    await new Promise(r => setTimeout(r, 10));
+      if (instant) {
+        this._setInputValueRespectingMax(input, preparedWord);
+      } else {
+        await this._typeWordWithRealism(input, preparedWord, perCharDelay);
+      }
 
-    if (document.activeElement !== input) input.focus();
-    const form = input.closest("form");
-    if (form && typeof form.requestSubmit === "function") {
-      form.requestSubmit();
-    }
+      if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
+        if (instant) {
+          this._setInputValueRespectingMax(input, `${input.value}${this.postfixText}`);
+        } else {
+          await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts);
+        }
+      }
 
-    this._trackPendingSubmission(word, ignorePostfix, attemptSeed);
+      const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
+      input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
+      input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
+      input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
+      await new Promise(r => setTimeout(r, 10));
+
+      if (document.activeElement !== input) input.focus();
+      const form = input.closest("form");
+      if (form && typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      }
+
+      this._trackPendingSubmission(preparedWord, ignorePostfix, attemptSeed);
+    };
+
+    const task = this._typingQueue.then(() => execute());
+    this._typingQueue = task.then(() => {}, (err) => {
+      console.warn('[BombPartyShark] submission sequence failed', err);
+    });
+    return task;
   }
 
 
   onCorrectWord(word) {
     this._clearPendingSubmission();
+    this._registerUsedWord(word);
     if (!this.myTurn) return;
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
@@ -1516,6 +1570,79 @@ class Game {
     };
     const url = `${this.apiBase()}/report_invalid.php`;
     await this.extPost(url, payload);
+  }
+
+  _prepareSubmissionWord(word) {
+    if (typeof word === 'string') {
+      // ok
+    } else if (word === null || word === undefined) {
+      return '';
+    } else if (typeof word === 'number') {
+      word = String(word);
+    } else if (typeof word === 'object') {
+      return '';
+    } else {
+      word = String(word);
+    }
+    const trimmed = word.trim();
+    if (!trimmed) return '';
+    const normalized = trimmed.normalize('NFC');
+    const pattern = /^[a-zA-ZÀ-ÖØ-öø-ÿ'\-]+$/u;
+    if (!pattern.test(normalized)) {
+      return '';
+    }
+    return normalized.toLowerCase();
+  }
+
+  _normalizeWord(word) {
+    if (typeof word !== 'string') {
+      if (word === null || word === undefined) return '';
+      if (typeof word === 'object') return '';
+      word = String(word);
+    }
+    const trimmed = word.trim();
+    if (!trimmed) return '';
+    const normalized = trimmed.normalize('NFC').toLowerCase();
+    const pattern = /^[a-zà-öø-ÿ'\-]+$/u;
+    return pattern.test(normalized) ? normalized : '';
+  }
+
+  _registerUsedWord(word) {
+    const normalized = this._normalizeWord(word);
+    if (!normalized) return;
+    if (!this._usedWordSet.has(normalized)) {
+      this._usedWordSet.add(normalized);
+      this.wordReuseLog.unshift(normalized);
+      if (this.wordReuseLog.length > this._wordReuseLogLimit) {
+        this.wordReuseLog.length = this._wordReuseLogLimit;
+      }
+      this._emitWordReuseLogChanged();
+    }
+  }
+
+  resetWordReuseLog() {
+    this._usedWordSet.clear();
+    this.wordReuseLog = [];
+    this._emitWordReuseLogChanged();
+  }
+
+  setPreventWordReuseEnabled(value) {
+    this.preventWordReuseEnabled = !!value;
+  }
+
+  setWordReuseLogChangedCallback(fn) {
+    this._onWordReuseLogChanged = typeof fn === 'function' ? fn : null;
+  }
+
+  _emitWordReuseLogChanged() {
+    if (typeof this._onWordReuseLogChanged === 'function') {
+      try { this._onWordReuseLogChanged(this.wordReuseLog.slice()); }
+      catch (err) { console.warn('[BombPartyShark] word log listener failed', err); }
+    }
+  }
+
+  setLanguageChangedCallback(fn) {
+    this._onLanguageChanged = typeof fn === 'function' ? fn : null;
   }
 }
 
