@@ -96,6 +96,204 @@ function createOverlay(game) {
   const savedSettings = loadSettings();
   const sessionData = loadTallies();
 
+  const UI_TEXT = {};
+  const addText = (entries) => Object.assign(UI_TEXT, entries);
+
+  addText({
+    title: { en: "Bomb Party Shark", de: "Bomb Party Shark", es: "Bomb Party Shark", fr: "Bomb Party Shark", "pt-br": "Bomb Party Shark" },
+    forceSave: { en: "Force save settings", de: "Einstellungen jetzt speichern", es: "Guardar configuración ahora", fr: "Forcer l'enregistrement", "pt-br": "Salvar configurações agora" },
+    forceSaveSaved: { en: "Saved!", de: "Gespeichert!", es: "¡Guardado!", fr: "Enregistré !", "pt-br": "Salvo!" },
+    currentLanguage: { en: "Current language: {{language}}", de: "Aktuelle Sprache : {{language}}", es: "Idioma actual: {{language}}", fr: "Langue actuelle : {{language}}", "pt-br": "Idioma atual: {{language}}" },
+    tabMain: { en: "Main", de: "Haupt", es: "Principal", fr: "Principal", "pt-br": "Principal" },
+    tabCoverage: { en: "Coverage", de: "Abdeckung", es: "Cobertura", fr: "Couverture", "pt-br": "Cobertura" },
+    tabWords: { en: "Words", de: "Wörter", es: "Palabras", fr: "Mots", "pt-br": "Palavras" },
+    toggleOn: { en: "On", de: "An", es: "Activado", fr: "Activé", "pt-br": "Ligado" },
+    toggleOff: { en: "Off", de: "Aus", es: "Desactivado", fr: "Désactivé", "pt-br": "Desligado" },
+    sectionAutomation: { en: "Automation", de: "Automatisierung", es: "Automatización", fr: "Automatisation", "pt-br": "Automação" },
+    toggleAutoType: { en: "AutoType", de: "Auto-Tippen", es: "Escritura automática", fr: "Saisie automatique", "pt-br": "Digitação automática" },
+    toggleInstantMode: { en: "Instant mode", de: "Sofortmodus", es: "Modo instantáneo", fr: "Mode instantané", "pt-br": "Modo instantâneo" },
+    toggleButterfingers: { en: "Butterfingers", de: "Vertipper", es: "Errores aleatorios", fr: "Fautes réalistes", "pt-br": "Erros aleatórios" },
+    toggleAutoSuicide: { en: "Auto /suicide", de: "Auto-/suicide", es: "Auto /suicide", fr: "Auto /suicide", "pt-br": "Auto /suicide" },
+    toggleAutoJoin: { en: "Always auto-join", de: "Immer automatisch beitreten", es: "Unirse siempre automáticamente", fr: "Toujours rejoindre automatiquement", "pt-br": "Sempre entrar automaticamente" },
+    toggleSuperRealistic: { en: "Super realistic", de: "Superrealistisch", es: "Súper realista", fr: "Ultra réaliste", "pt-br": "Super realista" },
+    placeholderPreMessage: { en: "Message to flash before your word", de: "Nachricht vor deinem Wort anzeigen", es: "Mensaje para mostrar antes de tu palabra", fr: "Message à afficher avant votre mot", "pt-br": "Mensagem para mostrar antes da sua palavra" },
+    placeholderPostfix: { en: "Characters to append (e.g., <3)", de: "Zeichen anhängen (z. B. <3)", es: "Caracteres para añadir (p. ej., <3)", fr: "Caractères à ajouter (ex. : <3)", "pt-br": "Caracteres para adicionar (ex.: <3)" },
+    sectionCoverage: { en: "Alphabet mastery", de: "Alphabet-Training", es: "Dominio del alfabeto", fr: "Maîtrise de l'alphabet", "pt-br": "Domínio do alfabeto" },
+    sectionWordTargeting: { en: "Word targeting", de: "Wortzielsuche", es: "Objetivo de palabras", fr: "Ciblage de mots", "pt-br": "Alvo de palavras" },
+    sectionWordHistory: { en: "Word history", de: "Wortverlauf", es: "Historial de palabras", fr: "Historique des mots", "pt-br": "Histórico de palavras" },
+    sectionWordModes: { en: "Word modes", de: "Wortmodi", es: "Modos de palabras", fr: "Modes de mots", "pt-br": "Modos de palavras" },
+    lenSliderMax: { en: "Max", de: "Max", es: "Máx.", fr: "Max", "pt-br": "Máx." },
+    coverageEditModeLabel: { en: "Editing mode", de: "Bearbeitungsmodus", es: "Modo de edición", fr: "Mode d'édition", "pt-br": "Modo de edição" },
+    coverageEditOff: { en: "Off", de: "Aus", es: "Apagado", fr: "Arrêt", "pt-br": "Desligado" },
+    coverageEditTallies: { en: "Edit tallies", de: "Zählwerte bearbeiten", es: "Editar conteos", fr: "Modifier les comptes", "pt-br": "Editar contagens" },
+    coverageEditGoals: { en: "Edit goals", de: "Ziele bearbeiten", es: "Editar metas", fr: "Modifier les objectifs", "pt-br": "Editar metas" },
+    coverageSetAllLabel: { en: "Set all goals to:", de: "Alle Ziele setzen auf :", es: "Establecer todas las metas en:", fr: "Définir toutes les cibles sur :", "pt-br": "Definir todas as metas como:" },
+    coverageSetAllApply: { en: "Apply", de: "Übernehmen", es: "Aplicar", fr: "Appliquer", "pt-br": "Aplicar" },
+    copyTooltip: { en: "Copy word to clipboard", de: "Wort in Zwischenablage kopieren", es: "Copiar palabra al portapapeles", fr: "Copier le mot dans le presse-papiers", "pt-br": "Copiar palavra para a área de transferência" },
+    noticeReuseFiltered: { en: "Prevent reuse: removed words already played this match.", de: "Keine Wiederverwendung: Wörter aus dieser Runde wurden entfernt.", es: "Evitar reutilizar: se quitaron las palabras ya jugadas en esta partida.", fr: "Anti-répétition : mots déjà joués retirés pour cette partie.", "pt-br": "Evitar reutilização: palavras já jogadas nesta partida foram removidas." },
+    noticeReuseFallback: { en: "Prevent reuse: every option was used already — showing best matches anyway.", de: "Keine Wiederverwendung: Alle Optionen wurden schon benutzt – beste Treffer trotzdem anzeigen.", es: "Evitar reutilizar: todas las opciones ya se usaron — mostrando las mejores igualmente.", fr: "Anti-répétition : toutes les options déjà utilisées — meilleures propositions affichées quand même.", "pt-br": "Evitar reutilização: todas as opções já foram usadas — mostrando as melhores mesmo assim." }
+  });
+
+  addText({
+    sliderSuperAggression: { en: "Aggressiveness (%)", de: "Aggressivität (%)", es: "Agresividad (%)", fr: "Agressivité (%)", "pt-br": "Agressividade (%)" },
+    sliderSuperPause: { en: "Mid-word pause (s)", de: "Pause im Wort (s)", es: "Pausa a mitad de palabra (s)", fr: "Pause en plein mot (s)", "pt-br": "Pausa no meio da palavra (s)" },
+    sectionHud: { en: "HUD & Rhythm", de: "HUD & Rhythmus", es: "HUD y ritmo", fr: "HUD & rythme", "pt-br": "HUD e ritmo" },
+    sliderHudScale: { en: "HUD size", de: "HUD-Größe", es: "Tamaño del HUD", fr: "Taille du HUD", "pt-br": "Tamanho do HUD" },
+    sliderSpeed: { en: "Speed", de: "Geschwindigkeit", es: "Velocidad", fr: "Vitesse", "pt-br": "Velocidade" },
+    sliderThinkingDelay: { en: "Thinking delay (s)", de: "Denkpause (s)", es: "Retraso para pensar (s)", fr: "Temps de réflexion (s)", "pt-br": "Atraso para pensar (s)" },
+    sliderMistakes: { en: "Butterfingers (%)", de: "Vertipper (%)", es: "Errores (%)", fr: "Fautes (%)", "pt-br": "Erros (%)" },
+    sectionMessages: { en: "Messages", de: "Nachrichten", es: "Mensajes", fr: "Messages", "pt-br": "Mensagens" },
+    togglePreMessage: { en: "Pre-message", de: "Vor-Nachricht", es: "Mensaje previo", fr: "Pré-message", "pt-br": "Mensagem prévia" },
+    inputPreMessage: { en: "Message to flash before your word", de: "Nachricht vor deinem Wort anzeigen", es: "Mensaje para mostrar antes de tu palabra", fr: "Message à afficher avant votre mot", "pt-br": "Mensagem para mostrar antes da sua palavra" },
+    togglePostfix: { en: "Postfix", de: "Suffix", es: "Posfijo", fr: "Suffixe", "pt-br": "Sufixo" },
+    inputPostfix: { en: "Characters to append (e.g., <3)", de: "Zeichen anhängen (z. B. <3)", es: "Caracteres para añadir (p. ej., <3)", fr: "Caractères à ajouter (ex. : <3)", "pt-br": "Caracteres para adicionar (ex.: <3)" },
+    sectionAlphabet: { en: "Alphabet mastery", de: "Alphabet-Training", es: "Dominio del alfabeto", fr: "Maîtrise de l'alphabet", "pt-br": "Domínio do alfabeto" },
+    toggleCoverage: { en: "Alphabet coverage", de: "Alphabet-Abdeckung", es: "Cobertura del alfabeto", fr: "Couverture de l'alphabet", "pt-br": "Cobertura do alfabeto" },
+    toggleExclude: { en: "A-Z goals / exclusions", de: "A-Z-Ziele / Ausschlüsse", es: "Objetivos/exclusiones A-Z", fr: "Objectifs/exclusions A-Z", "pt-br": "Metas/exclusões A-Z" },
+    labelEditingMode: { en: "Editing mode", de: "Bearbeitungsmodus", es: "Modo de edición", fr: "Mode d'édition", "pt-br": "Modo de edição" },
+    editOff: { en: "Off", de: "Aus", es: "Apagado", fr: "Arrêt", "pt-br": "Desligado" },
+    editTallies: { en: "Edit tallies", de: "Zählwerte bearbeiten", es: "Editar conteos", fr: "Modifier les comptes", "pt-br": "Editar contagens" },
+    editGoals: { en: "Edit goals", de: "Ziele bearbeiten", es: "Editar metas", fr: "Modifier les objectifs", "pt-br": "Editar metas" },
+    labelSetAllGoals: { en: "Set all goals to:", de: "Alle Ziele setzen auf :", es: "Establecer todas las metas en:", fr: "Définir toutes les cibles sur :", "pt-br": "Definir todas as metas como:" },
+    buttonApply: { en: "Apply", de: "Übernehmen", es: "Aplicar", fr: "Appliquer", "pt-br": "Aplicar" },
+    buttonResetCoverage: { en: "Reset A-Z progress", de: "A-Z-Fortschritt zurücksetzen", es: "Restablecer progreso A-Z", fr: "Réinitialiser la progression A-Z", "pt-br": "Redefinir progresso A-Z" }
+  });
+
+  addText({
+    sectionWords: { en: "Word targeting", de: "Wortzielsuche", es: "Objetivo de palabras", fr: "Ciblage de mots", "pt-br": "Alvo de palavras" },
+    sliderSuggestions: { en: "Suggestions", de: "Vorschläge", es: "Sugerencias", fr: "Suggestions", "pt-br": "Sugestões" },
+    wordModesToggle: { en: "Word modes", de: "Wortmodi", es: "Modos de palabras", fr: "Modes de mots", "pt-br": "Modos de palavras" },
+    dualFoul: { en: "Foul words", de: "Schimpfwörter", es: "Palabras malsonantes", fr: "Mots grossiers", "pt-br": "Palavrões" },
+    dualPokemon: { en: "Pokémon words", de: "Pokémon-Wörter", es: "Palabras Pokémon", fr: "Mots Pokémon", "pt-br": "Palavras Pokémon" },
+    dualMinerals: { en: "Minerals", de: "Mineralien", es: "Minerales", fr: "Minéraux", "pt-br": "Minerais" },
+    dualRare: { en: "Rare words", de: "Seltene Wörter", es: "Palabras raras", fr: "Mots rares", "pt-br": "Palavras raras" },
+    dualTargetLength: { en: "Target length", de: "Ziellänge", es: "Longitud objetivo", fr: "Longueur cible", "pt-br": "Comprimento alvo" },
+    labelMe: { en: "Me", de: "Ich", es: "Yo", fr: "Moi", "pt-br": "Eu" },
+    labelSpectator: { en: "Spectator", de: "Zuschauer", es: "Espectador", fr: "Spectateur", "pt-br": "Espectador" },
+    lenMax: { en: "Max", de: "Max", es: "Máx.", fr: "Max", "pt-br": "Máx." },
+    dualHyphen: { en: "Hyphen only", de: "Nur Bindestrich", es: "Solo guiones", fr: "Tirets uniquement", "pt-br": "Somente hífen" },
+    dualContains: { en: "Contains", de: "Enthält", es: "Contiene", fr: "Contient", "pt-br": "Contém" },
+    inputContainsMe: { en: "Letters or fragment (me)", de: "Buchstaben oder Fragment (ich)", es: "Letras o fragmento (yo)", fr: "Lettres ou fragment (moi)", "pt-br": "Letras ou fragmento (eu)" },
+    inputContainsSpectator: { en: "Letters or fragment (spectator)", de: "Buchstaben oder Fragment (Zuschauer)", es: "Letras o fragmento (espectador)", fr: "Lettres ou fragment (spectateur)", "pt-br": "Letras ou fragmento (espectador)" },
+    sectionSuggestions: { en: "Live suggestions", de: "Live-Vorschläge", es: "Sugerencias en vivo", fr: "Suggestions en direct", "pt-br": "Sugestões ao vivo" },
+    dynamicTitleSelf: { en: "My top picks", de: "Meine Favoriten", es: "Mis mejores opciones", fr: "Mes meilleures propositions", "pt-br": "Minhas melhores opções" },
+    dynamicTitleSpectator: { en: "Spectator suggestions", de: "Vorschläge für Zuschauer", es: "Sugerencias para espectadores", fr: "Suggestions spectateur", "pt-br": "Sugestões para espectadores" },
+    listEmpty: { en: "(none)", de: "(keine)", es: "(ninguna)", fr: "(aucune)", "pt-br": "(nenhuma)" },
+    copySuccess: { en: "Copied", de: "Kopiert", es: "Copiado", fr: "Copié", "pt-br": "Copiado" },
+    copyFail: { en: "Copy failed", de: "Kopieren fehlgeschlagen", es: "Error al copiar", fr: "Échec de la copie", "pt-br": "Falha ao copiar" }
+  });
+
+  addText({
+    coverageExcluded: { en: "excluded", de: "ausgeschlossen", es: "excluido", fr: "exclu", "pt-br": "excluído" },
+    coverageTallyTooltip: { en: "Left click to add progress, right click to remove.", de: "Linksklick, um Fortschritt hinzuzufügen, Rechtsklick, um zu entfernen.", es: "Clic izquierdo para sumar progreso, clic derecho para quitar.", fr: "Clic gauche pour ajouter du progrès, clic droit pour retirer.", "pt-br": "Clique esquerdo para adicionar progresso, direito para remover." },
+    coverageGoalTooltip: { en: "Left click to raise the goal, right click to lower.", de: "Linksklick zum Erhöhen des Ziels, Rechtsklick zum Verringern.", es: "Clic izquierdo para subir la meta, clic derecho para bajar.", fr: "Clic gauche pour augmenter l'objectif, clic droit pour diminuer.", "pt-br": "Clique esquerdo para aumentar a meta, direito para diminuir." },
+    coverageEditTalliesNotice: { en: "Editing tallies: left-click to add progress, right-click to remove. Values stay within each letter's goal.", de: "Zählwerte bearbeiten : Linksklick fügt Fortschritt hinzu, Rechtsklick entfernt ihn. Werte bleiben innerhalb des Zielwerts pro Buchstabe.", es: "Editando conteos: clic izquierdo para sumar progreso, clic derecho para quitar. Los valores se mantienen dentro de la meta de cada letra.", fr: "Édition des compteurs : clic gauche pour ajouter du progrès, clic droit pour retirer. Les valeurs restent dans l'objectif de chaque lettre.", "pt-br": "Editando contagens: clique esquerdo para adicionar progresso, clique direito para remover. Os valores ficam dentro da meta de cada letra." },
+    coverageEditGoalsNotice: { en: "Editing goals: left-click to raise, right-click to lower, or type a number inside any letter box.", de: "Ziele bearbeiten : Linksklick erhöht, Rechtsklick verringert oder eine Zahl ins Feld eingeben.", es: "Editar metas: clic izquierdo para subir, clic derecho para bajar o escribe un número en cualquier casilla.", fr: "Modifier les objectifs : clic gauche pour augmenter, clic droit pour diminuer, ou saisissez un nombre dans une case.", "pt-br": "Editar metas: clique esquerdo para aumentar, clique direito para diminuir ou digite um número na caixa." },
+    noticeFoulFallback: { en: "No foul words matched this prompt; using the normal word list.", de: "Keine Schimpfwörter passten auf diese Silbe ; normale Liste wird genutzt.", es: "Ninguna palabra malsonante coincide con este turno; se usa la lista normal.", fr: "Aucun mot grossier ne correspond à cette syllabe ; utilisation de la liste normale.", "pt-br": "Nenhum palavrão correspondeu a esta rodada; usando a lista normal." },
+    noticePokemonFallback: { en: "No Pokémon words matched this prompt; falling back to regular suggestions.", de: "Keine Pokémon-Wörter passten; es werden normale Vorschläge verwendet.", es: "Ninguna palabra Pokémon coincide; se vuelve a las sugerencias normales.", fr: "Aucun mot Pokémon ne correspond ; retour aux suggestions classiques.", "pt-br": "Nenhuma palavra Pokémon correspondeu; voltando às sugestões normais." },
+    noticeMineralsFallback: { en: "No mineral words matched this prompt; showing main list instead.", de: "Keine Mineralien-Wörter passten; Hauptliste wird angezeigt.", es: "Ninguna palabra de minerales coincide; se muestra la lista principal.", fr: "Aucun mot de minéraux ne correspond ; affichage de la liste principale.", "pt-br": "Nenhuma palavra de minerais correspondeu; mostrando a lista principal." },
+    noticeRareFallback: { en: "No rare words matched this prompt; showing normal suggestions.", de: "Keine seltenen Wörter passten; normale Vorschläge werden angezeigt.", es: "Ninguna palabra rara coincide; se muestran sugerencias normales.", fr: "Aucun mot rare ne correspond ; affichage des suggestions normales.", "pt-br": "Nenhuma palavra rara correspondeu; mostrando sugestões normais." },
+    noticeLengthCap: { en: "Limiting to words of <= {{target}} letters while maximizing alphabet coverage.", de: "Begrenzung auf Wörter mit <= {{target}} Buchstaben bei maximaler Alphabet-Abdeckung.", es: "Limitando a palabras de <= {{target}} letras mientras se maximiza la cobertura del alfabeto.", fr: "Limitation aux mots de <= {{target}} lettres tout en maximisant la couverture de l'alphabet.", "pt-br": "Limitando a palavras com <= {{target}} letras enquanto maximiza a cobertura do alfabeto." },
+    noticeLengthRelaxed: { en: "No words of <= {{target}} letters found; using best coverage regardless of length.", de: "Keine Wörter mit <= {{target}} Buchstaben gefunden; beste Abdeckung unabhängig von der Länge.", es: "No se encontraron palabras de <= {{target}} letras; usando la mejor cobertura sin importar la longitud.", fr: "Aucun mot de <= {{target}} lettres trouvé ; on utilise la meilleure couverture, quelle que soit la longueur.", "pt-br": "Nenhuma palavra com <= {{target}} letras encontrada; usando a melhor cobertura independentemente do tamanho." },
+    noticeLengthFlexMax: { en: "No words at the maximum length; trying nearby lengths.", de: "Keine Wörter in der Maximallänge; versuche ähnliche Längen.", es: "No hay palabras en la longitud máxima; probando longitudes cercanas.", fr: "Aucun mot à la longueur maximale ; essai de longueurs voisines.", "pt-br": "Nenhuma palavra no comprimento máximo; tentando comprimentos próximos." },
+    noticeLengthFlex: { en: "No words with exactly {{target}} letters; trying nearby lengths.", de: "Keine Wörter mit genau {{target}} Buchstaben; versuche ähnliche Längen.", es: "No hay palabras con exactamente {{target}} letras; probando longitudes cercanas.", fr: "Aucun mot avec exactement {{target}} lettres ; essai de longueurs proches.", "pt-br": "Nenhuma palavra com exatamente {{target}} letras; tentando comprimentos próximos." },
+    noticeLengthSuppressed: { en: "Target length ignored because higher-priority lists supplied enough options.", de: "Ziellänge ignoriert, weil höher priorisierte Listen genügend Optionen lieferten.", es: "Longitud objetivo ignorada porque las listas prioritarias dieron suficientes opciones.", fr: "Longueur cible ignorée car des listes prioritaires ont fourni assez d'options.", "pt-br": "Comprimento alvo ignorado porque listas prioritárias forneceram opções suficientes." },
+    noticeContainsFallback: { en: "Contains filter: no matches found; showing broader results.", de: "Enthält-Filter : keine Treffer; es werden breitere Ergebnisse angezeigt.", es: "Filtro Contiene: sin coincidencias; mostrando resultados más amplios.", fr: "Filtre Contient : aucune correspondance ; affichage de résultats plus larges.", "pt-br": "Filtro Contém: nenhum resultado; exibindo opções mais amplas." },
+    noticeHyphenFallback: { en: "Hyphen mode: no hyphenated words matched this prompt.", de: "Bindestrich-Modus : keine Wörter mit Bindestrich passten.", es: "Modo guion: ninguna palabra con guion coincide.", fr: "Mode tiret : aucun mot avec tiret ne correspond.", "pt-br": "Modo hífen: nenhuma palavra com hífen correspondeu." }
+  });
+
+  addText({
+    lenNoticeCoverageFoul: { en: "Target length (me): with coverage on it acts as a max (<= {{target}}); foul words still take priority.", de: "Ziellänge (ich) : mit aktivierter Abdeckung wirkt sie als Maximum (<= {{target}}); Schimpfwörter haben weiterhin Priorität.", es: "Longitud objetivo (yo): con cobertura activada funciona como máximo (<= {{target}}); las palabras malsonantes siguen teniendo prioridad.", fr: "Longueur cible (moi) : avec la couverture activée, elle agit comme un maximum (<= {{target}}) ; les mots grossiers restent prioritaires.", "pt-br": "Comprimento alvo (eu): com cobertura ligada age como máximo (<= {{target}}); palavrões ainda têm prioridade." },
+    lenNoticeCoverage: { en: "Target length (me): acts as a max (<= {{target}}) while optimizing alphabet coverage.", de: "Ziellänge (ich) : fungiert als Maximum (<= {{target}}) und optimiert die Alphabet-Abdeckung.", es: "Longitud objetivo (yo): actúa como un máximo (<= {{target}}) mientras optimiza la cobertura del alfabeto.", fr: "Longueur cible (moi) : agit comme un maximum (<= {{target}}) tout en optimisant la couverture de l'alphabet.", "pt-br": "Comprimento alvo (eu): atua como máximo (<= {{target}}) ao otimizar a cobertura do alfabeto." },
+    lenNoticeFoul: { en: "Target length (me): ignored when foul words are available; used only if none match.", de: "Ziellänge (ich) : ignoriert, wenn Schimpfwörter verfügbar sind; nur genutzt, wenn keine passen.", es: "Longitud objetivo (yo): se ignora cuando hay palabras malsonantes disponibles; solo se usa si ninguna coincide.", fr: "Longueur cible (moi) : ignorée lorsque des mots grossiers sont disponibles ; utilisée seulement si rien ne correspond.", "pt-br": "Comprimento alvo (eu): ignorado quando há palavrões disponíveis; usado apenas se nenhum corresponder." },
+    lenNoticeDefault: { en: "Target length (me): exact matches show green, nearby lengths appear in yellow when needed.", de: "Ziellänge (ich): exakte Treffer werden grün angezeigt, nahe Längen erscheinen bei Bedarf gelb.", es: "Longitud objetivo (yo): coincidencias exactas en verde, longitudes cercanas aparecen en amarillo cuando se necesitan.", fr: "Longueur cible (moi) : correspondances exactes en vert, longueurs proches en jaune si nécessaire.", "pt-br": "Comprimento alvo (eu): correspondências exatas em verde, comprimentos próximos aparecem em amarelo quando necessário." },
+    lenNoticeSpecFoul: { en: "Target length (spectator): ignored whenever foul words are available for the prompt.", de: "Ziellänge (Zuschauer): ignoriert, sobald Schimpfwörter verfügbar sind.", es: "Longitud objetivo (espectador): se ignora cuando hay palabras malsonantes disponibles.", fr: "Longueur cible (spectateur) : ignorée dès que des mots grossiers sont disponibles.", "pt-br": "Comprimento alvo (espectador): ignorado sempre que há palavrões disponíveis." },
+    lenNoticeSpecDefault: { en: "Target length (spectator): exact matches show green; nearby lengths are marked in yellow.", de: "Ziellänge (Zuschauer): exakte Treffer werden grün angezeigt; nahe Längen sind gelb markiert.", es: "Longitud objetivo (espectador): coincidencias exactas en verde; longitudes cercanas marcadas en amarillo.", fr: "Longueur cible (spectateur) : correspondances exactes en vert ; longueurs proches marquées en jaune.", "pt-br": "Comprimento alvo (espectador): correspondências exatas em verde; comprimentos próximos marcados em amarelo." },
+    legendFoul: { en: "foul", de: "Schimpfwörter", es: "malsonante", fr: "grossier", "pt-br": "palavrão" },
+    legendLengthMatch: { en: "matches target length", de: "entspricht der Ziellänge", es: "coincide con la longitud objetivo", fr: "correspond à la longueur cible", "pt-br": "combina com o comprimento alvo" },
+    legendLengthNear: { en: "nearby length", de: "nahe Länge", es: "longitud cercana", fr: "longueur proche", "pt-br": "comprimento próximo" },
+    legendHyphen: { en: "hyphen words", de: "Bindestrich-Wörter", es: "palabras con guion", fr: "mots avec tiret", "pt-br": "palavras com hífen" },
+    legendContains: { en: "contains filter", de: "Enthält-Filter", es: "filtro contiene", fr: "filtre contient", "pt-br": "filtro contém" },
+    legendPokemon: { en: "Pokémon", de: "Pokémon", es: "Pokémon", fr: "Pokémon", "pt-br": "Pokémon" },
+    legendMinerals: { en: "minerals", de: "Mineralien", es: "minerales", fr: "minéraux", "pt-br": "minerais" },
+    legendRare: { en: "rare", de: "selten", es: "raras", fr: "rares", "pt-br": "raras" },
+    legendRegular: { en: "regular", de: "normal", es: "normal", fr: "classique", "pt-br": "normal" },
+    legendDismiss: { en: "click to hide", de: "klicken zum Ausblenden", es: "haz clic para ocultar", fr: "cliquer pour masquer", "pt-br": "clique para ocultar" }
+  });
+
+  addText({
+    preventReuseSection: { en: "Word history", de: "Wortverlauf", es: "Historial de palabras", fr: "Historique des mots", "pt-br": "Histórico de palavras" },
+    togglePreventReuse: { en: "Prevent word reuse", de: "Wortwiederholung verhindern", es: "Evitar reutilizar palabras", fr: "Éviter de réutiliser les mots", "pt-br": "Evitar reutilizar palavras" },
+    wordHistoryInfo: { en: "Words used this match won't be suggested again.", de: "Wörter aus dieser Runde werden nicht erneut vorgeschlagen.", es: "Las palabras usadas en esta partida no se sugerirán de nuevo.", fr: "Les mots utilisés pendant cette partie ne seront plus proposés.", "pt-br": "As palavras usadas nesta partida não serão sugeridas novamente." },
+    wordLogHeading: { en: "Recent words", de: "Neueste Wörter", es: "Palabras recientes", fr: "Mots récents", "pt-br": "Palavras recentes" },
+    wordLogEmpty: { en: "No words logged yet.", de: "Noch keine Wörter protokolliert.", es: "Aún no hay palabras registradas.", fr: "Aucun mot enregistré pour l'instant.", "pt-br": "Nenhuma palavra registrada ainda." },
+    wordLogSelfTag: { en: "You", de: "Du", es: "Tú", fr: "Vous", "pt-br": "Você" },
+    wordLogOtherTag: { en: "Others", de: "Andere", es: "Otros", fr: "Autres", "pt-br": "Outros" },
+    buttonResetWordLog: { en: "Reset logged words", de: "Wortverlauf zurücksetzen", es: "Restablecer registro de palabras", fr: "Réinitialiser l'historique", "pt-br": "Redefinir palavras registradas" },
+    notificationGameReset: { en: "New game detected — alphabet list and word history reset.", de: "Neue Partie erkannt – Alphabetliste und Wortverlauf zurückgesetzt.", es: "Nueva partida detectada — lista del alfabeto y historial reiniciados.", fr: "Nouvelle partie détectée — liste alphabet et historique réinitialisés.", "pt-br": "Nova partida detectada — lista do alfabeto e histórico de palavras redefinidos." }
+  });
+
+  const translator = (() => {
+    const fallbackLang = "en";
+    let currentLang = typeof game.normalizeLang === "function" ? game.normalizeLang(game.lang) : (game.lang || fallbackLang);
+    const bindings = [];
+
+    const normalizeLang = (lang) => (typeof game.normalizeLang === "function" ? game.normalizeLang(lang) : (lang || fallbackLang));
+
+    const formatTemplate = (template, params) => {
+      if (!params) return template;
+      return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+        const value = Object.prototype.hasOwnProperty.call(params, key) ? params[key] : '';
+        return value === undefined || value === null ? '' : String(value);
+      });
+    };
+
+    const translateKey = (key, params = {}, fallback) => {
+      const lang = normalizeLang(currentLang);
+      const entry = UI_TEXT[key] || {};
+      let template = entry[lang];
+      if (template === undefined) template = entry[fallbackLang];
+      if (template === undefined) template = fallback !== undefined ? fallback : key;
+      if (typeof template === 'string') {
+        return formatTemplate(template, params);
+      }
+      return template;
+    };
+
+    const updateBinding = (binding) => {
+      const params = typeof binding.getParams === 'function' ? binding.getParams() : binding.params;
+      const text = translateKey(binding.key, params, binding.fallback);
+      if (binding.attribute) {
+        binding.node.setAttribute(binding.attribute, text);
+      } else if (binding.html) {
+        binding.node.innerHTML = text;
+      } else if (binding.transform) {
+        binding.transform(binding.node, text);
+      } else {
+        binding.node.textContent = text;
+      }
+    };
+
+    const bind = (node, key, options = {}) => {
+      const binding = { node, key, ...options };
+      bindings.push(binding);
+      updateBinding(binding);
+      return node;
+    };
+
+    const refresh = (lang) => {
+      currentLang = normalizeLang(lang || currentLang);
+      bindings.forEach(updateBinding);
+    };
+
+    return {
+      t: translateKey,
+      bind,
+      refresh,
+      current: () => currentLang
+    };
+  })();
+
   const clampNumber = (value, min, max, fallback) => {
     const n = Number(value);
     if (!Number.isFinite(n)) return fallback;
@@ -104,6 +302,18 @@ function createOverlay(game) {
   const getBool = (value, fallback) => (typeof value === "boolean" ? value : fallback);
 
   let hudSizePercent = clampNumber(savedSettings?.hudSizePercent, 20, 70, 45);
+
+  const defaultCollapsedSections = {
+    automation: false,
+    hud: false,
+    messages: false,
+    coverage: false,
+    wordTargeting: false,
+    suggestions: false,
+    wordHistory: false,
+  };
+  const collapsedSections = Object.assign({}, defaultCollapsedSections, savedSettings?.collapsedSections || {});
+  let wordModesCollapsed = !!savedSettings?.wordModesCollapsed;
 
   const setIfString = (val, setter) => { if (typeof val === "string") setter(val); };
 
@@ -135,6 +345,7 @@ function createOverlay(game) {
   game.specMineralsMode = getBool(savedSettings?.specMineralsMode, game.specMineralsMode);
   game.rareMode = getBool(savedSettings?.rareMode, game.rareMode);
   game.specRareMode = getBool(savedSettings?.specRareMode, game.specRareMode);
+  game.preventReuseEnabled = getBool(savedSettings?.preventReuseEnabled, game.preventReuseEnabled);
   game.preMsgEnabled = getBool(savedSettings?.preMsgEnabled, game.preMsgEnabled);
   game.postfixEnabled = getBool(savedSettings?.postfixEnabled, game.postfixEnabled);
 
@@ -211,7 +422,10 @@ function createOverlay(game) {
     containsText: game.containsText || "",
     specContainsText: game.specContainsText || "",
     excludeSpec: game.excludeSpec || "",
-    priorityOrder: Array.isArray(game.priorityOrder) ? game.priorityOrder.slice() : []
+    priorityOrder: Array.isArray(game.priorityOrder) ? game.priorityOrder.slice() : [],
+    preventReuseEnabled: !!game.preventReuseEnabled,
+    collapsedSections: Object.assign({}, collapsedSections),
+    wordModesCollapsed: !!wordModesCollapsed
   });
 
   let saveTimer = null;
@@ -244,6 +458,14 @@ function createOverlay(game) {
 
   game._notifySettingsChanged = (opts = {}) => {
     requestSave(opts);
+  };
+
+  const setSectionCollapsed = (id, collapsed, options = {}) => {
+    if (!id) return;
+    const next = !!collapsed;
+    if (collapsedSections[id] === next) return;
+    collapsedSections[id] = next;
+    if (!options.silent) requestSave();
   };
 
   const autoJoinManager = (() => {
@@ -394,6 +616,51 @@ function createOverlay(game) {
   });
   scheduleTalliesSave();
 
+  const toast = document.createElement("div");
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "20px",
+    left: "50%",
+    transform: "translate(-50%, -20px)",
+    padding: "10px 16px",
+    borderRadius: "999px",
+    background: "rgba(14,165,233,0.85)",
+    color: "#ecfeff",
+    fontWeight: "700",
+    fontSize: "13px",
+    letterSpacing: "0.25px",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+    opacity: "0",
+    transition: "opacity 0.2s ease, transform 0.2s ease",
+    pointerEvents: "none",
+    zIndex: "2147483647"
+  });
+  let toastTimer = null;
+  let activeToastKey = null;
+  const hideToast = () => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translate(-50%, -20px)";
+    activeToastKey = null;
+  };
+  const showToast = (key, duration = 2600) => {
+    activeToastKey = key;
+    toast.textContent = translator.t(key);
+    toast.style.opacity = "1";
+    toast.style.transform = "translate(-50%, 0)";
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      hideToast();
+    }, Math.max(1200, duration));
+  };
+  const updateToastLanguage = () => {
+    if (activeToastKey) {
+      toast.textContent = translator.t(activeToastKey);
+    }
+  };
+  let joinObserver = null;
+  let joinCheckTimer = null;
+  let lastJoinVisible = false;
+
   // HUD
   const box = document.createElement("div");
   Object.assign(box.style, {
@@ -418,31 +685,110 @@ function createOverlay(game) {
 
   // header (drag + collapse)
   const header = document.createElement("div");
-  header.textContent = "Bomb Party Shark";
   Object.assign(header.style, {
-    fontWeight: 800, marginBottom: "10px", letterSpacing: "0.2px",
-    cursor: "grab", borderBottom: "1px solid rgba(255,255,255,0.10)", paddingBottom: "8px",
-    fontSize: "16px"
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    cursor: "grab",
+    borderBottom: "1px solid rgba(255,255,255,0.10)",
+    paddingBottom: "8px",
+    marginBottom: "10px"
   });
+
+  const headerRow = document.createElement("div");
+  Object.assign(headerRow.style, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px"
+  });
+  header.appendChild(headerRow);
+
+  const titleEl = document.createElement("span");
+  translator.bind(titleEl, "title");
+  Object.assign(titleEl.style, { fontWeight: 800, fontSize: "16px", letterSpacing: "0.2px" });
+  headerRow.appendChild(titleEl);
+
+  const headerActions = document.createElement("div");
+  Object.assign(headerActions.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px"
+  });
+  headerRow.appendChild(headerActions);
+
+  const languageStatus = document.createElement("span");
+  translator.bind(languageStatus, "currentLanguage", {
+    getParams: () => ({ language: game.languageDisplayName() })
+  });
+  Object.assign(languageStatus.style, {
+    fontSize: "12px",
+    fontWeight: "600",
+    color: "#cbd5f5",
+    letterSpacing: "0.2px"
+  });
+  languageStatus.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  languageStatus.addEventListener("click", (ev) => ev.stopPropagation());
+  headerActions.appendChild(languageStatus);
+
+  const forceSaveBtn = document.createElement("button");
+  translator.bind(forceSaveBtn, "forceSave");
+  Object.assign(forceSaveBtn.style, {
+    padding: "4px 10px",
+    borderRadius: "999px",
+    border: "1px solid rgba(96,165,250,0.65)",
+    background: "rgba(59,130,246,0.20)",
+    color: "#bfdbfe",
+    fontWeight: "700",
+    cursor: "pointer",
+    fontSize: "12px",
+    letterSpacing: "0.2px"
+  });
+  forceSaveBtn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  let forceSaveTimer = null;
+  const forceSaveStatus = document.createElement("span");
+  translator.bind(forceSaveStatus, "forceSaveSaved");
+  Object.assign(forceSaveStatus.style, {
+    fontSize: "12px",
+    fontWeight: "700",
+    color: "#22c55e",
+    opacity: "0",
+    transition: "opacity 0.2s ease",
+    pointerEvents: "none"
+  });
+  forceSaveBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    saveSettingsNow(collectSettings());
+    const counts = Array.isArray(game.coverageCounts) ? game.coverageCounts.slice(0, 26) : [];
+    saveTalliesNow({ coverageCounts: counts });
+    if (forceSaveTimer) clearTimeout(forceSaveTimer);
+    forceSaveStatus.style.opacity = "1";
+    forceSaveTimer = setTimeout(() => { forceSaveStatus.style.opacity = "0"; }, 1400);
+  });
+  headerActions.appendChild(forceSaveBtn);
+  forceSaveStatus.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  forceSaveStatus.addEventListener("click", (ev) => ev.stopPropagation());
+  headerActions.appendChild(forceSaveStatus);
+
   box.appendChild(header);
 
   // Tabs
   const tabs = document.createElement("div");
   Object.assign(tabs.style, { display:"flex", gap:"8px", marginBottom:"10px" });
-  const mkTab = (name) => {
+  const mkTab = (labelKey) => {
     const b = document.createElement("button");
-    b.textContent = name;
+    translator.bind(b, labelKey);
     Object.assign(b.style, { padding:"6px 10px", borderRadius:"8px", cursor:"pointer",
       border:"1px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.06)", fontWeight:700 });
     b._setActive = (on)=> {
       b.style.background = on ? "rgba(59,130,246,0.25)" : "rgba(255,255,255,0.06)";
       b.style.border = on ? "1px solid rgba(59,130,246,0.55)" : "1px solid rgba(255,255,255,0.2)";
-    };
+      };
     return b;
   };
-  const mainTabBtn = mkTab("Main");
-  const covTabBtn  = mkTab("Coverage");
-  const wordsTabBtn= mkTab("Words");
+  const mainTabBtn = mkTab("tabMain");
+  const covTabBtn  = mkTab("tabCoverage");
+  const wordsTabBtn= mkTab("tabWords");
   tabs.appendChild(mainTabBtn); tabs.appendChild(covTabBtn); tabs.appendChild(wordsTabBtn);
   box.appendChild(tabs);
 
@@ -490,13 +836,11 @@ function createOverlay(game) {
     const theme = toggleThemes[scheme] || toggleThemes.default;
     btn.dataset.scheme = scheme;
     btn.dataset.mode = mode;
-    const label = btn.dataset.label || btn.textContent || "";
     if (mode === "status") {
-      btn.textContent = on ? "ON" : "OFF";
+      btn.textContent = translator.t(on ? "toggleOn" : "toggleOff");
       btn.style.letterSpacing = "0.3px";
       btn.style.fontSize = "13px";
     } else {
-      btn.textContent = label;
       btn.style.letterSpacing = "0.4px";
       btn.style.fontSize = "12px";
     }
@@ -549,26 +893,33 @@ function createOverlay(game) {
     priorityControls.set(key, select);
   };
 
-  const mkRow = (label, onClick, getOn, scheme = "default", mode = "status", options = {}) => {
+  const mkRow = (labelKey, onClick, getOn, scheme = "default", mode = "status", options = {}) => {
     const r = document.createElement("div");
     Object.assign(r.style, { display:"flex", alignItems:"center", justifyContent:"space-between", gap:"16px", margin:"8px 0" });
-    const span = document.createElement("span"); span.textContent = label; span.style.fontWeight = "600"; r.appendChild(span);
+    const span = document.createElement("span");
+    translator.bind(span, labelKey);
+    span.style.fontWeight = "600";
+    r.appendChild(span);
     r._labelSpan = span;
     const btn = document.createElement("button");
-    btn.onclick = () => {
+    if (mode !== "status") {
+      btn.dataset.labelKey = labelKey;
+      translator.bind(btn, labelKey);
+    }
+    btn.addEventListener("click", () => {
       onClick();
       if (typeof options.after === "function") options.after();
       if (options.recompute) requestSave({ recompute: true });
       else requestSave();
       render();
-    };
+    });
     r.appendChild(btn);
     btn.dataset.mode = mode;
-    r._btn = btn; r._get = getOn; r._scheme = scheme; r._mode = mode;
+    r._btn = btn; r._get = getOn; r._scheme = scheme; r._mode = mode; r._labelKey = labelKey;
     return r;
   };
 
-  const mkDualRow = (label, configs) => {
+  const mkDualRow = (labelKey, configs) => {
     const row = document.createElement("div");
     Object.assign(row.style, {
       display:"flex",
@@ -579,7 +930,7 @@ function createOverlay(game) {
       margin:"8px 0"
     });
     const span = document.createElement("span");
-    span.textContent = label;
+    translator.bind(span, labelKey);
     span.style.fontWeight = "600";
     row.appendChild(span);
     row._labelSpan = span;
@@ -589,8 +940,13 @@ function createOverlay(game) {
     row._buttons = [];
     configs.forEach(cfg => {
       const btn = document.createElement("button");
-      btn.dataset.label = cfg.label;
       btn.dataset.mode = "label";
+      if (cfg.labelKey) {
+        btn.dataset.labelKey = cfg.labelKey;
+        translator.bind(btn, cfg.labelKey);
+      } else if (cfg.label) {
+        btn.textContent = cfg.label;
+      }
       btn.addEventListener("click", () => {
         cfg.onClick();
         if (typeof cfg.after === "function") cfg.after();
@@ -604,7 +960,7 @@ function createOverlay(game) {
     return row;
   };
 
-  function sliderRow(label, min, max, val, step, oninput, options = {}){
+  function sliderRow(labelKey, min, max, val, step, oninput, options = {}){
     const row = document.createElement("div");
     Object.assign(row.style, {
       display:"grid",
@@ -613,7 +969,9 @@ function createOverlay(game) {
       gap:"14px",
       margin:"10px 0"
     });
-    const span = document.createElement("span"); span.textContent = label; span.style.fontWeight = "600";
+    const span = document.createElement("span");
+    translator.bind(span, labelKey);
+    span.style.fontWeight = "600";
     const input = document.createElement("input");
     input.type = "range"; input.min = String(min); input.max = String(max); input.step = String(step); input.value = String(val);
     const accent = options.accent || "#60a5fa";
@@ -649,10 +1007,10 @@ function createOverlay(game) {
     row._coerceValue = coerceValue;
     return row;
   }
-  function textInput(placeholder, value, oninput, options = {}){
+  function textInput(placeholderKey, value, oninput, options = {}){
     const wrap = document.createElement("div");
     const inp = document.createElement("input");
-    inp.type = "text"; inp.placeholder = placeholder; inp.value = value || "";
+    inp.type = "text"; inp.value = value || "";
     const baseStyle = { width:"100%", padding:"6px 8px", borderRadius:"8px", border:"1px solid rgba(255,255,255,0.25)", background:"rgba(255,255,255,0.06)", color:"#fff", fontWeight:"600" };
     if (options.theme === "pink") {
       Object.assign(baseStyle, { border:"1px solid rgba(244,114,182,0.65)", background:"rgba(236,72,153,0.15)", color:"#fdf2f8" });
@@ -662,6 +1020,9 @@ function createOverlay(game) {
       Object.assign(baseStyle, { border:"1px solid rgba(96,165,250,0.6)", background:"rgba(59,130,246,0.18)", color:"#dbeafe" });
     }
     Object.assign(inp.style, baseStyle);
+    if (placeholderKey) {
+      translator.bind(inp, placeholderKey, { attribute: "placeholder" });
+    }
     inp.addEventListener("input", (e)=>{
       oninput(inp.value);
       if (typeof options.onChange === "function") options.onChange(inp.value);
@@ -671,7 +1032,8 @@ function createOverlay(game) {
     wrap._input = inp;
     return wrap;
   }
-  function createCard(title){
+  function createCard(labelKey, options = {}){
+    const id = options.id || labelKey || `section-${Math.random().toString(36).slice(2)}`;
     const card = document.createElement("div");
     Object.assign(card.style, {
       background:"rgba(15,23,42,0.55)",
@@ -680,14 +1042,88 @@ function createOverlay(game) {
       padding:"14px 16px",
       display:"flex",
       flexDirection:"column",
+      gap:"10px"
+    });
+
+    const header = document.createElement("button");
+    header.type = "button";
+    header.dataset.sectionId = id;
+    Object.assign(header.style, {
+      display:"flex",
+      alignItems:"center",
+      justifyContent:"space-between",
+      gap:"10px",
+      background:"transparent",
+      border:"none",
+      color:"inherit",
+      padding:"0",
+      cursor:"pointer",
+      fontWeight:800,
+      fontSize:"15px",
+      textAlign:"left"
+    });
+    header.setAttribute("aria-controls", `${id}-content`);
+    header.setAttribute("aria-expanded", "true");
+
+    const titleSpan = document.createElement("span");
+    titleSpan.style.flex = "1";
+    if (labelKey) translator.bind(titleSpan, labelKey);
+    header.appendChild(titleSpan);
+
+    const arrow = document.createElement("span");
+    arrow.textContent = "▾";
+    arrow.style.fontSize = "16px";
+    header.appendChild(arrow);
+
+    const body = document.createElement("div");
+    body.id = `${id}-content`;
+    Object.assign(body.style, {
+      display:"flex",
+      flexDirection:"column",
       gap:"12px"
     });
-    if (title) {
-      const heading = document.createElement("div");
-      heading.textContent = title;
-      Object.assign(heading.style, { fontWeight:800, fontSize:"15px", letterSpacing:"0.2px" });
-      card.appendChild(heading);
+
+    const initialCollapsed = (id in collapsedSections)
+      ? !!collapsedSections[id]
+      : !!options.defaultCollapsed;
+    if (!(id in collapsedSections)) {
+      collapsedSections[id] = initialCollapsed;
     }
+    let collapsed = initialCollapsed;
+
+    const applyCollapsed = () => {
+      arrow.textContent = collapsed ? "▸" : "▾";
+      body.style.display = collapsed ? "none" : "flex";
+      header.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    };
+
+    header.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      collapsed = !collapsed;
+      setSectionCollapsed(id, collapsed);
+      applyCollapsed();
+    });
+
+    card.appendChild(header);
+    card.appendChild(body);
+
+    const originalAppend = card.appendChild.bind(card);
+    card.appendChild = (node) => body.appendChild(node);
+    card._content = body;
+    card._header = header;
+    card._toggle = () => {
+      collapsed = !collapsed;
+      setSectionCollapsed(id, collapsed);
+      applyCollapsed();
+    };
+    card._setCollapsed = (value, opts = {}) => {
+      collapsed = !!value;
+      setSectionCollapsed(id, collapsed, opts);
+      applyCollapsed();
+    };
+    card._appendDirect = originalAppend;
+
+    applyCollapsed();
     return card;
   }
   function noticeBar(){
@@ -749,13 +1185,13 @@ function createOverlay(game) {
 
   // =============== MAIN TAB =================
   const rows = [
-    mkRow("AutoType", () => game.togglePause(), () => !game.paused, "purple"),
-    mkRow("Instant mode", () => game.toggleInstantMode(), () => game.instantMode, "white"),
-    mkRow("Butterfingers", () => game.toggleMistakes(), () => game.mistakesEnabled, "yellow"),
-    mkRow("Auto /suicide", () => game.toggleAutoSuicide(), () => game.autoSuicide, "red"),
+    mkRow("toggleAutoType", () => game.togglePause(), () => !game.paused, "purple"),
+    mkRow("toggleInstantMode", () => game.toggleInstantMode(), () => game.instantMode, "white"),
+    mkRow("toggleButterfingers", () => game.toggleMistakes(), () => game.mistakesEnabled, "yellow"),
+    mkRow("toggleAutoSuicide", () => game.toggleAutoSuicide(), () => game.autoSuicide, "red"),
   ];
   const autoJoinToggle = mkRow(
-    "Always auto-join",
+    "toggleAutoJoin",
     () => game.toggleAutoJoinAlways(),
     () => game.autoJoinAlways,
     "green",
@@ -766,7 +1202,6 @@ function createOverlay(game) {
 
   const toggleRefs = [...rows];
   const dualToggleRows = [];
-  let wordModesCollapsed = false;
   let superRealWrap = null;
   let superAggRow = null;
   let superPauseRow = null;
@@ -775,9 +1210,9 @@ function createOverlay(game) {
   Object.assign(mainGrid.style, { display:"grid", gap:"16px" });
   mainSec.appendChild(mainGrid);
 
-  const automationCard = createCard("Automation");
+  const automationCard = createCard("sectionAutomation", { id: "automation" });
   rows.forEach(r => automationCard.appendChild(r));
-  const superRealToggle = mkRow("Super realistic", () => game.toggleSuperRealistic(), () => game.superRealisticEnabled, "yellow");
+  const superRealToggle = mkRow("toggleSuperRealistic", () => game.toggleSuperRealistic(), () => game.superRealisticEnabled, "yellow");
   toggleRefs.push(superRealToggle);
   automationCard.appendChild(superRealToggle);
 
@@ -789,8 +1224,8 @@ function createOverlay(game) {
     marginTop:"4px"
   });
 
-  superAggRow = sliderRow("Aggressiveness (%)", 0, 100, Math.round(game.superRealisticAggression * 100), 1, (v)=>game.setSuperRealisticAggression(v/100), { accent: "#facc15", valueColor: "#fde047", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` });
-  superPauseRow = sliderRow("Mid-word pause (s)", 0, 3, Math.round(game.superRealisticPauseSec * 10) / 10, 0.1, (v)=>game.setSuperRealisticPauseSec(v), { accent: "#facc15", valueColor: "#fde68a", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` });
+  superAggRow = sliderRow("sliderSuperAggression", 0, 100, Math.round(game.superRealisticAggression * 100), 1, (v)=>game.setSuperRealisticAggression(v/100), { accent: "#facc15", valueColor: "#fde047", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` });
+  superPauseRow = sliderRow("sliderSuperPause", 0, 3, Math.round(game.superRealisticPauseSec * 10) / 10, 0.1, (v)=>game.setSuperRealisticPauseSec(v), { accent: "#facc15", valueColor: "#fde68a", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` });
 
   const polishSliderLayout = (row) => {
     if (!row) return;
@@ -827,38 +1262,38 @@ function createOverlay(game) {
   }
   mainGrid.appendChild(automationCard);
 
-  const hudCard = createCard("HUD & Rhythm");
-  const hudSizeRow = sliderRow("HUD size", 20, 70, hudSizePercent, 1, (v)=>{ hudSizePercent = v; hudScale = v/100; applyScale(); }, { accent: "#3b82f6", valueColor: "#93c5fd", onChange: () => requestSave() });
+  const hudCard = createCard("sectionHud", { id: "hud" });
+  const hudSizeRow = sliderRow("sliderHudSize", 20, 70, hudSizePercent, 1, (v)=>{ hudSizePercent = v; hudScale = v/100; applyScale(); }, { accent: "#3b82f6", valueColor: "#93c5fd", onChange: () => requestSave() });
   hudCard.appendChild(hudSizeRow);
-  hudCard.appendChild(sliderRow("Speed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v), { accent: "#22c55e", valueColor: "#4ade80", onChange: () => requestSave() }));
-  hudCard.appendChild(sliderRow("Thinking delay (s)", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` }));
-  hudCard.appendChild(sliderRow("Butterfingers (%)", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` }));
+  hudCard.appendChild(sliderRow("sliderSpeed", 1, 12, game.speed, 1, (v)=>game.setSpeed(v), { accent: "#22c55e", valueColor: "#4ade80", onChange: () => requestSave() }));
+  hudCard.appendChild(sliderRow("sliderThinkingDelay", 0, 5, game.thinkingDelaySec, 0.1, (v)=>game.setThinkingDelaySec(v), { accent: "#fb923c", valueColor: "#fdba74", onChange: () => requestSave(), formatValue: (val) => `${val.toFixed(1)}s` }));
+  hudCard.appendChild(sliderRow("sliderButterfingers", 0, 30, Math.round(game.mistakesProb * 100), 1, (v)=>game.setMistakesProb(v/100), { accent: "#facc15", valueColor: "#facc15", onChange: () => requestSave(), formatValue: (val) => `${Math.round(val)}%` }));
   mainGrid.appendChild(hudCard);
 
-  const messageCard = createCard("Messages");
+  const messageCard = createCard("sectionMessages", { id: "messages" });
   Object.assign(messageCard.style, { background:"rgba(236,72,153,0.18)", border:"1px solid rgba(244,114,182,0.45)" });
-  const preTop = mkRow("Premessage", ()=>game.setPreMsgEnabled(!game.preMsgEnabled), ()=>game.preMsgEnabled, "pink");
+  const preTop = mkRow("togglePreMessage", ()=>game.setPreMsgEnabled(!game.preMsgEnabled), ()=>game.preMsgEnabled, "pink");
   toggleRefs.push(preTop);
   messageCard.appendChild(preTop);
-  messageCard.appendChild(textInput("Message to flash before your word", game.preMsgText, (v)=>game.setPreMsgText(v), { theme:"pink", onChange: () => requestSave() }));
-  const postTop = mkRow("Postfix", ()=>game.setPostfixEnabled(!game.postfixEnabled), ()=>game.postfixEnabled, "pink");
+  messageCard.appendChild(textInput("placeholderPreMessage", game.preMsgText, (v)=>game.setPreMsgText(v), { theme:"pink", onChange: () => requestSave() }));
+  const postTop = mkRow("togglePostfix", ()=>game.setPostfixEnabled(!game.postfixEnabled), ()=>game.postfixEnabled, "pink");
   toggleRefs.push(postTop);
   messageCard.appendChild(postTop);
-  messageCard.appendChild(textInput("Characters to append (e.g., <3)", game.postfixText, (v)=>game.setPostfixText(v), { theme:"pink", onChange: () => requestSave() }));
+  messageCard.appendChild(textInput("placeholderPostfix", game.postfixText, (v)=>game.setPostfixText(v), { theme:"pink", onChange: () => requestSave() }));
   mainGrid.appendChild(messageCard);
 
   // =============== COVERAGE TAB =================
-  const coverageCard = createCard("Alphabet mastery");
+  const coverageCard = createCard("sectionCoverage", { id: "coverage" });
   Object.assign(coverageCard.style, {
     background:"linear-gradient(135deg, rgba(56,189,248,0.18), rgba(244,114,182,0.10), rgba(14,165,233,0.18))",
     border:"1px solid rgba(148,163,184,0.45)"
   });
-  const coverageToggle = mkRow("Alphabet coverage", () => game.toggleCoverageMode(), () => game.coverageMode, "teal", "status", { recompute: true });
+  const coverageToggle = mkRow("toggleCoverage", () => game.toggleCoverageMode(), () => game.coverageMode, "teal", "status", { recompute: true });
   toggleRefs.push(coverageToggle);
   coverageCard.appendChild(coverageToggle);
   attachPriorityControl(coverageToggle, "coverage");
 
-  const exTop = mkRow("A-Z goals / exclusions", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal", "status", { recompute: true });
+  const exTop = mkRow("toggleExclude", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal", "status", { recompute: true });
   toggleRefs.push(exTop);
   coverageCard.appendChild(exTop);
 
@@ -870,7 +1305,7 @@ function createOverlay(game) {
   coverageCard.appendChild(editControls);
 
   const editLabel = document.createElement("div");
-  editLabel.textContent = "Editing mode";
+  translator.bind(editLabel, "coverageEditModeLabel");
   Object.assign(editLabel.style, { fontWeight:"600", color:"rgba(226,232,240,0.9)" });
   editControls.appendChild(editLabel);
 
@@ -879,9 +1314,9 @@ function createOverlay(game) {
   editControls.appendChild(editButtonsRow);
 
   const editModes = [
-    { key:"off", label:"Off" },
-    { key:"tally", label:"Edit tallies" },
-    { key:"goal", label:"Edit goals" }
+    { key:"off", labelKey:"coverageEditOff" },
+    { key:"tally", labelKey:"coverageEditTallies" },
+    { key:"goal", labelKey:"coverageEditGoals" }
   ];
   const setCoverageEditMode = (mode) => {
     const next = editModes.some(m => m.key === mode) ? mode : "off";
@@ -893,7 +1328,10 @@ function createOverlay(game) {
   if (exTop?._btn) exTop._btn.addEventListener("click", () => { coverageEditMode = "off"; });
   editModes.forEach(cfg => {
     const btn = document.createElement("button");
-    btn.dataset.label = cfg.label;
+    if (cfg.labelKey) {
+      btn.dataset.labelKey = cfg.labelKey;
+      translator.bind(btn, cfg.labelKey);
+    }
     btn.dataset.mode = "label";
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -923,7 +1361,7 @@ function createOverlay(game) {
   const setAllWrap = document.createElement("div");
   Object.assign(setAllWrap.style, { display:"none", flexWrap:"wrap", gap:"8px", alignItems:"center", marginTop:"6px" });
   const setAllLabel = document.createElement("span");
-  setAllLabel.textContent = "Set all goals to:";
+  translator.bind(setAllLabel, "coverageSetAllLabel");
   Object.assign(setAllLabel.style, { fontWeight:"600" });
   setAllWrap.appendChild(setAllLabel);
   const setAllInput = document.createElement("input");
@@ -939,7 +1377,7 @@ function createOverlay(game) {
   });
   setAllWrap.appendChild(setAllInput);
   const setAllBtn = document.createElement("button");
-  setAllBtn.textContent = "Apply";
+  translator.bind(setAllBtn, "coverageSetAllApply");
   Object.assign(setAllBtn.style, {
     padding:"6px 12px",
     borderRadius:"8px",
@@ -977,7 +1415,7 @@ function createOverlay(game) {
   coverageCard.appendChild(grid);
 
   const resetBtn = document.createElement("button");
-  resetBtn.textContent = "Reset A-Z progress";
+  translator.bind(resetBtn, "buttonResetCoverage");
   Object.assign(resetBtn.style,{ padding:"8px 12px", borderRadius:"10px", cursor:"pointer", background:"rgba(15,118,110,0.32)",color:"#ccfbf1", border:"1px solid rgba(20,184,166,0.55)", fontWeight:"700" });
   resetBtn.onclick = ()=>{ game.resetCoverage(); setCoverageEditMode("off"); render(); };
   coverageCard.appendChild(resetBtn);
@@ -989,10 +1427,8 @@ function createOverlay(game) {
   Object.assign(wordsGrid.style, { display:"grid", gap:"16px" });
   wordsSec.appendChild(wordsGrid);
 
-  const overviewCard = createCard("Word targeting");
+  const overviewCard = createCard("sectionWordTargeting", { id: "wordTargeting" });
   const colorGuide = document.createElement("div");
-  const colorDot = (hex) => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${hex};"></span>`;
-  colorGuide.innerHTML = `${colorDot('#f87171')} foul • ${colorDot('#22c55e')} matches target length • ${colorDot('#facc15')} nearby length • ${colorDot('#ec4899')} hyphen words • ${colorDot('#3b82f6')} contains filter • ${colorDot('#fde047')} Pokémon • ${colorDot('#92400e')} minerals • ${colorDot('#22d3ee')} rare • ${colorDot('#e2e8f0')} regular <span style="font-size:10px; opacity:0.65; margin-left:6px;">click me to go away</span>`;
   Object.assign(colorGuide.style, {
     background:"rgba(15,23,42,0.55)",
     border:"1px solid rgba(148,163,184,0.35)",
@@ -1006,10 +1442,50 @@ function createOverlay(game) {
     gap:"6px",
     alignItems:"center"
   });
+  const legendItems = [
+    { key: "legendFoul", color: "#f87171" },
+    { key: "legendLengthMatch", color: "#22c55e" },
+    { key: "legendLengthNear", color: "#facc15" },
+    { key: "legendHyphen", color: "#ec4899" },
+    { key: "legendContains", color: "#3b82f6" },
+    { key: "legendPokemon", color: "#fde047" },
+    { key: "legendMinerals", color: "#92400e" },
+    { key: "legendRare", color: "#22d3ee" },
+    { key: "legendRegular", color: "#e2e8f0" }
+  ];
+  legendItems.forEach((item) => {
+    const entry = document.createElement("span");
+    Object.assign(entry.style, {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "4px"
+    });
+    const dot = document.createElement("span");
+    Object.assign(dot.style, {
+      display: "inline-block",
+      width: "10px",
+      height: "10px",
+      borderRadius: "50%",
+      background: item.color
+    });
+    entry.appendChild(dot);
+    const label = document.createElement("span");
+    translator.bind(label, item.key);
+    entry.appendChild(label);
+    colorGuide.appendChild(entry);
+  });
+  const legendDismiss = document.createElement("span");
+  translator.bind(legendDismiss, "legendDismiss");
+  Object.assign(legendDismiss.style, {
+    fontSize: "10px",
+    opacity: "0.65",
+    marginLeft: "6px"
+  });
+  colorGuide.appendChild(legendDismiss);
   colorGuide.addEventListener("click", () => { colorGuide.style.display = "none"; });
   overviewCard.appendChild(colorGuide);
 
-  const suggRow = sliderRow("Suggestions", 1, 20, game.suggestionsLimit, 1, (v)=>game.setSuggestionsLimit(v), { accent: "#e2e8f0", valueColor: "#cbd5f5", onChange: () => requestSave({ recompute: true }), formatValue: (val) => `${Math.round(val)}` });
+  const suggRow = sliderRow("sliderSuggestions", 1, 20, game.suggestionsLimit, 1, (v)=>game.setSuggestionsLimit(v), { accent: "#e2e8f0", valueColor: "#cbd5f5", onChange: () => requestSave({ recompute: true }), formatValue: (val) => `${Math.round(val)}` });
   overviewCard.appendChild(suggRow);
 
   const modesToggleBtn = document.createElement("button");
@@ -1028,7 +1504,7 @@ function createOverlay(game) {
     cursor:"pointer"
   });
   const modesLabel = document.createElement("span");
-  modesLabel.textContent = "Word modes";
+  translator.bind(modesLabel, "sectionWordModes");
   const modesArrow = document.createElement("span");
   modesArrow.textContent = "▾";
   modesArrow.style.fontSize = "16px";
@@ -1038,6 +1514,7 @@ function createOverlay(game) {
   modesToggleBtn.addEventListener("click", (ev) => {
     ev.preventDefault();
     wordModesCollapsed = !wordModesCollapsed;
+    requestSave();
     render();
   });
   overviewCard.appendChild(modesToggleBtn);
@@ -1049,62 +1526,62 @@ function createOverlay(game) {
   wordModesBody.setAttribute("aria-hidden", "false");
   overviewCard.appendChild(wordModesBody);
 
-  const foulDualRow = mkDualRow("Foul words", [
-    { label: "Me", onClick: () => game.toggleFoulMode(), getOn: () => game.foulMode, scheme: "red", recompute: true },
-    { label: "Spectator", onClick: () => game.toggleSpecFoul(), getOn: () => game.specFoulMode, scheme: "red", recompute: true }
+  const foulDualRow = mkDualRow("dualFoul", [
+    { labelKey: "labelMe", onClick: () => game.toggleFoulMode(), getOn: () => game.foulMode, scheme: "red", recompute: true },
+    { labelKey: "labelSpectator", onClick: () => game.toggleSpecFoul(), getOn: () => game.specFoulMode, scheme: "red", recompute: true }
   ]);
   dualToggleRows.push(foulDualRow);
   wordModesBody.appendChild(foulDualRow);
   attachPriorityControl(foulDualRow, "foul");
 
-  const pokemonRow = mkDualRow("Pokémon words", [
-    { label: "Me", onClick: () => game.togglePokemonMode(), getOn: () => game.pokemonMode, scheme: "gold", recompute: true },
-    { label: "Spectator", onClick: () => game.toggleSpecPokemonMode(), getOn: () => game.specPokemonMode, scheme: "gold", recompute: true }
+  const pokemonRow = mkDualRow("dualPokemon", [
+    { labelKey: "labelMe", onClick: () => game.togglePokemonMode(), getOn: () => game.pokemonMode, scheme: "gold", recompute: true },
+    { labelKey: "labelSpectator", onClick: () => game.toggleSpecPokemonMode(), getOn: () => game.specPokemonMode, scheme: "gold", recompute: true }
   ]);
   dualToggleRows.push(pokemonRow);
   wordModesBody.appendChild(pokemonRow);
 
-  const mineralsRow = mkDualRow("Minerals", [
-    { label: "Me", onClick: () => game.toggleMineralsMode(), getOn: () => game.mineralsMode, scheme: "brown", recompute: true },
-    { label: "Spectator", onClick: () => game.toggleSpecMineralsMode(), getOn: () => game.specMineralsMode, scheme: "brown", recompute: true }
+  const mineralsRow = mkDualRow("dualMinerals", [
+    { labelKey: "labelMe", onClick: () => game.toggleMineralsMode(), getOn: () => game.mineralsMode, scheme: "brown", recompute: true },
+    { labelKey: "labelSpectator", onClick: () => game.toggleSpecMineralsMode(), getOn: () => game.specMineralsMode, scheme: "brown", recompute: true }
   ]);
   dualToggleRows.push(mineralsRow);
   wordModesBody.appendChild(mineralsRow);
 
-  const rareRow = mkDualRow("Rare words", [
-    { label: "Me", onClick: () => game.toggleRareMode(), getOn: () => game.rareMode, scheme: "cyan", recompute: true },
-    { label: "Spectator", onClick: () => game.toggleSpecRareMode(), getOn: () => game.specRareMode, scheme: "cyan", recompute: true }
+  const rareRow = mkDualRow("dualRare", [
+    { labelKey: "labelMe", onClick: () => game.toggleRareMode(), getOn: () => game.rareMode, scheme: "cyan", recompute: true },
+    { labelKey: "labelSpectator", onClick: () => game.toggleSpecRareMode(), getOn: () => game.specRareMode, scheme: "cyan", recompute: true }
   ]);
   dualToggleRows.push(rareRow);
   wordModesBody.appendChild(rareRow);
 
-  const lenDualRow = mkDualRow("Target length", [
-    { label: "Me", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green", recompute: true },
-    { label: "Spectator", onClick: () => game.toggleSpecLength(), getOn: () => game.specLengthMode, scheme: "green", recompute: true }
+  const lenDualRow = mkDualRow("dualTargetLength", [
+    { labelKey: "labelMe", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green", recompute: true },
+    { labelKey: "labelSpectator", onClick: () => game.toggleSpecLength(), getOn: () => game.specLengthMode, scheme: "green", recompute: true }
   ]);
   dualToggleRows.push(lenDualRow);
   wordModesBody.appendChild(lenDualRow);
   attachPriorityControl(lenDualRow, "length");
   const lenSliderWrap = document.createElement("div");
   Object.assign(lenSliderWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
-  const lenValueDisplay = (v) => (v >= 21 ? "Max" : `${Math.round(v)}`);
-  const lenSliderMain = sliderRow("Me", 3, 21, Number.isFinite(game.targetLenPref) ? game.targetLenPref : game.targetLen, 1, (v)=>game.setTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }), formatValue: lenValueDisplay });
-  const specLenSlider = sliderRow("Spectator", 3, 21, Number.isFinite(game.specTargetLenPref) ? game.specTargetLenPref : game.specTargetLen, 1, (v)=>game.setSpecTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }), formatValue: lenValueDisplay });
+  const lenValueDisplay = (v) => (v >= 21 ? translator.t("lenSliderMax") : `${Math.round(v)}`);
+  const lenSliderMain = sliderRow("labelMe", 3, 21, Number.isFinite(game.targetLenPref) ? game.targetLenPref : game.targetLen, 1, (v)=>game.setTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }), formatValue: lenValueDisplay });
+  const specLenSlider = sliderRow("labelSpectator", 3, 21, Number.isFinite(game.specTargetLenPref) ? game.specTargetLenPref : game.specTargetLen, 1, (v)=>game.setSpecTargetLen(v), { accent: "#22c55e", valueColor: "#86efac", onChange: () => requestSave({ recompute: true }), formatValue: lenValueDisplay });
   lenSliderWrap.appendChild(lenSliderMain);
   lenSliderWrap.appendChild(specLenSlider);
   wordModesBody.appendChild(lenSliderWrap);
 
-  const hyphenRow = mkDualRow("Hyphen only", [
-    { label: "Me", onClick: () => game.toggleHyphenMode(), getOn: () => game.hyphenMode, scheme: "pink", recompute: true },
-    { label: "Spectator", onClick: () => game.toggleSpecHyphenMode(), getOn: () => game.specHyphenMode, scheme: "pink", recompute: true }
+  const hyphenRow = mkDualRow("dualHyphen", [
+    { labelKey: "labelMe", onClick: () => game.toggleHyphenMode(), getOn: () => game.hyphenMode, scheme: "pink", recompute: true },
+    { labelKey: "labelSpectator", onClick: () => game.toggleSpecHyphenMode(), getOn: () => game.specHyphenMode, scheme: "pink", recompute: true }
   ]);
   dualToggleRows.push(hyphenRow);
   wordModesBody.appendChild(hyphenRow);
   attachPriorityControl(hyphenRow, "hyphen");
 
-  const containsRow = mkDualRow("Contains", [
-    { label: "Me", onClick: () => game.toggleContainsMode(), getOn: () => game.containsMode, scheme: "default", recompute: true },
-    { label: "Spectator", onClick: () => game.toggleSpecContainsMode(), getOn: () => game.specContainsMode, scheme: "default", recompute: true }
+    const containsRow = mkDualRow("dualContains", [
+      { labelKey: "labelMe", onClick: () => game.toggleContainsMode(), getOn: () => game.containsMode, scheme: "default", recompute: true },
+      { labelKey: "labelSpectator", onClick: () => game.toggleSpecContainsMode(), getOn: () => game.specContainsMode, scheme: "default", recompute: true }
   ]);
   dualToggleRows.push(containsRow);
   wordModesBody.appendChild(containsRow);
@@ -1112,8 +1589,8 @@ function createOverlay(game) {
 
   const containsInputWrap = document.createElement("div");
   Object.assign(containsInputWrap.style, { display:"grid", gap:"12px", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))" });
-  const containsMeInput = textInput("Letters or fragment (me)", game.containsText, (v)=>game.setContainsText(v), { theme:"blue", onChange: () => requestSave({ recompute: true }) });
-  const containsSpecInput = textInput("Letters or fragment (spectator)", game.specContainsText, (v)=>game.setSpecContainsText(v), { theme:"blue", onChange: () => requestSave({ recompute: true }) });
+  const containsMeInput = textInput("inputContainsMe", game.containsText, (v)=>game.setContainsText(v), { theme:"blue", onChange: () => requestSave({ recompute: true }) });
+  const containsSpecInput = textInput("inputContainsSpectator", game.specContainsText, (v)=>game.setSpecContainsText(v), { theme:"blue", onChange: () => requestSave({ recompute: true }) });
   containsInputWrap.appendChild(containsMeInput);
   containsInputWrap.appendChild(containsSpecInput);
   wordModesBody.appendChild(containsInputWrap);
@@ -1122,7 +1599,124 @@ function createOverlay(game) {
   overviewCard.appendChild(lenNoticeMain);
   wordsGrid.appendChild(overviewCard);
 
-  const suggestionsCard = createCard("Live suggestions");
+  const wordHistoryCard = createCard("sectionWordHistory", { id: "wordHistory" });
+  const preventReuseRow = mkRow("togglePreventReuse", () => game.togglePreventReuse(), () => game.preventReuseEnabled, "purple", "status", { recompute: true });
+  toggleRefs.push(preventReuseRow);
+  wordHistoryCard.appendChild(preventReuseRow);
+
+  const wordHistoryInfo = document.createElement("div");
+  translator.bind(wordHistoryInfo, "wordHistoryInfo");
+  Object.assign(wordHistoryInfo.style, {
+    fontSize: "12px",
+    color: "#cbd5f5",
+    lineHeight: "1.35"
+  });
+  wordHistoryCard.appendChild(wordHistoryInfo);
+
+  const wordHistoryHeader = document.createElement("div");
+  Object.assign(wordHistoryHeader.style, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px"
+  });
+  const wordHistoryTitle = document.createElement("span");
+  translator.bind(wordHistoryTitle, "wordLogHeading");
+  Object.assign(wordHistoryTitle.style, { fontWeight: "700", color: "#e2e8f0" });
+  wordHistoryHeader.appendChild(wordHistoryTitle);
+
+  const resetWordLogBtn = document.createElement("button");
+  translator.bind(resetWordLogBtn, "buttonResetWordLog");
+  Object.assign(resetWordLogBtn.style, {
+    padding: "4px 10px",
+    borderRadius: "8px",
+    border: "1px solid rgba(244,114,182,0.55)",
+    background: "rgba(236,72,153,0.18)",
+    color: "#fce7f3",
+    fontWeight: "700",
+    cursor: "pointer",
+    fontSize: "12px"
+  });
+  resetWordLogBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    game.resetWordLog();
+    requestSave({ recompute: true });
+  });
+  wordHistoryHeader.appendChild(resetWordLogBtn);
+  wordHistoryCard.appendChild(wordHistoryHeader);
+
+  const wordLogList = document.createElement("div");
+  Object.assign(wordLogList.style, {
+    display: "grid",
+    gap: "6px",
+    maxHeight: "180px",
+    overflowY: "auto",
+    paddingRight: "4px"
+  });
+  wordHistoryCard.appendChild(wordLogList);
+
+  const renderWordLog = () => {
+    const entries = (game.getRecentWordLog && game.getRecentWordLog(14)) ? game.getRecentWordLog(14) : [];
+    wordLogList.innerHTML = "";
+    if (!entries.length) {
+      const empty = document.createElement("div");
+      translator.bind(empty, "wordLogEmpty");
+      Object.assign(empty.style, { fontSize: "12px", color: "#cbd5f5", opacity: "0.85" });
+      wordLogList.appendChild(empty);
+      return;
+    }
+    const displayEntries = entries.slice().reverse();
+    displayEntries.forEach((entry) => {
+      const row = document.createElement("div");
+      Object.assign(row.style, {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "10px",
+        padding: "6px 10px",
+        borderRadius: "10px",
+        background: "rgba(30,41,59,0.55)",
+        border: "1px solid rgba(148,163,184,0.25)",
+        fontSize: "12px",
+        color: "#e2e8f0"
+      });
+      const wordSpan = document.createElement("span");
+      wordSpan.textContent = entry.word;
+      wordSpan.style.fontWeight = "700";
+      row.appendChild(wordSpan);
+
+      const tag = document.createElement("span");
+      const tagText = translator.t(entry.fromSelf ? "wordLogSelfTag" : "wordLogOtherTag");
+      tag.textContent = tagText;
+      Object.assign(tag.style, {
+        fontWeight: "700",
+        fontSize: "11px",
+        borderRadius: "999px",
+        padding: "2px 8px",
+        letterSpacing: "0.2px",
+        background: entry.fromSelf ? "rgba(59,130,246,0.28)" : "rgba(16,185,129,0.28)",
+        color: entry.fromSelf ? "#bfdbfe" : "#bbf7d0"
+      });
+      row.appendChild(tag);
+
+      if (entry.outcome === "fail") {
+        row.style.border = "1px solid rgba(248,113,113,0.55)";
+        row.style.background = "rgba(248,113,113,0.15)";
+      }
+      wordLogList.appendChild(row);
+    });
+  };
+
+  if (typeof game.setWordLogChangedCallback === "function") {
+    game.setWordLogChangedCallback(() => {
+      renderWordLog();
+    });
+  }
+  renderWordLog();
+
+  wordsGrid.appendChild(wordHistoryCard);
+
+  const suggestionsCard = createCard("sectionSuggestions", { id: "suggestions" });
   const dynamicTitle = document.createElement("div");
   Object.assign(dynamicTitle.style, { fontWeight:800, fontSize:"15px" });
   suggestionsCard.appendChild(dynamicTitle);
@@ -1151,7 +1745,7 @@ function createOverlay(game) {
 
   function clickableWords(container, entries, syllable) {
     container.innerHTML = "";
-    if (!entries || !entries.length) { container.textContent = "(none)"; return; }
+    if (!entries || !entries.length) { container.textContent = translator.t("listEmpty"); return; }
     const syl = (syllable || "").toLowerCase();
     entries.forEach((entry) => {
       const word = typeof entry === "string" ? entry : entry.word;
@@ -1159,7 +1753,9 @@ function createOverlay(game) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.innerHTML = Game.highlightSyllable(word, syl);
-      btn.title = "Click to copy";
+      const copyTooltip = translator.t("copyTooltip");
+      btn.title = copyTooltip;
+      btn.setAttribute("aria-label", copyTooltip);
       const styles = toneStyle(tone);
       Object.assign(btn.style, {
         cursor:"pointer",
@@ -1184,7 +1780,7 @@ function createOverlay(game) {
         if (existing) existing.remove();
         const pop = document.createElement("span");
         pop.className = "bps-copy-pop";
-        pop.textContent = ok ? "Copied" : "Copy failed";
+        pop.textContent = translator.t(ok ? "copySuccess" : "copyFail");
         Object.assign(pop.style, {
           position:"absolute",
           left:"50%",
@@ -1355,7 +1951,7 @@ function createOverlay(game) {
       const haveRaw = Math.max(0, counts[idx] || 0);
       const have = Math.min(haveRaw, target);
       if (target <= 0) {
-        progressSpan.textContent = "excluded";
+        progressSpan.textContent = translator.t("coverageExcluded");
         progressSpan.style.color = "#9ca3af";
         letterSpan.style.color = "#9ca3af";
         letterSpan.style.textDecoration = "line-through";
@@ -1372,9 +1968,9 @@ function createOverlay(game) {
       box.style.background = coverageEditMode === "off" ? "rgba(255,255,255,0.05)" : "rgba(15,118,110,0.10)";
       box.style.cursor = coverageEditMode === "off" ? "default" : "pointer";
       if (coverageEditMode === "tally") {
-        box.title = "Left click to add progress, right click to remove.";
+        box.title = translator.t("coverageTallyTooltip");
       } else if (coverageEditMode === "goal") {
-        box.title = "Left click to raise the goal, right click to lower.";
+        box.title = translator.t("coverageGoalTooltip");
       } else {
         box.title = "";
       }
@@ -1406,43 +2002,54 @@ function createOverlay(game) {
     const targetActual = context==="self" ? game.targetLen : game.specTargetLen;
 
     const parts = [];
-    if ((context==="self" && game.foulMode) || (context==="spectator" && game.specFoulMode)) {
-      if (foulFallback) parts.push("No foul words matched this prompt; using the normal word list.");
-    }
-    if ((context==="self" && game.pokemonMode) || (context==="spectator" && game.specPokemonMode)) {
-      if (pokemonFallback) parts.push("No Pokémon words matched this prompt; falling back to regular suggestions.");
-    }
-    if ((context==="self" && game.mineralsMode) || (context==="spectator" && game.specMineralsMode)) {
-      if (mineralsFallback) parts.push("No mineral words matched this prompt; showing main list instead.");
-    }
-    if ((context==="self" && game.rareMode) || (context==="spectator" && game.specRareMode)) {
-      if (rareFallback) parts.push("No rare words matched this prompt; showing normal suggestions.");
-    }
-    if (context==="self" && game.lengthMode && game.coverageMode && capApplied)
-      parts.push(`Limiting to words of <= ${formatTargetLenLabel(targetPref, targetActual)} letters while maximizing alphabet coverage.`);
-    if (context==="self" && game.lengthMode && game.coverageMode && capRelaxed)
-      parts.push(`No words of <= ${formatTargetLenLabel(targetPref, targetActual)} letters found; using best coverage regardless of length.`);
-    if ((context==="self" && game.lengthMode && !game.coverageMode) ||
-        (context==="spectator" && game.specLengthMode)) {
-      if (lenFallback) {
-        if (targetPref >= 21) {
-          parts.push("No words at the maximum length; trying nearby lengths.");
-        } else {
-          parts.push(`No words with exactly ${formatTargetLenLabel(targetPref, targetActual)} letters; trying nearby lengths.`);
-        }
+      if ((context==="self" && game.foulMode) || (context==="spectator" && game.specFoulMode)) {
+        if (foulFallback) parts.push(translator.t("noticeFoulFallback"));
       }
-      if (lenSuppressed) parts.push("Target length ignored because higher-priority lists supplied enough options.");
+      if ((context==="self" && game.pokemonMode) || (context==="spectator" && game.specPokemonMode)) {
+        if (pokemonFallback) parts.push(translator.t("noticePokemonFallback"));
+      }
+      if ((context==="self" && game.mineralsMode) || (context==="spectator" && game.specMineralsMode)) {
+        if (mineralsFallback) parts.push(translator.t("noticeMineralsFallback"));
+      }
+      if ((context==="self" && game.rareMode) || (context==="spectator" && game.specRareMode)) {
+        if (rareFallback) parts.push(translator.t("noticeRareFallback"));
+      }
+      if (context==="self" && game.lengthMode && game.coverageMode && capApplied)
+        parts.push(translator.t("noticeLengthCap", { target: formatTargetLenLabel(targetPref, targetActual) }));
+      if (context==="self" && game.lengthMode && game.coverageMode && capRelaxed)
+        parts.push(translator.t("noticeLengthRelaxed", { target: formatTargetLenLabel(targetPref, targetActual) }));
+      if ((context==="self" && game.lengthMode && !game.coverageMode) ||
+          (context==="spectator" && game.specLengthMode)) {
+        if (lenFallback) {
+          if (targetPref >= 21) {
+            parts.push(translator.t("noticeLengthFlexMax"));
+          } else {
+            parts.push(translator.t("noticeLengthFlex", { target: formatTargetLenLabel(targetPref, targetActual) }));
+          }
+        }
+        if (lenSuppressed) parts.push(translator.t("noticeLengthSuppressed"));
+      }
+      if ((context==="self" && game.containsMode) || (context==="spectator" && game.specContainsMode)) {
+        if (containsFallback) parts.push(translator.t("noticeContainsFallback"));
+      }
+      if ((context==="self" && game.hyphenMode) || (context==="spectator" && game.specHyphenMode)) {
+        if (hyphenFallback) parts.push(translator.t("noticeHyphenFallback"));
+      }
+      if (context==="self" && game.preventReuseEnabled) {
+        if (game.lastReuseFilteredSelf) parts.push(translator.t("noticeReuseFiltered"));
+        if (game.lastReuseFallbackSelf) parts.push(translator.t("noticeReuseFallback"));
+      }
+      if (context==="spectator" && game.preventReuseEnabled) {
+        if (game.lastReuseFilteredSpectator) parts.push(translator.t("noticeReuseFiltered"));
+        if (game.lastReuseFallbackSpectator) parts.push(translator.t("noticeReuseFallback"));
+      }
+      return parts.join(" ");
     }
-    if ((context==="self" && game.containsMode) || (context==="spectator" && game.specContainsMode)) {
-      if (containsFallback) parts.push("Contains filter: no matches found; showing broader results.");
-    }
-    if ((context==="self" && game.hyphenMode) || (context==="spectator" && game.specHyphenMode)) {
-      if (hyphenFallback) parts.push("Hyphen mode: no hyphenated words matched this prompt.");
-    }
-    return parts.join(" ");
-  }
 
   function render() {
+    translator.refresh(game.lang);
+    updateToastLanguage();
+    if (typeof renderWordLog === "function") renderWordLog();
     toggleRefs.forEach(row => applyToggleBtn(row._btn, row._get(), row._scheme, row._mode));
     dualToggleRows.forEach(row => {
       row._buttons.forEach(info => applyToggleBtn(info.btn, info.getOn(), info.scheme, info.mode));
@@ -1465,10 +2072,10 @@ function createOverlay(game) {
     });
     if (coverageEditMode === "tally") {
       editNotice.style.display = "block";
-      editNotice.textContent = "Editing tallies: left-click to add progress, right-click to remove. Values stay within each letter's goal.";
+      editNotice.textContent = translator.t("coverageEditTalliesNotice");
     } else if (coverageEditMode === "goal") {
       editNotice.style.display = "block";
-      editNotice.textContent = "Editing goals: left-click to raise, right-click to lower, or type a number inside any letter box.";
+      editNotice.textContent = translator.t("coverageEditGoalsNotice");
     } else {
       editNotice.style.display = "none";
       editNotice.textContent = "";
@@ -1556,26 +2163,26 @@ function createOverlay(game) {
     const noticeParts = [];
     if (game.lengthMode) {
       if (game.coverageMode && game.foulMode) {
-        noticeParts.push(`Target length (me): with coverage on it acts as a max (<= ${formatTargetLenLabel(targetPrefSelf, game.targetLen)}); foul words still take priority.`);
+        noticeParts.push(translator.t("lenNoticeCoverageFoul", { target: formatTargetLenLabel(targetPrefSelf, game.targetLen) }));
       } else if (game.coverageMode) {
-        noticeParts.push(`Target length (me): acts as a max (<= ${formatTargetLenLabel(targetPrefSelf, game.targetLen)}) while optimizing alphabet coverage.`);
+        noticeParts.push(translator.t("lenNoticeCoverage", { target: formatTargetLenLabel(targetPrefSelf, game.targetLen) }));
       } else if (game.foulMode) {
-        noticeParts.push("Target length (me): ignored when foul words are available; used only if none match.");
+        noticeParts.push(translator.t("lenNoticeFoul"));
       } else {
-        noticeParts.push("Target length (me): exact matches show green, nearby lengths appear in yellow when needed.");
+        noticeParts.push(translator.t("lenNoticeDefault"));
       }
     }
     if (game.specLengthMode) {
       if (game.specFoulMode) {
-        noticeParts.push("Target length (spectator): ignored whenever foul words are available for the prompt.");
+        noticeParts.push(translator.t("lenNoticeSpecFoul"));
       } else {
-        noticeParts.push("Target length (spectator): exact matches show green; nearby lengths are marked in yellow.");
+        noticeParts.push(translator.t("lenNoticeSpecDefault"));
       }
     }
     lenNoticeMain._show(noticeParts.join(" "));
 
     const isMyTurn = !!game.myTurn;
-    dynamicTitle.textContent = isMyTurn ? "My top picks" : "Spectator suggestions";
+    dynamicTitle.textContent = translator.t(isMyTurn ? "dynamicTitleSelf" : "dynamicTitleSpectator");
     const entries = isMyTurn
       ? ((game.lastTopPicksSelfDisplay && game.lastTopPicksSelfDisplay.length) ? game.lastTopPicksSelfDisplay : game.lastTopPicksSelf)
       : ((game.spectatorSuggestionsDisplay && game.spectatorSuggestionsDisplay.length) ? game.spectatorSuggestionsDisplay : game.spectatorSuggestions);
@@ -1586,13 +2193,88 @@ function createOverlay(game) {
     turnNotice._show(buildNotice(noticeContext));
   }
 
+  const isJoinButtonVisible = (btn) => {
+    if (!btn) return false;
+    if (btn.disabled) return false;
+    if (btn.hasAttribute("hidden")) return false;
+    if (btn.closest('[hidden]')) return false;
+    const style = window.getComputedStyle(btn);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    const opacity = Number.parseFloat(style.opacity || "1");
+    if (Number.isFinite(opacity) && opacity <= 0.01) return false;
+    const rect = btn.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  const handleNewGameDetected = () => {
+    game.resetCoverage();
+    game.resetWordLog();
+    game.lastReuseFilteredSelf = false;
+    game.lastReuseFallbackSelf = false;
+    game.lastReuseFilteredSpectator = false;
+    game.lastReuseFallbackSpectator = false;
+    coverageEditMode = "off";
+    scheduleTalliesSave();
+    requestSave({ recompute: true });
+    render();
+    showToast("notificationGameReset", 2800);
+  };
+
+  const checkJoinButton = () => {
+    const joinBtn = document.querySelector("button.joinRound");
+    const visible = isJoinButtonVisible(joinBtn);
+    if (visible && !lastJoinVisible) {
+      handleNewGameDetected();
+    }
+    lastJoinVisible = visible;
+  };
+
+  const startJoinMonitoring = () => {
+    if (joinObserver) {
+      try { joinObserver.disconnect(); } catch (_) { /* ignore */ }
+    }
+    joinObserver = new MutationObserver(() => { checkJoinButton(); });
+    try {
+      if (document.body) {
+        joinObserver.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["hidden", "style", "class", "aria-hidden"]
+        });
+      }
+    } catch (_) { /* ignore */ }
+    if (joinCheckTimer) clearInterval(joinCheckTimer);
+    joinCheckTimer = window.setInterval(checkJoinButton, 1500);
+    checkJoinButton();
+  };
+
+  if (document.body && !toast.isConnected) {
+    document.body.appendChild(toast);
+  }
+  startJoinMonitoring();
+
   const iv = setInterval(render, 160);
   window.addEventListener("beforeunload", () => {
     clearInterval(iv);
     autoJoinManager.disconnect();
+    hideToast();
+    if (joinObserver) {
+      try { joinObserver.disconnect(); } catch (_) { /* ignore */ }
+      joinObserver = null;
+    }
+    if (joinCheckTimer) {
+      clearInterval(joinCheckTimer);
+      joinCheckTimer = null;
+    }
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
   });
 
   document.body.appendChild(wrap);
+  if (!toast.isConnected) document.body.appendChild(toast);
   autoJoinManager.update(game.autoJoinAlways);
   return { render };
 }
@@ -1638,7 +2320,7 @@ async function setupBuddy() {
       }
       render();
     } else if (data.type === "correctWord") {
-      game.onCorrectWord(data.word);
+      game.onCorrectWord(data.word, !!data.myTurn);
       render();
     } else if (data.type === "failWord") {
       game.onFailedWord(!!data.myTurn, data.word, data.reason);
