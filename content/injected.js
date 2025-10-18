@@ -37,10 +37,11 @@ socket.on("failWord", (playerId, reason) => {
   }, "*");
 });
 
-socket.on("correctWord", (_) => {
+socket.on("correctWord", (playerId) => {
   window.postMessage({
     type: "correctWord",
     word: actual_word,
+    myTurn: playerId === selfPeerId,
   }, "*");
 });
 
