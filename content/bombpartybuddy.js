@@ -385,8 +385,6 @@ function createOverlay(game) {
   setIfString(savedSettings?.containsText, (val) => game.setContainsText(val));
   setIfString(savedSettings?.specContainsText, (val) => game.setSpecContainsText(val));
   setIfString(savedSettings?.excludeSpec, (val) => game.setExcludeSpec(val));
-
-  game.setExcludeEnabled(getBool(savedSettings?.excludeEnabled, game.excludeEnabled));
   if (Array.isArray(savedSettings?.priorityOrder)) {
     game.setPriorityOrder(savedSettings.priorityOrder);
   }
@@ -409,7 +407,6 @@ function createOverlay(game) {
     autoJoinAlways: !!game.autoJoinAlways,
     foulMode: !!game.foulMode,
     coverageMode: !!game.coverageMode,
-    excludeEnabled: !!game.excludeEnabled,
     lengthMode: !!game.lengthMode,
     specLengthMode: !!game.specLengthMode,
     specFoulMode: !!game.specFoulMode,
@@ -1356,10 +1353,6 @@ function createOverlay(game) {
   coverageCard.appendChild(coverageToggle);
   attachPriorityControl(coverageToggle, "coverage");
 
-  const exTop = mkRow("toggleExclude", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal", "status", { recompute: true });
-  toggleRefs.push(exTop);
-  coverageCard.appendChild(exTop);
-
   const coverageEditButtons = [];
   const coverageCells = [];
 
@@ -1388,7 +1381,6 @@ function createOverlay(game) {
     render();
   };
   if (coverageToggle?._btn) coverageToggle._btn.addEventListener("click", () => { coverageEditMode = "off"; });
-  if (exTop?._btn) exTop._btn.addEventListener("click", () => { coverageEditMode = "off"; });
   editModes.forEach(cfg => {
     const btn = document.createElement("button");
     if (cfg.labelKey) {
