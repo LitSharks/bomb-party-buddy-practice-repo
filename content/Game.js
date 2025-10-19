@@ -1738,23 +1738,38 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
+    const pending = this._pendingSubmission;
+    const fallbackWord = pending?.word;
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const resolvedWordRaw = typeof word === 'string' && word.trim().length
+      ? word
+      : (typeof fallbackWord === 'string' ? fallbackWord : '');
+    const normalizedInfo = this._normalizeWordForLog(resolvedWordRaw);
     if (normalizedInfo) {
+      const displayWord = typeof word === 'string' && word.trim().length
+        ? word
+        : normalizedInfo.display;
       this._rememberWordUsage(normalizedInfo.normalized, {
-        displayWord: normalizedInfo.display,
+        displayWord,
         fromSelf: !!myTurn,
         outcome: 'correct'
       });
     }
     if (!myTurn) return;
-    // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+    if (!resolvedWordRaw) return;
+    // Only tally toward goals with target > 0 (respecting per-letter caps)
+    const letters = this._lettersOf(resolvedWordRaw.toLowerCase());
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
-      }
+      if (idx < 0 || idx >= 26) return;
+      const target = Math.max(0, this.targetCounts[idx] || 0);
+      if (target <= 0) return;
+      const current = Math.max(0, this.coverageCounts[idx] || 0);
+      const remaining = target - current;
+      if (remaining <= 0) return;
+      const gain = Math.min(remaining, Math.max(0, count || 0));
+      if (gain <= 0) return;
+      this.coverageCounts[idx] = current + gain;
     });
     this._maybeResetCoverageOnComplete();
     this._emitTalliesChanged();
