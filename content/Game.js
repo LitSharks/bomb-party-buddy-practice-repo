@@ -114,7 +114,16 @@ class Game {
     this.suggestionsLimit = 5;
 
     // Priority order (highest priority first)
-    this.priorityOrder = ["contains", "foul", "coverage", "hyphen", "length"];
+    this.priorityOrder = [
+      "contains",
+      "foul",
+      "pokemon",
+      "minerals",
+      "rare",
+      "coverage",
+      "hyphen",
+      "length"
+    ];
 
     // Timing
     this.speed = 5;               // 1..12 (fastest unchanged; slowest slower)
@@ -560,7 +569,18 @@ class Game {
     this.mistakesProb = isFinite(n) ? n : 0.08;
   }
 
-  priorityFeatures() { return ["contains", "foul", "coverage", "hyphen", "length"]; }
+  priorityFeatures() {
+    return [
+      "contains",
+      "foul",
+      "pokemon",
+      "minerals",
+      "rare",
+      "coverage",
+      "hyphen",
+      "length"
+    ];
+  }
 
   _ensurePriorityOrder(order = this.priorityOrder) {
     const base = this.priorityFeatures();
@@ -793,7 +813,7 @@ class Game {
     const pre = word.slice(0, i);
     const mid = word.slice(i, i + syl.length);
     const post = word.slice(i + syl.length);
-    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em">${mid}</b>${post}`;
+    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em;font-family:'Noto Sans Mono','Consolas','Liberation Mono','Menlo',monospace;letter-spacing:0.4px">${mid}</b>${post}`;
   }
 
   _lettersOf(word) {
@@ -940,23 +960,27 @@ class Game {
       };
     }
 
-    const specialPriority = ['foul', 'pokemon', 'minerals', 'rare'];
-    const specialRanks = { foul: 4, pokemon: 3, minerals: 2, rare: 1 };
+    const specialFeatures = ['foul', 'pokemon', 'minerals', 'rare'];
 
     const candidates = Array.from(candidateMap.values()).map(info => {
       const word = info.word;
       const lower = word.toLowerCase();
-      let specialType = null;
-      let specialRank = 0;
-      for (const type of specialPriority) {
-        const enabled = (type === 'foul' ? foulMode : type === 'pokemon' ? pokemonMode : type === 'minerals' ? mineralsMode : rareMode);
-        if (!enabled) continue;
-        if (info.sources.has(type)) {
-          specialType = type;
-          specialRank = specialRanks[type];
-          break;
-        }
+      const specialMatches = {};
+      const activeSpecialTypes = [];
+      for (const type of specialFeatures) {
+        const enabled = (type === 'foul'
+          ? foulMode
+          : type === 'pokemon'
+            ? pokemonMode
+            : type === 'minerals'
+              ? mineralsMode
+              : rareMode);
+        const match = enabled && info.sources.has(type);
+        specialMatches[type] = match ? 1 : 0;
+        if (match) activeSpecialTypes.push(type);
       }
+      const specialType = activeSpecialTypes.length ? activeSpecialTypes[0] : null;
+      const isSpecial = activeSpecialTypes.length > 0;
 
       const containsIdx = containsActive ? lower.indexOf(containsNeedle) : -1;
       const containsMatch = containsIdx >= 0 ? 1 : 0;
@@ -988,7 +1012,9 @@ class Game {
         word,
         lower,
         specialType,
-        specialRank,
+        specialMatches,
+        specialTypes: activeSpecialTypes,
+        isSpecial,
         containsMatch,
         containsIdx,
         hyphenMatch,
@@ -1041,7 +1067,7 @@ class Game {
     }
 
     if (lengthMode && coverageMode && workingCandidates.length) {
-      const capped = workingCandidates.filter(c => c.word.length <= targetLen || c.specialRank > 0);
+      const capped = workingCandidates.filter(c => c.word.length <= targetLen || c.isSpecial);
       if (capped.length) {
         flags.lenCapApplied = true;
         if (capped.length !== workingCandidates.length) {
@@ -1050,12 +1076,12 @@ class Game {
           workingCandidates = capped;
         }
       } else {
-        const nonSpecial = workingCandidates.filter(c => c.specialRank === 0);
+        const nonSpecial = workingCandidates.filter(c => !c.isSpecial);
         if (nonSpecial.length) {
           const minLen = Math.min(...nonSpecial.map(c => c.word.length));
-          const fallbackPool = workingCandidates.filter(c => c.specialRank > 0 || c.word.length === minLen);
+          const fallbackPool = workingCandidates.filter(c => c.isSpecial || c.word.length === minLen);
           fallbackPool.forEach(c => {
-            if (c.specialRank === 0 && c.word.length === minLen && c.lengthCategory === 0) {
+            if (!c.isSpecial && c.word.length === minLen && c.lengthCategory === 0) {
               c.lengthCategory = 1;
               c.lengthDistance = Math.abs(c.word.length - targetLen);
             }
@@ -1065,6 +1091,16 @@ class Game {
         flags.lenCapRelaxed = true;
       }
     }
+
+    const compareSpecial = (feature, enabled) => {
+      return (a, b) => {
+        if (!enabled) return 0;
+        const aMatch = a.specialMatches?.[feature] ? 1 : 0;
+        const bMatch = b.specialMatches?.[feature] ? 1 : 0;
+        if (bMatch !== aMatch) return bMatch - aMatch;
+        return 0;
+      };
+    };
 
     const comparators = {
       contains: (a, b) => {
@@ -1076,10 +1112,10 @@ class Game {
         }
         return 0;
       },
-      foul: (a, b) => {
-        if (!foulMode && !pokemonMode && !mineralsMode && !rareMode) return 0;
-        return (b.specialRank - a.specialRank);
-      },
+      foul: compareSpecial('foul', foulMode),
+      pokemon: compareSpecial('pokemon', pokemonMode),
+      minerals: compareSpecial('minerals', mineralsMode),
+      rare: compareSpecial('rare', rareMode),
       coverage: (a, b) => {
         if (!coverageMode) return 0;
         const diff = b.coverageScore - a.coverageScore;
@@ -1119,7 +1155,10 @@ class Game {
       let tone = null;
       for (const feature of priority) {
         if (feature === 'contains' && containsActive && candidate.containsMatch) { tone = 'contains'; break; }
-        if (feature === 'foul' && candidate.specialRank > 0) { tone = candidate.specialType || 'default'; break; }
+        if (feature === 'foul' && candidate.specialMatches?.foul) { tone = 'foul'; break; }
+        if (feature === 'pokemon' && candidate.specialMatches?.pokemon) { tone = 'pokemon'; break; }
+        if (feature === 'minerals' && candidate.specialMatches?.minerals) { tone = 'minerals'; break; }
+        if (feature === 'rare' && candidate.specialMatches?.rare) { tone = 'rare'; break; }
         if (feature === 'hyphen' && hyphenMode && candidate.hyphenMatch) { tone = 'hyphen'; break; }
         if (feature === 'length' && lengthMode && !coverageMode) {
           if (candidate.lengthCategory === 2) { tone = 'lengthExact'; break; }
@@ -1130,7 +1169,7 @@ class Game {
         tone = 'coverage';
       }
       if (!tone) {
-        if (candidate.specialRank > 0) tone = candidate.specialType;
+        if (candidate.isSpecial) tone = candidate.specialType;
         else if (lengthMode && !coverageMode) {
           if (candidate.lengthCategory === 2) tone = 'lengthExact';
           else if (candidate.lengthCategory === 1) tone = 'lengthFlex';
@@ -1148,7 +1187,7 @@ class Game {
     }
 
     if (lengthMode && (foulMode || pokemonMode || mineralsMode || rareMode)) {
-      const specialCount = workingCandidates.filter(c => c.specialRank > 0).length;
+      const specialCount = workingCandidates.filter(c => c.isSpecial).length;
       if (specialCount >= lim && !coverageMode) {
         flags.lenSuppressed = true;
       }
@@ -1165,7 +1204,9 @@ class Game {
       lower: c.lower,
       rank: c.rank,
       specialType: c.specialType,
-      specialRank: c.specialRank,
+      specialTypes: Array.isArray(c.specialTypes) ? c.specialTypes.slice() : [],
+      specialMatches: Object.assign({}, c.specialMatches),
+      isSpecial: !!c.isSpecial,
       containsMatch: c.containsMatch,
       containsIdx: c.containsIdx,
       hyphenMatch: c.hyphenMatch,
@@ -1596,9 +1637,20 @@ class Game {
             const matches = pool.filter(c => c.containsMatch > 0);
             if (matches.length) { pool = matches; continue; }
           }
-          if (feature === 'foul' && (context.foulMode || context.pokemonMode || context.mineralsMode || context.rareMode)) {
-            const bestRank = Math.max(...pool.map(c => c.specialRank || 0));
-            const matches = pool.filter(c => (c.specialRank || 0) === bestRank);
+          if (feature === 'foul' && context.foulMode) {
+            const matches = pool.filter(c => c.specialMatches?.foul);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'pokemon' && context.pokemonMode) {
+            const matches = pool.filter(c => c.specialMatches?.pokemon);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'minerals' && context.mineralsMode) {
+            const matches = pool.filter(c => c.specialMatches?.minerals);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'rare' && context.rareMode) {
+            const matches = pool.filter(c => c.specialMatches?.rare);
             if (matches.length) { pool = matches; continue; }
           }
           if (feature === 'coverage' && context.coverageMode) {
@@ -1738,8 +1790,14 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
+    const pendingWord = this._pendingSubmission ? this._pendingSubmission.word : null;
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const rawWord = (() => {
+      if (typeof word === 'string' && word.trim()) return word;
+      if (typeof pendingWord === 'string' && pendingWord.trim()) return pendingWord;
+      return word;
+    })();
+    const normalizedInfo = this._normalizeWordForLog(rawWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1748,12 +1806,21 @@ class Game {
       });
     }
     if (!myTurn) return;
+    const coverageWord = normalizedInfo ? normalizedInfo.normalized : (rawWord || '');
     // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+    const letters = this._lettersOf((coverageWord || "").toLowerCase());
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
+      if (idx >= 0 && idx < 26) {
+        const target = Math.max(0, this.targetCounts[idx] || 0);
+        if (target <= 0) return;
+        const haveRaw = Number(this.coverageCounts[idx]);
+        const have = Number.isFinite(haveRaw) ? haveRaw : 0;
+        const need = Math.max(0, target - have);
+        if (need <= 0) return;
+        const delta = Math.min(count, need);
+        if (delta <= 0) return;
+        this.coverageCounts[idx] = Math.min(target, have + delta);
       }
     });
     this._maybeResetCoverageOnComplete();

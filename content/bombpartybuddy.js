@@ -922,7 +922,23 @@ function createOverlay(game) {
   const applyToggleBtn = (btn, on, scheme = "default", mode = "status") => applyToggleStyle(btn, !!on, scheme, mode);
 
   const priorityControls = new Map();
-  const priorityKeys = ["contains", "foul", "coverage", "hyphen", "length"];
+  const priorityKeys = (() => {
+    if (typeof game.priorityFeatures === "function") {
+      const base = game.priorityFeatures();
+      if (Array.isArray(base) && base.length) {
+        const seen = new Set();
+        const normalized = [];
+        base.forEach((item) => {
+          const key = (item || "").toString().toLowerCase();
+          if (!key || seen.has(key)) return;
+          seen.add(key);
+          normalized.push(key);
+        });
+        if (normalized.length) return normalized;
+      }
+    }
+    return ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"];
+  })();
   const attachPriorityControl = (row, key) => {
     if (!row || !row._labelSpan || priorityControls.has(key)) return;
     const span = row._labelSpan;
@@ -1603,6 +1619,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(pokemonRow);
   wordModesBody.appendChild(pokemonRow);
+  attachPriorityControl(pokemonRow, "pokemon");
 
   const mineralsRow = mkDualRow("dualMinerals", [
     { labelKey: "labelMe", onClick: () => game.toggleMineralsMode(), getOn: () => game.mineralsMode, scheme: "brown", recompute: true },
@@ -1610,6 +1627,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(mineralsRow);
   wordModesBody.appendChild(mineralsRow);
+  attachPriorityControl(mineralsRow, "minerals");
 
   const rareRow = mkDualRow("dualRare", [
     { labelKey: "labelMe", onClick: () => game.toggleRareMode(), getOn: () => game.rareMode, scheme: "cyan", recompute: true },
@@ -1617,6 +1635,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(rareRow);
   wordModesBody.appendChild(rareRow);
+  attachPriorityControl(rareRow, "rare");
 
   const lenDualRow = mkDualRow("dualTargetLength", [
     { labelKey: "labelMe", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green", recompute: true },
