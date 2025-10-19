@@ -15,21 +15,16 @@ const WORD_CACHE = new Map();
 const WORD_CACHE_LOADING = new Map();
 const WORD_CACHE_TTL_MS = 5 * 60 * 1000;
 
-const LOCAL_MAIN_LISTS = Object.freeze({
-  "en": "words1/en.txt",
-  "de": "words1/de.txt",
-  "fr": "words1/fr.txt",
-  "es": "words1/es.txt",
-  "pt-br": "words1/pt-br.txt",
-  "nah": "words1/nah.txt",
-  "pok-en": "words1/pok-en.txt",
-  "pok-fr": "words1/pok-fr.txt",
-  "pok-de": "words1/pok-de.txt"
-});
-
-const LOCAL_FOUL_LISTS = Object.freeze({
-  "en": "words1/foul-words-en.txt",
-  "default": "words1/foul-words-en.txt"
+const LANGUAGE_LABELS = Object.freeze({
+  "en": { short: "EN", name: "English" },
+  "de": { short: "DE", name: "Deutsch" },
+  "fr": { short: "FR", name: "Français" },
+  "es": { short: "ES", name: "Español" },
+  "pt-br": { short: "PT", name: "Português (Brasil)" },
+  "nah": { short: "NAH", name: "Nahuatl" },
+  "pok-en": { short: "PokEN", name: "Pokémon (EN)" },
+  "pok-fr": { short: "PokFR", name: "Pokémon (FR)" },
+  "pok-de": { short: "PokDE", name: "Pokémon (DE)" }
 });
 
 function pushWordCandidate(output, seen, candidate) {
@@ -64,19 +59,6 @@ function toWordArrayFromText(text) {
     pushWordCandidate(out, seen, line);
   }
   return out;
-}
-
-async function fetchLocalText(path) {
-  if (!path) return '';
-  try {
-    const url = chrome.runtime.getURL(path);
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return '';
-    return await res.text();
-  } catch (err) {
-    console.warn('[BombPartyShark] Failed to load local word list', path, err);
-    return '';
-  }
 }
 
 class Game {
@@ -174,6 +156,8 @@ class Game {
     this.lastPokemonFallbackSelf = false;
     this.lastMineralsFallbackSelf = false;
     this.lastRareFallbackSelf = false;
+    this.lastReuseFilteredSelf = false;
+    this.lastReuseFallbackSelf = false;
     this.lastFoulFallbackSpectator = false;
     this.lastLenFallbackSpectator = false;
     this.lastLenCapAppliedSpectator = false;
@@ -184,6 +168,8 @@ class Game {
     this.lastPokemonFallbackSpectator = false;
     this.lastMineralsFallbackSpectator = false;
     this.lastRareFallbackSpectator = false;
+    this.lastReuseFilteredSpectator = false;
+    this.lastReuseFallbackSpectator = false;
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
@@ -202,12 +188,24 @@ class Game {
     this.spectatorSuggestionsDisplay = [];
     this.lastSpectatorSyllable = "";
 
+    // Word reuse prevention
+    this.preventReuseEnabled = true;
+    this.usedWordSet = new Set();
+    this.usedWordLog = [];
+    this.maxWordLogEntries = 200;
+
     this.maxWordLength = 0;
 
     // Submission watchdog (retries when the game swallows a word)
     this._pendingSubmission = null;
     this._pendingSubmissionTimer = null;
     this._pendingSubmissionRetryDelayMs = 1000;
+
+    // Event hooks
+    this._onWordLogChanged = null;
+
+    // Typing coordination
+    this._activeTypingToken = null;
 
     // Back-compat
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
@@ -227,33 +225,79 @@ class Game {
   apiBase() { return "https://extensions.litshark.ca/api"; }
 
   normalizeLang(name) {
-    const s = (name || "").toString().trim().toLowerCase();
+    const rawValue = (name ?? "").toString().trim();
+    if (!rawValue) return "en";
+
+    const lowered = rawValue.toLowerCase();
+    const cleaned = lowered.replace(/[<>]/g, "").replace(/_/g, "-").replace(/\s+/g, " ").trim();
+    const withoutTrailing = cleaned.replace(/\s*(?:\(main\)|main|default|list)$/g, "").trim();
+
     const map = {
-      "english":"en","en":"en",
-      "german":"de","de":"de",
-      "french":"fr","fr":"fr",
-      "spanish":"es","es":"es",
-      "portuguese":"pt-br","pt-br":"pt-br","br":"pt-br",
-      "nahuatl":"nah","nah":"nah",
-      "pokemon (en)":"pok-en","pok-en":"pok-en",
-      "pokemon (fr)":"pok-fr","pok-fr":"pok-fr",
-      "pokemon (de)":"pok-de","pok-de":"pok-de"
+      "english": "en", "en": "en",
+      "german": "de", "de": "de",
+      "french": "fr", "fr": "fr",
+      "spanish": "es", "es": "es",
+      "espanol": "es", "español": "es",
+      "portuguese": "pt-br", "português": "pt-br",
+      "portuguese (br)": "pt-br", "portuguese (brasil)": "pt-br",
+      "português (br)": "pt-br", "português (brasil)": "pt-br",
+      "portugues (brasil)": "pt-br", "portugues brasil": "pt-br",
+      "portugues brasileiro": "pt-br", "português brasileiro": "pt-br",
+      "portuguese (brazil)": "pt-br", "portuguese brazil": "pt-br",
+      "portuguese brazilian": "pt-br", "brazilian portuguese": "pt-br",
+      "pt-br": "pt-br", "pt": "pt-br", "ptbr": "pt-br", "pt-brasil": "pt-br",
+      "pt br": "pt-br",
+      "br": "pt-br", "brasil": "pt-br", "brazil": "pt-br",
+      "nahuatl": "nah", "nah": "nah",
+      "pokemon (en)": "pok-en", "pok-en": "pok-en",
+      "pokemon (fr)": "pok-fr", "pok-fr": "pok-fr",
+      "pokemon (de)": "pok-de", "pok-de": "pok-de"
     };
-    return map[s] || "en";
+
+    const candidates = [cleaned, withoutTrailing, lowered.replace(/_/g, "-"), lowered];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const hit = map[candidate];
+      if (hit) return hit;
+    }
+
+    if (/^pt(?:\b|-)/.test(cleaned) || cleaned.includes("portugu")) return "pt-br";
+    if (cleaned.includes("brazil") && cleaned.includes("portu")) return "pt-br";
+
+    return map[cleaned] || map[lowered] || "en";
+  }
+
+  languageInfo(lang = this.lang) {
+    const key = (lang || "en").toLowerCase();
+    return LANGUAGE_LABELS[key] || LANGUAGE_LABELS.en;
+  }
+
+  languageDisplayName(lang = this.lang) {
+    return this.languageInfo(lang).name;
+  }
+
+  languageShortCode(lang = this.lang) {
+    return this.languageInfo(lang).short;
   }
 
   async setLang(lang) {
     const normalized = this.normalizeLang(lang);
     const previousLang = this._lastLoadedLang;
+    const previousActive = this.lang;
+    const changed = !previousLang || previousLang !== normalized;
     this.lang = normalized;
 
     try {
       await this.loadWordlists();
-      if (!previousLang || previousLang !== normalized) {
+      if (changed) {
         this.resetCoverage();
+        this.resetWordLog();
       }
     } catch (err) {
       console.error('[BombPartyShark] Failed to load word lists for', normalized, err);
+      const fallback = this.normalizeLang(previousLang || previousActive || 'en');
+      this.lang = fallback;
+      throw err;
     }
   }
 
@@ -343,55 +387,39 @@ class Game {
     } catch (err) {
       const msg = (err && err.message) ? err.message : String(err || '');
       if (msg.includes('404')) {
-        console.info(`[BombPartyShark] No foul word list available from API for ${lang}; falling back to local default.`);
+        console.info(`[BombPartyShark] No foul word list available from API for ${lang}; continuing with main list suggestions.`);
       } else {
-        console.warn('[BombPartyShark] Failed to load foul word list from API for', lang, err);
+        console.warn('[BombPartyShark] Failed to load foul word list from API for', lang, err, '; continuing with main list suggestions.');
       }
     }
 
     try {
       pokemonTxt = await this.extFetch(pokemonUrl);
     } catch (err) {
-      console.warn('[BombPartyShark] Failed to load Pokémon word list from API for', lang, err);
+      console.warn('[BombPartyShark] Failed to load Pokémon word list from API for', lang, err, '; continuing with main list suggestions.');
     }
 
     try {
       mineralsTxt = await this.extFetch(mineralsUrl);
     } catch (err) {
-      console.warn('[BombPartyShark] Failed to load minerals word list from API for', lang, err);
+      console.warn('[BombPartyShark] Failed to load minerals word list from API for', lang, err, '; continuing with main list suggestions.');
     }
 
     try {
       rareTxt = await this.extFetch(rareUrl);
     } catch (err) {
-      console.warn('[BombPartyShark] Failed to load rare word list from API for', lang, err);
+      console.warn('[BombPartyShark] Failed to load rare word list from API for', lang, err, '; continuing with main list suggestions.');
     }
 
-    let words = toWordArrayFromText(mainTxt);
-    let foulWords = toWordArrayFromText(foulTxt);
-    let pokemonWords = toWordArrayFromText(pokemonTxt);
-    let mineralWords = toWordArrayFromText(mineralsTxt);
-    let rareWords = toWordArrayFromText(rareTxt);
-
-    if (!words.length) {
-      const localPath = LOCAL_MAIN_LISTS[lang] || LOCAL_MAIN_LISTS['en'];
-      if (localPath) {
-        const localTxt = await fetchLocalText(localPath);
-        words = toWordArrayFromText(localTxt);
-      }
-    }
-
+    const words = toWordArrayFromText(mainTxt);
     if (!words.length) {
       throw new Error(`No word list available for language ${lang}`);
     }
 
-    if (!foulWords.length) {
-      const foulPath = LOCAL_FOUL_LISTS[lang] || LOCAL_FOUL_LISTS.default;
-      if (foulPath) {
-        const foulLocalTxt = await fetchLocalText(foulPath);
-        foulWords = toWordArrayFromText(foulLocalTxt);
-      }
-    }
+    const foulWords = toWordArrayFromText(foulTxt);
+    const pokemonWords = toWordArrayFromText(pokemonTxt);
+    const mineralWords = toWordArrayFromText(mineralsTxt);
+    const rareWords = toWordArrayFromText(rareTxt);
 
     const letterWeights = Game.computeLetterWeights(words);
     return {
@@ -584,6 +612,76 @@ class Game {
     if (typeof this._onTalliesChanged === 'function') {
       try { this._onTalliesChanged(); } catch (err) { console.warn('[BombPartyShark] tally listener failed', err); }
     }
+  }
+
+  setWordLogChangedCallback(fn) {
+    this._onWordLogChanged = typeof fn === 'function' ? fn : null;
+  }
+
+  _emitWordLogChanged() {
+    if (typeof this._onWordLogChanged === 'function') {
+      try { this._onWordLogChanged(); } catch (err) { console.warn('[BombPartyShark] word log listener failed', err); }
+    }
+  }
+
+  setPreventReuseEnabled(value) {
+    this.preventReuseEnabled = !!value;
+    this._emitWordLogChanged();
+  }
+
+  togglePreventReuse() {
+    this.setPreventReuseEnabled(!this.preventReuseEnabled);
+  }
+
+  resetWordLog() {
+    this.usedWordSet.clear();
+    this.usedWordLog = [];
+    this._emitWordLogChanged();
+  }
+
+  getRecentWordLog(limit = 20) {
+    const lim = Math.max(1, Math.floor(limit));
+    if (!this.usedWordLog.length) return [];
+    return this.usedWordLog.slice(-lim);
+  }
+
+  _normalizeWordForLog(word) {
+    const raw = (word || '').toString();
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    let display = trimmed;
+    let lower = trimmed.toLowerCase();
+    if (this.postfixEnabled && this.postfixText) {
+      const postfix = this.postfixText;
+      const postfixLower = postfix.toLowerCase();
+      if (postfixLower && lower.endsWith(postfixLower)) {
+        const sliced = trimmed.slice(0, trimmed.length - postfix.length).trim();
+        if (sliced) {
+          display = sliced;
+          lower = sliced.toLowerCase();
+        }
+      }
+    }
+    return { normalized: lower, display };
+  }
+
+  _rememberWordUsage(word, meta = {}) {
+    const raw = (word || '').toString();
+    const normalized = raw.trim().toLowerCase();
+    if (!normalized) return;
+    this.usedWordSet.add(normalized);
+    const entry = {
+      word: meta.displayWord !== undefined ? meta.displayWord : raw,
+      lower: normalized,
+      fromSelf: !!meta.fromSelf,
+      outcome: meta.outcome || 'unknown',
+      ts: Date.now()
+    };
+    this.usedWordLog.push(entry);
+    if (this.usedWordLog.length > this.maxWordLogEntries) {
+      this.usedWordLog.splice(0, this.usedWordLog.length - this.maxWordLogEntries);
+    }
+    this._emitWordLogChanged();
   }
   resetCoverage() { this.coverageCounts.fill(0); this._roundFailed.clear(); this._emitTalliesChanged(); }
 
@@ -794,7 +892,9 @@ class Game {
       lenCapRelaxed: false,
       lenSuppressed: false,
       containsFallback: false,
-      hyphenFallback: false
+      hyphenFallback: false,
+      reuseFiltered: false,
+      reuseFallback: false
     };
 
     const priority = this._ensurePriorityOrder();
@@ -823,12 +923,6 @@ class Game {
     const specialPriority = ['foul', 'pokemon', 'minerals', 'rare'];
     const specialRanks = { foul: 4, pokemon: 3, minerals: 2, rare: 1 };
 
-    let containsMatches = 0;
-    let hyphenMatches = 0;
-    let exactCount = 0;
-    let nearCount = 0;
-    let withinCapCount = 0;
-
     const candidates = Array.from(candidateMap.values()).map(info => {
       const word = info.word;
       const lower = word.toLowerCase();
@@ -846,10 +940,8 @@ class Game {
 
       const containsIdx = containsActive ? lower.indexOf(containsNeedle) : -1;
       const containsMatch = containsIdx >= 0 ? 1 : 0;
-      if (containsMatch) containsMatches++;
 
       const hyphenMatch = hyphenMode && word.includes('-') ? 1 : 0;
-      if (hyphenMatch) hyphenMatches++;
 
       let lengthCategory = 0;
       let lengthTone = null;
@@ -858,17 +950,14 @@ class Game {
         if (coverageMode) {
           if (word.length <= targetLen) {
             lengthCategory = 2;
-            withinCapCount++;
           }
         } else {
           if (word.length === targetLen) {
             lengthCategory = 2;
             lengthTone = 'lengthExact';
-            exactCount++;
           } else if (Math.abs(word.length - targetLen) <= 6) {
             lengthCategory = 1;
             lengthTone = 'lengthFlex';
-            nearCount++;
           }
         }
       }
@@ -891,12 +980,32 @@ class Game {
       };
     });
 
-    if (containsActive && containsMatches === 0) flags.containsFallback = true;
-    if (hyphenMode && hyphenMatches === 0) flags.hyphenFallback = true;
-
     let workingCandidates = candidates;
+    if (this.preventReuseEnabled) {
+      const unseen = candidates.filter(c => !this.usedWordSet.has(c.lower));
+      if (unseen.length) {
+        if (unseen.length !== candidates.length) {
+          flags.reuseFiltered = true;
+        }
+        workingCandidates = unseen;
+      } else if (candidates.length) {
+        flags.reuseFallback = true;
+      }
+    }
+
+    if (!workingCandidates.length && candidates.length) {
+      workingCandidates = candidates;
+    }
+
+    if (containsActive && !workingCandidates.some(c => c.containsMatch)) {
+      flags.containsFallback = true;
+    }
+    if (hyphenMode && !workingCandidates.some(c => c.hyphenMatch)) {
+      flags.hyphenFallback = true;
+    }
+
     if (coverageMode && lengthMode) {
-      const withinCap = candidates.filter(c => c.word.length <= targetLen);
+      const withinCap = workingCandidates.filter(c => c.word.length <= targetLen);
       if (withinCap.length) {
         workingCandidates = withinCap;
         flags.lenCapApplied = true;
@@ -976,8 +1085,9 @@ class Game {
     }
 
     if (lengthMode && !coverageMode) {
+      const exactMatches = workingCandidates.filter(c => c.lengthCategory === 2).length;
       const flexUsed = workingCandidates.some(c => c.lengthCategory === 1);
-      if (exactCount === 0 || (exactCount < lim && flexUsed)) {
+      if (exactMatches === 0 || (exactMatches < lim && flexUsed)) {
         flags.lenFallback = true;
       }
     }
@@ -1046,6 +1156,8 @@ class Game {
     this.lastLenSuppressedByFoulSelf = !!result.flags.lenSuppressed;
     this.lastContainsFallbackSelf = !!result.flags.containsFallback;
     this.lastHyphenFallbackSelf = !!result.flags.hyphenFallback;
+    this.lastReuseFilteredSelf = !!result.flags.reuseFiltered;
+    this.lastReuseFallbackSelf = !!result.flags.reuseFallback;
 
     this._roundPool = result.orderedWords.slice();
     this._roundCandidatesDetailed = Array.isArray(result.candidateDetails) ? result.candidateDetails.slice() : [];
@@ -1071,6 +1183,8 @@ class Game {
     this.lastLenSuppressedByFoulSpectator = !!result.flags.lenSuppressed;
     this.lastContainsFallbackSpectator = !!result.flags.containsFallback;
     this.lastHyphenFallbackSpectator = !!result.flags.hyphenFallback;
+    this.lastReuseFilteredSpectator = !!result.flags.reuseFiltered;
+    this.lastReuseFallbackSpectator = !!result.flags.reuseFallback;
 
     this.spectatorSuggestionsDisplay = result.displayEntries.slice();
     this.spectatorSuggestions = result.limitedWords.slice();
@@ -1194,14 +1308,55 @@ class Game {
     });
   }
 
-  async _waitForInput(timeoutMs = 1500) {
+  _scheduleTypingRetry(word, ignorePostfix, attemptSeed = 0) {
+    const baseAttempt = Math.max(0, Number(attemptSeed) || 0);
+    if (!word || baseAttempt >= 5) return;
+    const delay = 180 + baseAttempt * 140;
+    setTimeout(() => {
+      if (!this.myTurn || this.paused) return;
+      if (!this.syllable || !this._ensureInput()) return;
+      this.typeAndSubmit(word, ignorePostfix, { attempt: baseAttempt + 1 }).catch(() => {});
+    }, delay);
+  }
+
+  async _waitForInput(timeoutMs = 6000) {
     const deadline = Date.now() + Math.max(0, timeoutMs);
     let input = this._ensureInput();
+    if (input) return input;
+
     while (!input && Date.now() < deadline) {
       await this._sleep(25);
       input = this._ensureInput();
+      if (input) return input;
     }
-    return input;
+
+    if (input || !document?.body) return input || null;
+
+    return await new Promise((resolve) => {
+      let finished = false;
+      let observer = null;
+      let timer = null;
+      const done = (node) => {
+        if (finished) return;
+        finished = true;
+        try { observer && observer.disconnect(); } catch (_) {}
+        if (timer) clearTimeout(timer);
+        resolve(node || null);
+      };
+
+      observer = new MutationObserver(() => {
+        const node = this._ensureInput();
+        if (node) done(node);
+      });
+      try {
+        observer.observe(document.body, { childList: true, subtree: true });
+      } catch (_) {
+        done(this._ensureInput());
+        return;
+      }
+      const remaining = Math.max(0, deadline - Date.now());
+      timer = setTimeout(() => done(this._ensureInput()), remaining || 0);
+    });
   }
 
   _randomLetterExcept(correct) {
@@ -1215,17 +1370,19 @@ class Game {
     return ch;
   }
 
-  async _backspaceChars(input, count, delayMs) {
+  async _backspaceChars(input, count, delayMs, typingToken) {
     if (!input || !count || count <= 0) return;
     const delay = Math.max(30, Math.floor(delayMs || 0));
     for (let i = 0; i < count; i++) {
+      if (typingToken && this._activeTypingToken !== typingToken) return;
       input.value = input.value.slice(0, -1);
       this._emitInputEvent(input);
       await this._sleep(delay);
+      if (typingToken && this._activeTypingToken !== typingToken) return;
     }
   }
 
-  async _typeTextSequence(input, text, perCharDelay, options = {}) {
+  async _typeTextSequence(input, text, perCharDelay, options = {}, typingToken) {
     if (!input || text === undefined || text === null) return;
     const seq = typeof text === "string" ? text : String(text);
     if (!seq.length) return;
@@ -1233,30 +1390,35 @@ class Game {
     const maxLen = this._inputMaxLength(input);
     const canTypeChar = () => maxLen === null || input.value.length < maxLen;
     for (let i = 0; i < seq.length; i++) {
+      if (typingToken && this._activeTypingToken !== typingToken) return;
       const ch = seq[i];
       if (!canTypeChar()) break;
       if (allowMistakes && this.mistakesEnabled && !this.autoSuicide && Math.random() < this.mistakesProb && canTypeChar()) {
+        if (typingToken && this._activeTypingToken !== typingToken) return;
         input.value += ch;
         this._emitInputEvent(input);
         await this._sleep(perCharDelay);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
         input.value = input.value.slice(0, -1);
         this._emitInputEvent(input);
         await this._sleep(perCharDelay);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
       }
       if (!canTypeChar()) break;
       input.value += ch;
       this._emitInputEvent(input);
       await this._sleep(perCharDelay);
+      if (typingToken && this._activeTypingToken !== typingToken) return;
     }
   }
 
 
-  async _typeWordWithRealism(input, word, perCharDelay) {
+  async _typeWordWithRealism(input, word, perCharDelay, typingToken) {
     const raw = typeof word === 'string' ? word : String(word ?? '');
     if (!raw.length) return;
     const realismActive = this.superRealisticEnabled && !this.instantMode && !this.autoSuicide && !raw.startsWith('/');
     if (!realismActive) {
-      await this._typeTextSequence(input, raw, perCharDelay);
+      await this._typeTextSequence(input, raw, perCharDelay, undefined, typingToken);
       return;
     }
 
@@ -1270,7 +1432,7 @@ class Game {
     const shouldAddFlair = Math.random() < aggression && scenarioPool.length > 0;
     const typingOpts = { allowMistakes: false };
     if (!shouldAddFlair) {
-      await this._typeTextSequence(input, raw, perCharDelay, typingOpts);
+      await this._typeTextSequence(input, raw, perCharDelay, typingOpts, typingToken);
       return;
     }
 
@@ -1279,12 +1441,14 @@ class Game {
     try {
       if (scenario === 'pause') {
         const pivot = Math.max(1, Math.floor(raw.length / 2));
-        await this._typeTextSequence(input, raw.slice(0, pivot), perCharDelay, typingOpts);
+        await this._typeTextSequence(input, raw.slice(0, pivot), perCharDelay, typingOpts, typingToken);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
         const jitter = pauseMsConfigured * (0.35 + Math.random() * 0.4);
         if (pauseMsConfigured > 0) {
           await this._sleep(pauseMsConfigured + jitter);
         }
-        await this._typeTextSequence(input, raw.slice(pivot), perCharDelay, typingOpts);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
+        await this._typeTextSequence(input, raw.slice(pivot), perCharDelay, typingOpts, typingToken);
       } else if (scenario === 'overrun') {
         const maxIdx = raw.length - 2;
         const minIdx = 1;
@@ -1294,44 +1458,58 @@ class Game {
         const after = raw.slice(idx + 1);
         const wrong = this._randomLetterExcept(correct);
 
-        await this._typeTextSequence(input, before, perCharDelay, typingOpts);
-        await this._typeTextSequence(input, wrong, perCharDelay, { allowMistakes: false });
+        await this._typeTextSequence(input, before, perCharDelay, typingOpts, typingToken);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
+        await this._typeTextSequence(input, wrong, perCharDelay, { allowMistakes: false }, typingToken);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
         await this._sleep(Math.max(baseDelay * 0.6, 40));
-        await this._backspaceChars(input, 1, Math.max(baseDelay * 0.8, 40));
+        if (typingToken && this._activeTypingToken !== typingToken) return;
+        await this._backspaceChars(input, 1, Math.max(baseDelay * 0.8, 40), typingToken);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
         await this._sleep(Math.max(baseDelay * 0.75, 45));
-        await this._typeTextSequence(input, correct, perCharDelay, typingOpts);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
+        await this._typeTextSequence(input, correct, perCharDelay, typingOpts, typingToken);
         if (after.length) {
-          await this._typeTextSequence(input, after, perCharDelay, typingOpts);
+          if (typingToken && this._activeTypingToken !== typingToken) return;
+          await this._typeTextSequence(input, after, perCharDelay, typingOpts, typingToken);
         }
       } else if (scenario === 'stutter') {
         const idx = Math.floor(Math.random() * raw.length);
         const before = raw.slice(0, idx);
         const target = raw[idx];
         const after = raw.slice(idx + 1);
-        await this._typeTextSequence(input, before, perCharDelay, typingOpts);
+        await this._typeTextSequence(input, before, perCharDelay, typingOpts, typingToken);
+        if (typingToken && this._activeTypingToken !== typingToken) return;
         const repeats = 2 + Math.floor(Math.random() * 2);
         for (let attempt = 0; attempt < repeats - 1; attempt++) {
-          await this._typeTextSequence(input, target, perCharDelay, typingOpts);
+          await this._typeTextSequence(input, target, perCharDelay, typingOpts, typingToken);
+          if (typingToken && this._activeTypingToken !== typingToken) return;
           await this._sleep(Math.max(baseDelay * 0.6, 35));
-          await this._backspaceChars(input, 1, Math.max(baseDelay * 0.75, 40));
+          if (typingToken && this._activeTypingToken !== typingToken) return;
+          await this._backspaceChars(input, 1, Math.max(baseDelay * 0.75, 40), typingToken);
+          if (typingToken && this._activeTypingToken !== typingToken) return;
         }
-        await this._typeTextSequence(input, target, perCharDelay, typingOpts);
+        await this._typeTextSequence(input, target, perCharDelay, typingOpts, typingToken);
         if (after.length) {
-          await this._typeTextSequence(input, after, perCharDelay, typingOpts);
+          if (typingToken && this._activeTypingToken !== typingToken) return;
+          await this._typeTextSequence(input, after, perCharDelay, typingOpts, typingToken);
         }
       }
     } catch (err) {
       console.debug('[BombPartyShark] super realistic typing fell back', err);
-      await this._typeTextSequence(input, raw, perCharDelay, typingOpts);
+      await this._typeTextSequence(input, raw, perCharDelay, typingOpts, typingToken);
+      if (typingToken && this._activeTypingToken !== typingToken) return;
       return;
     }
 
     const targetValue = this._truncateToMax(input, raw);
+    if (typingToken && this._activeTypingToken !== typingToken) return;
     if (input.value !== targetValue) {
       input.value = targetValue;
       this._emitInputEvent(input);
     }
     await this._sleep(Math.max(baseDelay * 0.6, 40));
+    if (typingToken && this._activeTypingToken !== typingToken) return;
   }
 
 
@@ -1411,15 +1589,32 @@ class Game {
         ? this._pendingSubmission.attempt || 0
         : 0);
 
+    const typingToken = Symbol('typing');
+    this._activeTypingToken = typingToken;
+
     const input = await this._waitForInput();
-    if (!input) {
+    if (!input || this._activeTypingToken !== typingToken) {
       this._clearPendingSubmission();
+      if (this._activeTypingToken === typingToken) {
+        this._activeTypingToken = null;
+      }
+      if (!input && this.myTurn) {
+        this._scheduleTypingRetry(word, ignorePostfix, attemptSeed);
+      }
       return;
     }
 
     input.focus();
     await Promise.resolve();
+    if (this._activeTypingToken !== typingToken) {
+      this._activeTypingToken = null;
+      return;
+    }
     this._setInputValueRespectingMax(input, "");
+    if (this._activeTypingToken !== typingToken) {
+      this._activeTypingToken = null;
+      return;
+    }
 
     const perCharDelay = this._charDelayMs();
     const instant = !!this.instantMode;
@@ -1428,29 +1623,53 @@ class Game {
     if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
       if (instant) {
         this._setInputValueRespectingMax(input, this.preMsgText);
+        if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
         await this._sleep(Math.max(40, perCharDelay));
+        if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
         this._setInputValueRespectingMax(input, "");
       } else {
-        await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts);
+        await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts, typingToken);
+        if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
         await this._sleep(Math.max(80, perCharDelay * 4));
+        if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
         this._setInputValueRespectingMax(input, "");
       }
+      if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
     }
 
     if (instant) {
       this._setInputValueRespectingMax(input, word);
     } else {
-      await this._typeWordWithRealism(input, word, perCharDelay);
+      await this._typeWordWithRealism(input, word, perCharDelay, typingToken);
+      if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
     }
+
+    let expectedValue = this._truncateToMax(input, word);
 
     if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
       if (instant) {
         this._setInputValueRespectingMax(input, `${input.value}${this.postfixText}`);
       } else {
-        await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts);
+        await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts, typingToken);
       }
+      if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
+      expectedValue = this._truncateToMax(input, `${expectedValue}${this.postfixText}`);
     }
 
+    if (this._activeTypingToken !== typingToken) {
+      this._activeTypingToken = null;
+      return;
+    }
+
+    if (input.value !== expectedValue) {
+      this._setInputValueRespectingMax(input, expectedValue);
+      if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
+    }
+
+    if (!expectedValue) {
+      this._activeTypingToken = null;
+      return;
+    }
     const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
     input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
     input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
@@ -1464,12 +1683,21 @@ class Game {
     }
 
     this._trackPendingSubmission(word, ignorePostfix, attemptSeed);
+    this._activeTypingToken = null;
   }
 
 
-  onCorrectWord(word) {
+  onCorrectWord(word, myTurn = false) {
     this._clearPendingSubmission();
-    if (!this.myTurn) return;
+    const normalizedInfo = this._normalizeWordForLog(word);
+    if (normalizedInfo) {
+      this._rememberWordUsage(normalizedInfo.normalized, {
+        displayWord: normalizedInfo.display,
+        fromSelf: !!myTurn,
+        outcome: 'correct'
+      });
+    }
+    if (!myTurn) return;
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach((count, c) => {
@@ -1485,17 +1713,21 @@ class Game {
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
     this._clearPendingSubmission();
+    const normalizedInfo = this._normalizeWordForLog(word);
+    if (normalizedInfo) {
+      this._rememberWordUsage(normalizedInfo.normalized, {
+        displayWord: normalizedInfo.display,
+        fromSelf: !!myTurn,
+        outcome: 'fail'
+      });
+    }
     if (!myTurn) return;
     if (word) {
       const normalizedRaw = (word || "").toLowerCase();
       const normalized = normalizedRaw.trim();
       if (normalized) this._roundFailed.add(normalized);
-      if (this.postfixEnabled && this.postfixText) {
-        const postfixLower = this.postfixText.toLowerCase();
-        if (postfixLower && normalizedRaw.endsWith(postfixLower)) {
-          const trimmed = normalizedRaw.slice(0, -postfixLower.length).trim();
-          if (trimmed) this._roundFailed.add(trimmed);
-        }
+      if (normalizedInfo && normalizedInfo.normalized) {
+        this._roundFailed.add(normalizedInfo.normalized);
       }
     }
     if (this.paused) return;
