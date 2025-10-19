@@ -814,12 +814,13 @@ class Game {
       if (target > 0) {
         hasPositiveTarget = true;
         if ((this.coverageCounts[i] || 0) < target) {
-          return;
+          return false;
         }
       }
     }
-    if (!hasPositiveTarget) return;
+    if (!hasPositiveTarget) return false;
     this.resetCoverage();
+    return true;
   }
 
   // Coverage score:
@@ -1750,14 +1751,25 @@ class Game {
     if (!myTurn) return;
     // Only tally toward goals with target > 0
     const letters = this._lettersOf((word || "").toLowerCase());
+    let tallied = false;
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
-      }
+      if (idx < 0 || idx >= 26) return;
+      const target = this.targetCounts[idx] || 0;
+      if (target <= 0) return;
+      const have = this.coverageCounts[idx] || 0;
+      const remaining = target - have;
+      if (remaining <= 0) return;
+      const increment = Math.min(remaining, count || 0);
+      if (increment <= 0) return;
+      this.coverageCounts[idx] = have + increment;
+      tallied = true;
     });
-    this._maybeResetCoverageOnComplete();
-    this._emitTalliesChanged();
+    if (!tallied) return;
+    const resetTriggered = this._maybeResetCoverageOnComplete();
+    if (!resetTriggered) {
+      this._emitTalliesChanged();
+    }
   }
 
   onFailedWord(myTurn, word, reason) {

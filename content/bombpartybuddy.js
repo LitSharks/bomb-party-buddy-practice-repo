@@ -929,6 +929,7 @@ function createOverlay(game) {
     span.style.display = "inline-flex";
     span.style.alignItems = "center";
     span.style.gap = "6px";
+    span.style.flexWrap = "wrap";
     const select = document.createElement("select");
     for (let i = 1; i <= priorityKeys.length; i++) {
       const opt = document.createElement("option");
@@ -952,6 +953,16 @@ function createOverlay(game) {
       requestSave({ recompute: true });
       render();
     });
+    const ensureInitialValue = () => {
+      const base = typeof game.priorityFeatures === "function" ? game.priorityFeatures() : priorityKeys;
+      const order = Array.isArray(game.priorityOrder) ? game.priorityOrder : [];
+      const idx = order.indexOf(key);
+      const fallbackIdx = idx >= 0 ? idx : base.indexOf(key);
+      if (fallbackIdx >= 0) {
+        select.value = String(fallbackIdx + 1);
+      }
+    };
+    ensureInitialValue();
     span.appendChild(select);
     priorityControls.set(key, select);
   };
@@ -959,11 +970,15 @@ function createOverlay(game) {
   const mkRow = (labelKey, onClick, getOn, scheme = "default", mode = "status", options = {}) => {
     const r = document.createElement("div");
     Object.assign(r.style, { display:"flex", alignItems:"center", justifyContent:"space-between", gap:"16px", margin:"8px 0" });
-    const span = document.createElement("span");
-    translator.bind(span, labelKey);
-    span.style.fontWeight = "600";
-    r.appendChild(span);
-    r._labelSpan = span;
+    const labelWrap = document.createElement("span");
+    Object.assign(labelWrap.style, { display:"inline-flex", alignItems:"center", gap:"8px", flexWrap:"wrap" });
+    const labelText = document.createElement("span");
+    labelText.style.fontWeight = "600";
+    translator.bind(labelText, labelKey);
+    labelWrap.appendChild(labelText);
+    r.appendChild(labelWrap);
+    r._labelSpan = labelWrap;
+    r._labelText = labelText;
     const btn = document.createElement("button");
     if (mode !== "status") {
       btn.dataset.labelKey = labelKey;
@@ -992,11 +1007,15 @@ function createOverlay(game) {
       flexWrap:"wrap",
       margin:"8px 0"
     });
-    const span = document.createElement("span");
-    translator.bind(span, labelKey);
-    span.style.fontWeight = "600";
-    row.appendChild(span);
-    row._labelSpan = span;
+    const labelWrap = document.createElement("span");
+    Object.assign(labelWrap.style, { display:"inline-flex", alignItems:"center", gap:"8px", flexWrap:"wrap" });
+    const labelText = document.createElement("span");
+    labelText.style.fontWeight = "600";
+    translator.bind(labelText, labelKey);
+    labelWrap.appendChild(labelText);
+    row.appendChild(labelWrap);
+    row._labelSpan = labelWrap;
+    row._labelText = labelText;
     const btnWrap = document.createElement("div");
     Object.assign(btnWrap.style, { display:"flex", gap:"8px", flexWrap:"wrap" });
     row.appendChild(btnWrap);
@@ -1830,6 +1849,7 @@ function createOverlay(game) {
         color:styles.color,
         fontWeight:"700",
         fontSize:"0.92em",
+        fontFamily:"'Noto Sans Mono','JetBrains Mono','Cascadia Mono','Fira Code','Source Code Pro','Consolas','Menlo',monospace",
         transition:"transform 0.15s ease, background 0.15s ease",
         display:"inline-flex",
         alignItems:"center",
