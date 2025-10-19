@@ -793,7 +793,7 @@ class Game {
     const pre = word.slice(0, i);
     const mid = word.slice(i, i + syl.length);
     const post = word.slice(i + syl.length);
-    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em">${mid}</b>${post}`;
+    return `${pre}<span class="bps-syllable-highlight">${mid}</span>${post}`;
   }
 
   _lettersOf(word) {
@@ -814,12 +814,13 @@ class Game {
       if (target > 0) {
         hasPositiveTarget = true;
         if ((this.coverageCounts[i] || 0) < target) {
-          return;
+          return false;
         }
       }
     }
-    if (!hasPositiveTarget) return;
+    if (!hasPositiveTarget) return false;
     this.resetCoverage();
+    return true;
   }
 
   // Coverage score:
@@ -1738,8 +1739,14 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
+    const pending = this._pendingSubmission;
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+
+    const primaryWord = typeof word === 'string' ? word : '';
+    const pendingWord = typeof pending?.word === 'string' ? pending.word : '';
+    const fallbackWord = myTurn ? pendingWord : '';
+    const resolvedWord = primaryWord.trim() ? primaryWord : fallbackWord;
+    const normalizedInfo = this._normalizeWordForLog(resolvedWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1747,17 +1754,33 @@ class Game {
         outcome: 'correct'
       });
     }
+
     if (!myTurn) return;
-    // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+
+    const coverageSource = normalizedInfo?.normalized || resolvedWord.toLowerCase();
+    if (!coverageSource) return;
+
+    const letters = this._lettersOf(coverageSource);
+    let talliesChanged = false;
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
+      if (idx < 0 || idx >= 26) return;
+      const target = this.targetCounts[idx] || 0;
+      if (target <= 0) return;
+      const current = this.coverageCounts[idx] || 0;
+      const next = Math.min(target, current + count);
+      if (next !== current) {
+        this.coverageCounts[idx] = next;
+        talliesChanged = true;
       }
     });
-    this._maybeResetCoverageOnComplete();
-    this._emitTalliesChanged();
+
+    if (!talliesChanged) return;
+
+    const reset = this._maybeResetCoverageOnComplete();
+    if (!reset) {
+      this._emitTalliesChanged();
+    }
   }
 
   onFailedWord(myTurn, word, reason) {

@@ -60,6 +60,55 @@ async function copyPlain(text) {
   } catch { return false; }
 }
 
+const ensureGlobalStyles = (() => {
+  let applied = false;
+  return () => {
+    if (applied) return;
+    applied = true;
+    const styleId = "bps-global-fonts";
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/atkinsonhyperlegible/v12/9Bt23C1KxNDXMspQ1lPyU89-1h6ONRlW45GE5Q.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/atkinsonhyperlegible/v12/9Bt73C1KxNDXMspQ1lPyU89-1h6ONRlW45G8WbcNcw.ttf) format('truetype');
+}
+.bps-word-suggestion {
+  font-family: 'Atkinson Hyperlegible', 'Noto Sans', 'Segoe UI', 'Helvetica Neue', sans-serif;
+  letter-spacing: 0.02em;
+}
+.bps-word-suggestion .bps-syllable-highlight {
+  font-family: inherit;
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: 1.15em;
+  letter-spacing: 0.04em;
+}
+`;
+    const target = document.head || document.documentElement || document.body;
+    if (target) target.appendChild(style);
+    else {
+      document.addEventListener("DOMContentLoaded", () => {
+        const lateTarget = document.head || document.documentElement || document.body;
+        if (lateTarget && !document.getElementById(styleId)) {
+          lateTarget.appendChild(style);
+        }
+      }, { once: true });
+    }
+  };
+})();
+
 function createOverlay(game) {
   // Top-anchored wrapper
   const wrap = document.createElement("div");
@@ -67,6 +116,8 @@ function createOverlay(game) {
     position: "fixed", left: "12px", top: "12px",
     zIndex: "2147483647", userSelect: "none",
   });
+
+  ensureGlobalStyles();
 
   const STORAGE_KEY = "bombpartybuddy.settings.v1";
   const SESSION_KEY = "bombpartybuddy.session.v1";
@@ -936,6 +987,8 @@ function createOverlay(game) {
       opt.textContent = `#${i}`;
       select.appendChild(opt);
     }
+    translator.bind(select, labelKey, { attribute: "aria-label" });
+    translator.bind(select, labelKey, { attribute: "title" });
     Object.assign(select.style, {
       background: "rgba(15,23,42,0.65)",
       color: "#e2e8f0",
@@ -960,7 +1013,9 @@ function createOverlay(game) {
     const r = document.createElement("div");
     Object.assign(r.style, { display:"flex", alignItems:"center", justifyContent:"space-between", gap:"16px", margin:"8px 0" });
     const span = document.createElement("span");
-    translator.bind(span, labelKey);
+    const spanText = document.createElement("span");
+    translator.bind(spanText, labelKey);
+    span.appendChild(spanText);
     span.style.fontWeight = "600";
     r.appendChild(span);
     r._labelSpan = span;
@@ -993,7 +1048,9 @@ function createOverlay(game) {
       margin:"8px 0"
     });
     const span = document.createElement("span");
-    translator.bind(span, labelKey);
+    const spanText = document.createElement("span");
+    translator.bind(spanText, labelKey);
+    span.appendChild(spanText);
     span.style.fontWeight = "600";
     row.appendChild(span);
     row._labelSpan = span;
@@ -1816,6 +1873,7 @@ function createOverlay(game) {
       const tone = typeof entry === "string" ? "default" : entry.tone || "default";
       const btn = document.createElement("button");
       btn.type = "button";
+      btn.classList.add("bps-word-suggestion");
       btn.innerHTML = Game.highlightSyllable(word, syl);
       const copyTooltip = translator.t("copyTooltip");
       btn.title = copyTooltip;
