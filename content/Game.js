@@ -173,7 +173,7 @@ class Game {
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
-    this.excludeEnabled = false;
+    this.excludeEnabled = true;
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
     this._targetsManualOverride = false;
@@ -212,6 +212,12 @@ class Game {
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
 
     this._lastLoadedLang = null;
+
+    try {
+      this.recomputeTargets();
+    } catch (err) {
+      console.warn('[BombPartyShark] Failed to initialize coverage targets', err);
+    }
   }
 
   setMyTurn(isMine) {
@@ -1752,8 +1758,15 @@ class Game {
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
+      if (idx < 0 || idx >= 26) return;
+      const target = Math.max(0, this.targetCounts[idx] || 0);
+      if (target <= 0) return;
+      const current = Math.max(0, this.coverageCounts[idx] || 0);
+      const remaining = Math.max(0, target - current);
+      if (remaining <= 0) return;
+      const applied = Math.min(count, remaining);
+      if (applied > 0) {
+        this.coverageCounts[idx] = current + applied;
       }
     });
     this._maybeResetCoverageOnComplete();
