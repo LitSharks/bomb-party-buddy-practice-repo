@@ -203,6 +203,31 @@ function createOverlay(game) {
   });
 
   addText({
+    listNameMain: { en: "main word list", de: "Hauptwortliste", es: "lista principal de palabras", fr: "liste principale de mots", "pt-br": "lista principal de palavras" },
+    listNameFoul: { en: "foul word list", de: "Schimpfwortliste", es: "lista de palabras malsonantes", fr: "liste de mots grossiers", "pt-br": "lista de palavrões" },
+    listNamePokemon: { en: "Pokémon word list", de: "Pokémon-Wortliste", es: "lista de palabras Pokémon", fr: "liste de mots Pokémon", "pt-br": "lista de palavras Pokémon" },
+    listNameMinerals: { en: "minerals word list", de: "Mineralien-Wortliste", es: "lista de palabras de minerales", fr: "liste de mots de minéraux", "pt-br": "lista de palavras de minerais" },
+    listNameRare: { en: "rare word list", de: "Liste seltener Wörter", es: "lista de palabras raras", fr: "liste de mots rares", "pt-br": "lista de palavras raras" }
+  });
+
+  addText({
+    notificationWordListFallback: {
+      en: "Failed to load the {{listName}} from the API; using the main list instead.",
+      de: "Konnte die {{listName}} nicht von der API laden; verwende stattdessen die Hauptliste.",
+      es: "No se pudo cargar la {{listName}} desde la API; se usa la lista principal.",
+      fr: "Impossible de charger la {{listName}} depuis l'API ; utilisation de la liste principale à la place.",
+      "pt-br": "Não foi possível carregar a {{listName}} pela API; usando a lista principal."
+    },
+    notificationWordListMainFailure: {
+      en: "Failed to load the main word list from the API. Please contact the extension developer to report the issue.",
+      de: "Die Hauptwortliste konnte nicht von der API geladen werden. Bitte kontaktiere die Entwickler der Erweiterung, um das Problem zu melden.",
+      es: "No se pudo cargar la lista principal de palabras desde la API. Ponte en contacto con la persona desarrolladora de la extensión para informar del problema.",
+      fr: "Impossible de charger la liste principale de mots depuis l'API. Veuillez contacter le développeur de l'extension pour signaler le problème.",
+      "pt-br": "Não foi possível carregar a lista principal de palavras pela API. Entre em contato com o desenvolvedor da extensão para informar o problema."
+    }
+  });
+
+  addText({
     lenNoticeCoverageFoul: { en: "Target length (me): with coverage on it acts as a max (<= {{target}}); foul words still take priority.", de: "Ziellänge (ich) : mit aktivierter Abdeckung wirkt sie als Maximum (<= {{target}}); Schimpfwörter haben weiterhin Priorität.", es: "Longitud objetivo (yo): con cobertura activada funciona como máximo (<= {{target}}); las palabras malsonantes siguen teniendo prioridad.", fr: "Longueur cible (moi) : avec la couverture activée, elle agit comme un maximum (<= {{target}}) ; les mots grossiers restent prioritaires.", "pt-br": "Comprimento alvo (eu): com cobertura ligada age como máximo (<= {{target}}); palavrões ainda têm prioridade." },
     lenNoticeCoverage: { en: "Target length (me): acts as a max (<= {{target}}) while optimizing alphabet coverage.", de: "Ziellänge (ich) : fungiert als Maximum (<= {{target}}) und optimiert die Alphabet-Abdeckung.", es: "Longitud objetivo (yo): actúa como un máximo (<= {{target}}) mientras optimiza la cobertura del alfabeto.", fr: "Longueur cible (moi) : agit comme un maximum (<= {{target}}) tout en optimisant la couverture de l'alphabet.", "pt-br": "Comprimento alvo (eu): atua como máximo (<= {{target}}) ao otimizar a cobertura do alfabeto." },
     lenNoticeFoul: { en: "Target length (me): ignored when foul words are available; used only if none match.", de: "Ziellänge (ich) : ignoriert, wenn Schimpfwörter verfügbar sind; nur genutzt, wenn keine passen.", es: "Longitud objetivo (yo): se ignora cuando hay palabras malsonantes disponibles; solo se usa si ninguna coincide.", fr: "Longueur cible (moi) : ignorée lorsque des mots grossiers sont disponibles ; utilisée seulement si rien ne correspond.", "pt-br": "Comprimento alvo (eu): ignorado quando há palavrões disponíveis; usado apenas se nenhum corresponder." },
@@ -637,24 +662,52 @@ function createOverlay(game) {
   });
   let toastTimer = null;
   let activeToastKey = null;
+  let activeToastParams = null;
   const hideToast = () => {
     toast.style.opacity = "0";
     toast.style.transform = "translate(-50%, -20px)";
     activeToastKey = null;
+    activeToastParams = null;
   };
-  const showToast = (key, duration = 2600) => {
+  const showToast = (key, options = {}) => {
+    const opts = (options && typeof options === 'object') ? options : {};
+    const duration = Math.max(1200, Number.isFinite(opts.duration) ? opts.duration : 2600);
+    const params = opts.params && typeof opts.params === 'object' ? opts.params : null;
     activeToastKey = key;
-    toast.textContent = translator.t(key);
+    activeToastParams = params;
+    toast.textContent = translator.t(key, params || {});
     toast.style.opacity = "1";
     toast.style.transform = "translate(-50%, 0)";
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       hideToast();
-    }, Math.max(1200, duration));
+    }, duration);
   };
   const updateToastLanguage = () => {
     if (activeToastKey) {
-      toast.textContent = translator.t(activeToastKey);
+      toast.textContent = translator.t(activeToastKey, activeToastParams || {});
+    }
+  };
+  const listNameKeyByType = {
+    main: "listNameMain",
+    foul: "listNameFoul",
+    pokemon: "listNamePokemon",
+    minerals: "listNameMinerals",
+    rare: "listNameRare"
+  };
+  game._notifyWordListError = (info = {}) => {
+    if (!info || typeof info !== "object") return;
+    if (info.type === "main-failed") {
+      showToast("notificationWordListMainFailure", { duration: 5200 });
+      return;
+    }
+    if (info.type === "fallback") {
+      const listKey = listNameKeyByType[info.list] || listNameKeyByType.main;
+      const listName = translator.t(listKey);
+      showToast("notificationWordListFallback", {
+        duration: 4600,
+        params: { listName }
+      });
     }
   };
   let joinObserver = null;
@@ -2217,7 +2270,7 @@ function createOverlay(game) {
     scheduleTalliesSave();
     requestSave({ recompute: true });
     render();
-    showToast("notificationGameReset", 2800);
+    showToast("notificationGameReset", { duration: 2800 });
   };
 
   const checkJoinButton = () => {
