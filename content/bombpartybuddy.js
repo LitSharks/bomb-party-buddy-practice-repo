@@ -68,6 +68,33 @@ function createOverlay(game) {
     zIndex: "2147483647", userSelect: "none",
   });
 
+  const ensureSuggestionStyles = (() => {
+    let applied = false;
+    return () => {
+      if (applied || window.__bpsSuggestionStylesApplied) { applied = true; return; }
+      applied = true;
+      const style = document.createElement("style");
+      style.textContent = `
+        .bps-suggestion-btn {
+          font-family: ${Game.suggestionFontStack()};
+          font-variant-numeric: normal;
+          font-variant-ligatures: none;
+          font-feature-settings: 'liga' 0, 'clig' 0;
+        }
+        .bps-suggestion-btn .bps-syllable-highlight {
+          font-family: ${Game.suggestionFontStack()};
+          font-weight: 900;
+          text-transform: uppercase;
+          font-size: 1.15em;
+          letter-spacing: 0.4px;
+          font-variant-ligatures: none;
+        }
+      `;
+      (document.head || document.documentElement).appendChild(style);
+      window.__bpsSuggestionStylesApplied = true;
+    };
+  })();
+
   const STORAGE_KEY = "bombpartybuddy.settings.v1";
   const SESSION_KEY = "bombpartybuddy.session.v1";
 
@@ -960,7 +987,13 @@ function createOverlay(game) {
     const r = document.createElement("div");
     Object.assign(r.style, { display:"flex", alignItems:"center", justifyContent:"space-between", gap:"16px", margin:"8px 0" });
     const span = document.createElement("span");
-    translator.bind(span, labelKey);
+    const labelText = document.createElement("span");
+    span.appendChild(labelText);
+    translator.bind(span, labelKey, {
+      transform: (_, text) => {
+        labelText.textContent = text;
+      }
+    });
     span.style.fontWeight = "600";
     r.appendChild(span);
     r._labelSpan = span;
@@ -993,7 +1026,13 @@ function createOverlay(game) {
       margin:"8px 0"
     });
     const span = document.createElement("span");
-    translator.bind(span, labelKey);
+    const labelText = document.createElement("span");
+    span.appendChild(labelText);
+    translator.bind(span, labelKey, {
+      transform: (_, text) => {
+        labelText.textContent = text;
+      }
+    });
     span.style.fontWeight = "600";
     row.appendChild(span);
     row._labelSpan = span;
@@ -1808,6 +1847,7 @@ function createOverlay(game) {
   }
 
   function clickableWords(container, entries, syllable) {
+    ensureSuggestionStyles();
     container.innerHTML = "";
     if (!entries || !entries.length) { container.textContent = translator.t("listEmpty"); return; }
     const syl = (syllable || "").toLowerCase();
@@ -1817,6 +1857,7 @@ function createOverlay(game) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.innerHTML = Game.highlightSyllable(word, syl);
+      btn.classList.add("bps-suggestion-btn");
       const copyTooltip = translator.t("copyTooltip");
       btn.title = copyTooltip;
       btn.setAttribute("aria-label", copyTooltip);
@@ -1830,6 +1871,9 @@ function createOverlay(game) {
         color:styles.color,
         fontWeight:"700",
         fontSize:"0.92em",
+        fontFamily: Game.suggestionFontStack(),
+        fontVariantLigatures: "none",
+        fontFeatureSettings: "'liga' 0, 'clig' 0",
         transition:"transform 0.15s ease, background 0.15s ease",
         display:"inline-flex",
         alignItems:"center",

@@ -786,6 +786,10 @@ class Game {
   }
 
 
+  static suggestionFontStack() {
+    return "'Noto Sans', 'Noto Sans Display', 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+  }
+
   static highlightSyllable(word, syl) {
     if (!syl) return word;
     const i = word.indexOf(syl);
@@ -793,7 +797,7 @@ class Game {
     const pre = word.slice(0, i);
     const mid = word.slice(i, i + syl.length);
     const post = word.slice(i + syl.length);
-    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em">${mid}</b>${post}`;
+    return `${pre}<span class="bps-syllable-highlight" style="font-family:${Game.suggestionFontStack()};font-weight:900;text-transform:uppercase;font-size:1.15em;letter-spacing:0.4px;font-variant-ligatures:none;font-feature-settings:'liga' 0, 'clig' 0">${mid}</span>${post}`;
   }
 
   _lettersOf(word) {
@@ -805,6 +809,22 @@ class Game {
       counts.set(c, (counts.get(c) || 0) + 1);
     }
     return counts;
+  }
+
+  _coerceWordPayload(payload, fallback = "") {
+    if (typeof payload === "string") return payload;
+    if (Array.isArray(payload)) {
+      for (const entry of payload) {
+        const candidate = this._coerceWordPayload(entry);
+        if (candidate) return candidate;
+      }
+      return fallback;
+    }
+    if (payload && typeof payload.word === "string") return payload.word;
+    if (payload && typeof payload.text === "string") return payload.text;
+    if (payload && typeof payload.value === "string") return payload.value;
+    if (payload && typeof payload.display === "string") return payload.display;
+    return fallback;
   }
 
   _maybeResetCoverageOnComplete() {
@@ -1738,8 +1758,10 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
+    const pending = this._pendingSubmission ? { ...this._pendingSubmission } : null;
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const rawWord = this._coerceWordPayload(word, pending?.word || "");
+    const normalizedInfo = this._normalizeWordForLog(rawWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1748,12 +1770,26 @@ class Game {
       });
     }
     if (!myTurn) return;
+    if (!normalizedInfo) {
+      this._emitTalliesChanged();
+      return;
+    }
+    const coverageSource = (normalizedInfo.display || "").toLowerCase();
+    if (!coverageSource) {
+      this._emitTalliesChanged();
+      return;
+    }
     // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+    const letters = this._lettersOf(coverageSource);
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
+      if (idx >= 0 && idx < 26) {
+        const target = this.targetCounts[idx] || 0;
+        if (target > 0) {
+          const current = this.coverageCounts[idx] || 0;
+          const next = current + count;
+          this.coverageCounts[idx] = Math.min(next, target);
+        }
       }
     });
     this._maybeResetCoverageOnComplete();
@@ -1762,8 +1798,10 @@ class Game {
 
   onFailedWord(myTurn, word, reason) {
     this._reportInvalid(word, reason, myTurn).catch(() => {});
+    const pending = this._pendingSubmission ? { ...this._pendingSubmission } : null;
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const rawWord = this._coerceWordPayload(word, pending?.word || "");
+    const normalizedInfo = this._normalizeWordForLog(rawWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
