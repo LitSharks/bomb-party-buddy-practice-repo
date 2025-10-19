@@ -960,10 +960,13 @@ function createOverlay(game) {
     const r = document.createElement("div");
     Object.assign(r.style, { display:"flex", alignItems:"center", justifyContent:"space-between", gap:"16px", margin:"8px 0" });
     const span = document.createElement("span");
-    translator.bind(span, labelKey);
+    const spanLabel = document.createElement("span");
+    translator.bind(spanLabel, labelKey);
+    span.appendChild(spanLabel);
     span.style.fontWeight = "600";
     r.appendChild(span);
     r._labelSpan = span;
+    span._labelText = spanLabel;
     const btn = document.createElement("button");
     if (mode !== "status") {
       btn.dataset.labelKey = labelKey;
@@ -993,10 +996,13 @@ function createOverlay(game) {
       margin:"8px 0"
     });
     const span = document.createElement("span");
-    translator.bind(span, labelKey);
+    const spanLabel = document.createElement("span");
+    translator.bind(spanLabel, labelKey);
+    span.appendChild(spanLabel);
     span.style.fontWeight = "600";
     row.appendChild(span);
     row._labelSpan = span;
+    span._labelText = spanLabel;
     const btnWrap = document.createElement("div");
     Object.assign(btnWrap.style, { display:"flex", gap:"8px", flexWrap:"wrap" });
     row.appendChild(btnWrap);
