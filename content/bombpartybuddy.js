@@ -386,7 +386,7 @@ function createOverlay(game) {
   setIfString(savedSettings?.specContainsText, (val) => game.setSpecContainsText(val));
   setIfString(savedSettings?.excludeSpec, (val) => game.setExcludeSpec(val));
 
-  game.setExcludeEnabled(getBool(savedSettings?.excludeEnabled, game.excludeEnabled));
+  game.setExcludeEnabled();
   if (Array.isArray(savedSettings?.priorityOrder)) {
     game.setPriorityOrder(savedSettings.priorityOrder);
   }
@@ -409,7 +409,6 @@ function createOverlay(game) {
     autoJoinAlways: !!game.autoJoinAlways,
     foulMode: !!game.foulMode,
     coverageMode: !!game.coverageMode,
-    excludeEnabled: !!game.excludeEnabled,
     lengthMode: !!game.lengthMode,
     specLengthMode: !!game.specLengthMode,
     specFoulMode: !!game.specFoulMode,
@@ -1357,12 +1356,9 @@ function createOverlay(game) {
   coverageCard.appendChild(coverageToggle);
   attachPriorityControl(coverageToggle, "coverage");
 
-  const exTop = mkRow("toggleExclude", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal", "status", { recompute: true });
-  toggleRefs.push(exTop);
-  coverageCard.appendChild(exTop);
-
   const coverageEditButtons = [];
   const coverageCells = [];
+  let coverageGridInitialized = false;
 
   const editControls = document.createElement("div");
   Object.assign(editControls.style, { display:"grid", gap:"6px", marginTop:"8px" });
@@ -1389,7 +1385,6 @@ function createOverlay(game) {
     render();
   };
   if (coverageToggle?._btn) coverageToggle._btn.addEventListener("click", () => { coverageEditMode = "off"; });
-  if (exTop?._btn) exTop._btn.addEventListener("click", () => { coverageEditMode = "off"; });
   editModes.forEach(cfg => {
     const btn = document.createElement("button");
     if (cfg.labelKey) {
@@ -1472,9 +1467,10 @@ function createOverlay(game) {
   const grid = document.createElement("div");
   Object.assign(grid.style, {
     display:"grid",
-    gridTemplateColumns:"repeat(6, minmax(0, 1fr))",
+    gridTemplateColumns:"repeat(13, minmax(0, 1fr))",
+    gridTemplateRows:"repeat(2, auto)",
     gap:"8px",
-    marginTop:"4px"
+    marginTop:"6px"
   });
   coverageCard.appendChild(grid);
 
@@ -1897,8 +1893,16 @@ function createOverlay(game) {
   }
 
   function ensureCoverageCells() {
-    if (coverageCells.length) return;
-    for (let i = 0; i < 26; i++) {
+    if (coverageGridInitialized) return;
+    const columns = 13;
+    const order = [];
+    for (let col = columns - 1; col >= 0; col--) {
+      const topIdx = col;
+      const bottomIdx = col + columns;
+      if (topIdx < 26) order.push(topIdx);
+      if (bottomIdx < 26) order.push(bottomIdx);
+    }
+    order.forEach((idx) => {
       const box = document.createElement("div");
       Object.assign(box.style, {
         padding:"8px 8px 10px",
@@ -1950,7 +1954,6 @@ function createOverlay(game) {
       box.appendChild(input);
       box.appendChild(bar);
 
-      const idx = i;
       box.addEventListener("click", (ev) => {
         if (coverageEditMode === "off") return;
         if (ev.target === input) return;
@@ -1999,9 +2002,14 @@ function createOverlay(game) {
         render();
       });
 
-      coverageCells.push({ idx, box, letterSpan, progressSpan, input, fill });
+      const row = idx < columns ? 1 : 2;
+      const col = (idx % columns) + 1;
+      box.style.gridRow = String(row);
+      box.style.gridColumn = String(col);
+      coverageCells[idx] = { idx, box, letterSpan, progressSpan, input, fill };
       grid.appendChild(box);
-    }
+    });
+    coverageGridInitialized = true;
   }
 
   function renderCoverageGrid() {
@@ -2009,9 +2017,10 @@ function createOverlay(game) {
     const counts = game.coverageCounts || new Array(26).fill(0);
     const targets = game.targetCounts || new Array(26).fill(1);
     coverageCells.forEach(cell => {
+      if (!cell) return;
       const { idx, box, letterSpan, progressSpan, input, fill } = cell;
       const letter = String.fromCharCode(97 + idx);
-      letterSpan.textContent = letter;
+      letterSpan.textContent = letter.toUpperCase();
       const target = Math.max(0, targets[idx] || 0);
       const haveRaw = Math.max(0, counts[idx] || 0);
       const have = Math.min(haveRaw, target);
