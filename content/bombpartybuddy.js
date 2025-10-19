@@ -630,6 +630,7 @@ function createOverlay(game) {
   game.setTalliesChangedCallback(() => {
     scheduleTalliesSave();
     recomputeSuggestions();
+    render();
   });
   scheduleTalliesSave();
 
