@@ -2324,6 +2324,9 @@ function createOverlay(game) {
     clearInterval(iv);
     autoJoinManager.disconnect();
     hideToast();
+    if (typeof game.dispose === "function") {
+      try { game.dispose(); } catch (_) { /* ignore */ }
+    }
     if (joinObserver) {
       try { joinObserver.disconnect(); } catch (_) { /* ignore */ }
       joinObserver = null;
