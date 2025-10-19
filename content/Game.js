@@ -15,23 +15,6 @@ const WORD_CACHE = new Map();
 const WORD_CACHE_LOADING = new Map();
 const WORD_CACHE_TTL_MS = 5 * 60 * 1000;
 
-const LOCAL_MAIN_LISTS = Object.freeze({
-  "en": "words1/en.txt",
-  "de": "words1/de.txt",
-  "fr": "words1/fr.txt",
-  "es": "words1/es.txt",
-  "pt-br": "words1/pt-br.txt",
-  "nah": "words1/nah.txt",
-  "pok-en": "words1/pok-en.txt",
-  "pok-fr": "words1/pok-fr.txt",
-  "pok-de": "words1/pok-de.txt"
-});
-
-const LOCAL_FOUL_LISTS = Object.freeze({
-  "en": "words1/foul-words-en.txt",
-  "default": "words1/foul-words-en.txt"
-});
-
 const LANGUAGE_LABELS = Object.freeze({
   "en": { short: "EN", name: "English" },
   "de": { short: "DE", name: "Deutsch" },
@@ -76,19 +59,6 @@ function toWordArrayFromText(text) {
     pushWordCandidate(out, seen, line);
   }
   return out;
-}
-
-async function fetchLocalText(path) {
-  if (!path) return '';
-  try {
-    const url = chrome.runtime.getURL(path);
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return '';
-    return await res.text();
-  } catch (err) {
-    console.warn('[BombPartyShark] Failed to load local word list', path, err);
-    return '';
-  }
 }
 
 class Game {
@@ -210,6 +180,7 @@ class Game {
 
     // Tallies persistence hook
     this._onTalliesChanged = null;
+    this._notifyWordListIssue = null;
 
     // HUD lists
     this.lastTopPicksSelf = [];
@@ -266,15 +237,27 @@ class Game {
       "espanol": "es", "español": "es",
       "portuguese": "pt-br", "português": "pt-br",
       "portuguese (br)": "pt-br", "portuguese (brasil)": "pt-br",
+      "portuguese (brazil)": "pt-br", "portuguese brazil": "pt-br",
+      "portuguese brazilian": "pt-br", "português brazil": "pt-br",
       "português (br)": "pt-br", "português (brasil)": "pt-br",
+      "português (brazil)": "pt-br", "português brazil": "pt-br",
       "pt-br": "pt-br", "pt": "pt-br", "ptbr": "pt-br", "pt-brasil": "pt-br",
-      "br": "pt-br", "brasil": "pt-br",
+      "pt-brazil": "pt-br", "ptbrasil": "pt-br",
+      "br": "pt-br", "brasil": "pt-br", "brazil": "pt-br",
       "nahuatl": "nah", "nah": "nah",
       "pokemon (en)": "pok-en", "pok-en": "pok-en",
       "pokemon (fr)": "pok-fr", "pok-fr": "pok-fr",
       "pokemon (de)": "pok-de", "pok-de": "pok-de"
     };
-    return map[s] || map[raw] || "en";
+    if (map[s]) return map[s];
+    if (map[raw]) return map[raw];
+    if (s.includes("portugu")) {
+      return "pt-br";
+    }
+    if (raw.includes("portugu")) {
+      return "pt-br";
+    }
+    return "en";
   }
 
   languageInfo(lang = this.lang) {
@@ -360,6 +343,9 @@ class Game {
       const data = await loadPromise;
       this._applyWordData(data);
     } catch (err) {
+      if (Array.isArray(err?.wordListWarnings) && err.wordListWarnings.length) {
+        this._emitWordListWarnings(err.wordListWarnings);
+      }
       if (cached) {
         console.warn('[BombPartyShark] Falling back to cached word data for', lang, err);
         this._applyWordData(cached);
@@ -376,71 +362,63 @@ class Game {
     const mineralsUrl = `${base}/words.php?lang=${encodeURIComponent(lang)}&list=minerals`;
     const rareUrl = `${base}/words.php?lang=${encodeURIComponent(lang)}&list=rare`;
 
-    let mainTxt = '';
-    let foulTxt = '';
-    let pokemonTxt = '';
-    let mineralsTxt = '';
-    let rareTxt = '';
+    const warnings = [];
+    const pushWarning = (payload) => {
+      if (!payload) return;
+      warnings.push(payload);
+    };
 
-    try {
-      mainTxt = await this.extFetch(mainUrl);
-    } catch (err) {
-      console.warn('[BombPartyShark] Failed to load main word list from API for', lang, err);
-    }
-
-    try {
-      foulTxt = await this.extFetch(foulUrl);
-    } catch (err) {
-      const msg = (err && err.message) ? err.message : String(err || '');
-      if (msg.includes('404')) {
-        console.info(`[BombPartyShark] No foul word list available from API for ${lang}; falling back to local default.`);
-      } else {
-        console.warn('[BombPartyShark] Failed to load foul word list from API for', lang, err);
+    const fetchText = async (url, listKey) => {
+      try {
+        return await this.extFetch(url);
+      } catch (err) {
+        console.warn(`[BombPartyShark] Failed to load ${listKey} word list from API for`, lang, err);
+        return '';
       }
-    }
+    };
 
-    try {
-      pokemonTxt = await this.extFetch(pokemonUrl);
-    } catch (err) {
-      console.warn('[BombPartyShark] Failed to load Pokémon word list from API for', lang, err);
-    }
-
-    try {
-      mineralsTxt = await this.extFetch(mineralsUrl);
-    } catch (err) {
-      console.warn('[BombPartyShark] Failed to load minerals word list from API for', lang, err);
-    }
-
-    try {
-      rareTxt = await this.extFetch(rareUrl);
-    } catch (err) {
-      console.warn('[BombPartyShark] Failed to load rare word list from API for', lang, err);
-    }
-
+    let mainTxt = await fetchText(mainUrl, 'main');
     let words = toWordArrayFromText(mainTxt);
+    let mainWarningSent = false;
+    if (!mainTxt || !words.length) {
+      mainWarningSent = true;
+      pushWarning({ type: 'mainFailure', lang });
+    }
+    if (!words.length) {
+      const err = new Error(`No word list available for language ${lang}`);
+      err.wordListWarnings = warnings.slice();
+      throw err;
+    }
+
+    const foulTxt = await fetchText(foulUrl, 'foul');
     let foulWords = toWordArrayFromText(foulTxt);
-    let pokemonWords = toWordArrayFromText(pokemonTxt);
-    let mineralWords = toWordArrayFromText(mineralsTxt);
-    let rareWords = toWordArrayFromText(rareTxt);
-
-    if (!words.length) {
-      const localPath = LOCAL_MAIN_LISTS[lang] || LOCAL_MAIN_LISTS['en'];
-      if (localPath) {
-        const localTxt = await fetchLocalText(localPath);
-        words = toWordArrayFromText(localTxt);
-      }
-    }
-
-    if (!words.length) {
-      throw new Error(`No word list available for language ${lang}`);
-    }
-
     if (!foulWords.length) {
-      const foulPath = LOCAL_FOUL_LISTS[lang] || LOCAL_FOUL_LISTS.default;
-      if (foulPath) {
-        const foulLocalTxt = await fetchLocalText(foulPath);
-        foulWords = toWordArrayFromText(foulLocalTxt);
+      if (!mainWarningSent) {
+        console.info(`[BombPartyShark] No foul words from API for ${lang}; using main list.`);
       }
+      foulWords = words.slice();
+      pushWarning({ type: 'fallback', list: 'foul', lang });
+    }
+
+    const pokemonTxt = await fetchText(pokemonUrl, 'pokemon');
+    let pokemonWords = toWordArrayFromText(pokemonTxt);
+    if (!pokemonWords.length) {
+      pokemonWords = words.slice();
+      pushWarning({ type: 'fallback', list: 'pokemon', lang });
+    }
+
+    const mineralsTxt = await fetchText(mineralsUrl, 'minerals');
+    let mineralWords = toWordArrayFromText(mineralsTxt);
+    if (!mineralWords.length) {
+      mineralWords = words.slice();
+      pushWarning({ type: 'fallback', list: 'minerals', lang });
+    }
+
+    const rareTxt = await fetchText(rareUrl, 'rare');
+    let rareWords = toWordArrayFromText(rareTxt);
+    if (!rareWords.length) {
+      rareWords = words.slice();
+      pushWarning({ type: 'fallback', list: 'rare', lang });
     }
 
     const letterWeights = Game.computeLetterWeights(words);
@@ -452,7 +430,8 @@ class Game {
       mineralWords,
       rareWords,
       letterWeights,
-      fetchedAt: Date.now()
+      fetchedAt: Date.now(),
+      warnings
     };
   }
 
@@ -474,6 +453,10 @@ class Game {
     this.maxWordLength = this.words.reduce((max, word) => Math.max(max, (word || '').length || 0), 0);
     this.setTargetLen(this.targetLenPref ?? this.targetLen);
     this.setSpecTargetLen(this.specTargetLenPref ?? this.specTargetLen);
+    if (Array.isArray(data.warnings) && data.warnings.length && !data._warningsHandled) {
+      this._emitWordListWarnings(data.warnings);
+      data._warningsHandled = true;
+    }
   }
 
   static computeLetterWeights(words) {
@@ -633,6 +616,21 @@ class Game {
   _emitTalliesChanged() {
     if (typeof this._onTalliesChanged === 'function') {
       try { this._onTalliesChanged(); } catch (err) { console.warn('[BombPartyShark] tally listener failed', err); }
+    }
+  }
+
+  _emitWordListWarnings(warnings) {
+    if (!Array.isArray(warnings) || !warnings.length) return;
+    const notify = this._notifyWordListIssue;
+    if (typeof notify !== 'function') return;
+    const fallbackLang = this.lang;
+    for (const warning of warnings) {
+      const payload = Object.assign({ lang: fallbackLang }, warning || {});
+      try {
+        notify(payload);
+      } catch (err) {
+        console.warn('[BombPartyShark] word list warning listener failed', err);
+      }
     }
   }
 
@@ -1002,6 +1000,22 @@ class Game {
       };
     });
 
+    if (lengthMode && !coverageMode && candidates.length) {
+      const hasExact = candidates.some(c => c.lengthCategory === 2);
+      const hasFlex = candidates.some(c => c.lengthCategory === 1);
+      if (!hasExact && !hasFlex) {
+        const nearest = Math.min(...candidates.map(c => c.lengthDistance ?? Number.POSITIVE_INFINITY));
+        if (Number.isFinite(nearest)) {
+          candidates.forEach(c => {
+            if ((c.lengthDistance ?? Number.POSITIVE_INFINITY) === nearest) {
+              c.lengthCategory = 1;
+            }
+          });
+          flags.lenFallback = true;
+        }
+      }
+    }
+
     let workingCandidates = candidates;
     if (this.preventReuseEnabled) {
       const unseen = candidates.filter(c => !this.usedWordSet.has(c.lower));
@@ -1026,12 +1040,28 @@ class Game {
       flags.hyphenFallback = true;
     }
 
-    if (coverageMode && lengthMode) {
-      const withinCap = workingCandidates.filter(c => c.word.length <= targetLen);
-      if (withinCap.length) {
-        workingCandidates = withinCap;
+    if (lengthMode && coverageMode && workingCandidates.length) {
+      const capped = workingCandidates.filter(c => c.word.length <= targetLen || c.specialRank > 0);
+      if (capped.length) {
         flags.lenCapApplied = true;
+        if (capped.length !== workingCandidates.length) {
+          workingCandidates = capped;
+        } else {
+          workingCandidates = capped;
+        }
       } else {
+        const nonSpecial = workingCandidates.filter(c => c.specialRank === 0);
+        if (nonSpecial.length) {
+          const minLen = Math.min(...nonSpecial.map(c => c.word.length));
+          const fallbackPool = workingCandidates.filter(c => c.specialRank > 0 || c.word.length === minLen);
+          fallbackPool.forEach(c => {
+            if (c.specialRank === 0 && c.word.length === minLen && c.lengthCategory === 0) {
+              c.lengthCategory = 1;
+              c.lengthDistance = Math.abs(c.word.length - targetLen);
+            }
+          });
+          workingCandidates = fallbackPool;
+        }
         flags.lenCapRelaxed = true;
       }
     }
@@ -1095,6 +1125,9 @@ class Game {
           if (candidate.lengthCategory === 2) { tone = 'lengthExact'; break; }
           if (candidate.lengthCategory === 1) { tone = 'lengthFlex'; break; }
         }
+      }
+      if (!tone && coverageMode && candidate.coverageScore > 0) {
+        tone = 'coverage';
       }
       if (!tone) {
         if (candidate.specialRank > 0) tone = candidate.specialType;
@@ -1613,99 +1646,94 @@ class Game {
 
     const typingToken = Symbol('typing');
     this._activeTypingToken = typingToken;
-
-    const input = await this._waitForInput();
-    if (!input || this._activeTypingToken !== typingToken) {
-      this._clearPendingSubmission();
+    const cleanup = () => {
       if (this._activeTypingToken === typingToken) {
         this._activeTypingToken = null;
       }
-      if (!input && this.myTurn) {
-        this._scheduleTypingRetry(word, ignorePostfix, attemptSeed);
+    };
+
+    try {
+      const input = await this._waitForInput();
+      if (!input || this._activeTypingToken !== typingToken) {
+        this._clearPendingSubmission();
+        if (!input && this.myTurn) {
+          this._scheduleTypingRetry(word, ignorePostfix, attemptSeed);
+        }
+        return;
       }
-      return;
-    }
 
-    input.focus();
-    await Promise.resolve();
-    if (this._activeTypingToken !== typingToken) {
-      this._activeTypingToken = null;
-      return;
-    }
-    this._setInputValueRespectingMax(input, "");
-    if (this._activeTypingToken !== typingToken) {
-      this._activeTypingToken = null;
-      return;
-    }
+      input.focus();
+      await Promise.resolve();
+      if (this._activeTypingToken !== typingToken) return;
+      this._setInputValueRespectingMax(input, "");
+      if (this._activeTypingToken !== typingToken) return;
 
-    const perCharDelay = this._charDelayMs();
-    const instant = !!this.instantMode;
-    const plainTypingOpts = this.superRealisticEnabled ? { allowMistakes: false } : undefined;
+      const perCharDelay = this._charDelayMs();
+      const instant = !!this.instantMode;
+      const plainTypingOpts = this.superRealisticEnabled ? { allowMistakes: false } : undefined;
 
-    if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
+      if (this.preMsgEnabled && this.preMsgText && !this.autoSuicide) {
+        if (instant) {
+          this._setInputValueRespectingMax(input, this.preMsgText);
+          if (this._activeTypingToken !== typingToken) return;
+          await this._sleep(Math.max(40, perCharDelay));
+          if (this._activeTypingToken !== typingToken) return;
+          this._setInputValueRespectingMax(input, "");
+        } else {
+          await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts, typingToken);
+          if (this._activeTypingToken !== typingToken) return;
+          await this._sleep(Math.max(80, perCharDelay * 4));
+          if (this._activeTypingToken !== typingToken) return;
+          this._setInputValueRespectingMax(input, "");
+        }
+        if (this._activeTypingToken !== typingToken) return;
+      }
+
       if (instant) {
-        this._setInputValueRespectingMax(input, this.preMsgText);
-        if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
-        await this._sleep(Math.max(40, perCharDelay));
-        if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
-        this._setInputValueRespectingMax(input, "");
+        this._setInputValueRespectingMax(input, word);
       } else {
-        await this._typeTextSequence(input, this.preMsgText, perCharDelay, plainTypingOpts, typingToken);
-        if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
-        await this._sleep(Math.max(80, perCharDelay * 4));
-        if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
-        this._setInputValueRespectingMax(input, "");
+        await this._typeWordWithRealism(input, word, perCharDelay, typingToken);
+        if (this._activeTypingToken !== typingToken) return;
       }
-      if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
-    }
 
-    if (instant) {
-      this._setInputValueRespectingMax(input, word);
-    } else {
-      await this._typeWordWithRealism(input, word, perCharDelay, typingToken);
-      if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
-    }
+      let expectedValue = this._truncateToMax(input, word);
 
-    let expectedValue = this._truncateToMax(input, word);
-
-    if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
-      if (instant) {
-        this._setInputValueRespectingMax(input, `${input.value}${this.postfixText}`);
-      } else {
-        await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts, typingToken);
+      if (this.postfixEnabled && this.postfixText && !this.autoSuicide && !ignorePostfix) {
+        if (instant) {
+          this._setInputValueRespectingMax(input, `${input.value}${this.postfixText}`);
+        } else {
+          await this._typeTextSequence(input, this.postfixText, perCharDelay, plainTypingOpts, typingToken);
+        }
+        if (this._activeTypingToken !== typingToken) return;
+        expectedValue = this._truncateToMax(input, `${expectedValue}${this.postfixText}`);
       }
-      if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
-      expectedValue = this._truncateToMax(input, `${expectedValue}${this.postfixText}`);
-    }
 
-    if (this._activeTypingToken !== typingToken) {
-      this._activeTypingToken = null;
-      return;
-    }
+      if (this._activeTypingToken !== typingToken) return;
 
-    if (input.value !== expectedValue) {
-      this._setInputValueRespectingMax(input, expectedValue);
-      if (this._activeTypingToken !== typingToken) { this._activeTypingToken = null; return; }
-    }
+      if (input.value !== expectedValue) {
+        this._setInputValueRespectingMax(input, expectedValue);
+        if (this._activeTypingToken !== typingToken) return;
+      }
 
-    if (!expectedValue) {
-      this._activeTypingToken = null;
-      return;
-    }
-    const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
-    input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
-    input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
-    input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
-    await new Promise(r => setTimeout(r, 10));
+      if (!expectedValue) {
+        return;
+      }
+      const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
+      input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
+      input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
+      input.dispatchEvent(new KeyboardEvent("keyup", enterOpts));
+      await new Promise(r => setTimeout(r, 10));
 
-    if (document.activeElement !== input) input.focus();
-    const form = input.closest("form");
-    if (form && typeof form.requestSubmit === "function") {
-      form.requestSubmit();
-    }
+      if (document.activeElement !== input) input.focus();
+      const form = input.closest("form");
+      if (form && typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      }
 
-    this._trackPendingSubmission(word, ignorePostfix, attemptSeed);
-    this._activeTypingToken = null;
+      this._trackPendingSubmission(word, ignorePostfix, attemptSeed);
+    } finally {
+      cleanup();
+    }
   }
 
 

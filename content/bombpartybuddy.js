@@ -233,6 +233,23 @@ function createOverlay(game) {
     notificationGameReset: { en: "New game detected — alphabet list and word history reset.", de: "Neue Partie erkannt – Alphabetliste und Wortverlauf zurückgesetzt.", es: "Nueva partida detectada — lista del alfabeto y historial reiniciados.", fr: "Nouvelle partie détectée — liste alphabet et historique réinitialisés.", "pt-br": "Nova partida detectada — lista do alfabeto e histórico de palavras redefinidos." }
   });
 
+  addText({
+    errorWordListFallback: {
+      en: "Couldn't load {{list}} ({{language}}); using the main word list instead.",
+      de: "Konnte {{list}} ({{language}}) nicht laden; verwende stattdessen die Hauptliste.",
+      es: "No se pudo cargar {{list}} ({{language}}); usando la lista principal en su lugar.",
+      fr: "Impossible de charger {{list}} ({{language}}) ; utilisation de la liste principale à la place.",
+      "pt-br": "Não foi possível carregar {{list}} ({{language}}); usando a lista principal no lugar."
+    },
+    errorWordListMainFailure: {
+      en: "Critical error: couldn't load the {{language}} main word list. Please contact the extension developer.",
+      de: "Kritischer Fehler: Die Hauptwortliste für {{language}} konnte nicht geladen werden. Bitte kontaktiere den Entwickler der Erweiterung.",
+      es: "Error crítico: no se pudo cargar la lista principal de {{language}}. Por favor, contacta al desarrollador de la extensión.",
+      fr: "Erreur critique : impossible de charger la liste principale {{language}}. Veuillez contacter le développeur de l'extension.",
+      "pt-br": "Erro crítico: não foi possível carregar a lista principal de {{language}}. Entre em contato com o desenvolvedor da extensão."
+    }
+  });
+
   const translator = (() => {
     const fallbackLang = "en";
     let currentLang = typeof game.normalizeLang === "function" ? game.normalizeLang(game.lang) : (game.lang || fallbackLang);
@@ -636,15 +653,29 @@ function createOverlay(game) {
     zIndex: "2147483647"
   });
   let toastTimer = null;
-  let activeToastKey = null;
+  const toastDefaultTheme = { background: "rgba(14,165,233,0.85)", color: "#ecfeff" };
+  let activeToast = null;
+  const applyToastTheme = (options = {}) => {
+    const theme = options?.theme;
+    if (theme === "error") {
+      toast.style.background = "rgba(220,38,38,0.88)";
+      toast.style.color = "#fee2e2";
+    } else {
+      toast.style.background = toastDefaultTheme.background;
+      toast.style.color = toastDefaultTheme.color;
+    }
+  };
   const hideToast = () => {
     toast.style.opacity = "0";
     toast.style.transform = "translate(-50%, -20px)";
-    activeToastKey = null;
+    activeToast = null;
+    applyToastTheme();
   };
-  const showToast = (key, duration = 2600) => {
-    activeToastKey = key;
-    toast.textContent = translator.t(key);
+  const showToast = (key, duration = 2600, params = undefined, options = {}) => {
+    const resolvedParams = (params && typeof params === "object") ? params : {};
+    activeToast = { key, params: resolvedParams, options: options || {} };
+    applyToastTheme(activeToast.options);
+    toast.textContent = translator.t(key, resolvedParams);
     toast.style.opacity = "1";
     toast.style.transform = "translate(-50%, 0)";
     if (toastTimer) clearTimeout(toastTimer);
@@ -653,13 +684,45 @@ function createOverlay(game) {
     }, Math.max(1200, duration));
   };
   const updateToastLanguage = () => {
-    if (activeToastKey) {
-      toast.textContent = translator.t(activeToastKey);
+    if (activeToast) {
+      applyToastTheme(activeToast.options);
+      toast.textContent = translator.t(activeToast.key, activeToast.params);
     }
   };
   let joinObserver = null;
   let joinCheckTimer = null;
   let lastJoinVisible = false;
+
+  const listLabelKey = (type) => {
+    switch (type) {
+      case 'foul': return 'dualFoul';
+      case 'pokemon': return 'dualPokemon';
+      case 'minerals': return 'dualMinerals';
+      case 'rare': return 'dualRare';
+      default: return 'sectionWords';
+    }
+  };
+
+  const describeLanguage = (langCode) => {
+    if (typeof game.languageDisplayName === 'function') {
+      try { return game.languageDisplayName(langCode); }
+      catch (_) { /* ignore */ }
+    }
+    return langCode || '';
+  };
+
+  game._notifyWordListIssue = (issue = {}) => {
+    if (!issue || typeof issue !== 'object') return;
+    const kind = issue.type;
+    const languageName = describeLanguage(issue.lang || game.lang);
+    if (kind === 'fallback') {
+      const listKey = listLabelKey(issue.list);
+      const listLabel = translator.t(listKey);
+      showToast('errorWordListFallback', 4200, { list: listLabel, language: languageName }, { theme: 'error' });
+    } else if (kind === 'mainFailure') {
+      showToast('errorWordListMainFailure', 5200, { language: languageName }, { theme: 'error' });
+    }
+  };
 
   // HUD
   const box = document.createElement("div");
@@ -1736,6 +1799,7 @@ function createOverlay(game) {
     if (tone === "pokemon") return { bg:"rgba(250,204,21,0.22)", border:"rgba(234,179,8,0.6)", color:"#fde047" };
     if (tone === "minerals") return { bg:"rgba(120,53,15,0.28)", border:"rgba(146,64,14,0.65)", color:"#fcd34d" };
     if (tone === "rare") return { bg:"rgba(14,165,233,0.22)", border:"rgba(6,182,212,0.6)", color:"#bae6fd" };
+    if (tone === "coverage") return { bg:"rgba(45,212,191,0.24)", border:"rgba(20,184,166,0.65)", color:"#99f6e4" };
     if (tone === "hyphen") return { bg:"rgba(236,72,153,0.20)", border:"rgba(244,114,182,0.6)", color:"#fbcfe8" };
     if (tone === "contains") return { bg:"rgba(59,130,246,0.20)", border:"rgba(59,130,246,0.55)", color:"#bfdbfe" };
     if (tone === "lengthExact") return { bg:"rgba(74,222,128,0.18)", border:"rgba(74,222,128,0.55)", color:"#bbf7d0" };
