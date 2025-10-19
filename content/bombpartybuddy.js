@@ -68,6 +68,22 @@ function createOverlay(game) {
     zIndex: "2147483647", userSelect: "none",
   });
 
+  const SUGGESTION_FONT_STACK = '"Atkinson Hyperlegible",Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif';
+
+  const ensureSuggestionFontLoaded = () => {
+    const FONT_LINK_ID = "bombpartybuddy-font-atkinson";
+    if (document.getElementById(FONT_LINK_ID)) return;
+    const head = document.head || document.getElementsByTagName("head")[0];
+    if (!head) return;
+    const link = document.createElement("link");
+    link.id = FONT_LINK_ID;
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap";
+    head.appendChild(link);
+  };
+
+  try { ensureSuggestionFontLoaded(); } catch (_) { /* ignore font load issues */ }
+
   const STORAGE_KEY = "bombpartybuddy.settings.v1";
   const SESSION_KEY = "bombpartybuddy.session.v1";
 
@@ -922,7 +938,7 @@ function createOverlay(game) {
   const applyToggleBtn = (btn, on, scheme = "default", mode = "status") => applyToggleStyle(btn, !!on, scheme, mode);
 
   const priorityControls = new Map();
-  const priorityKeys = ["contains", "foul", "coverage", "hyphen", "length"];
+  const priorityKeys = ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"];
   const attachPriorityControl = (row, key) => {
     if (!row || !row._labelSpan || priorityControls.has(key)) return;
     const span = row._labelSpan;
@@ -1603,6 +1619,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(pokemonRow);
   wordModesBody.appendChild(pokemonRow);
+  attachPriorityControl(pokemonRow, "pokemon");
 
   const mineralsRow = mkDualRow("dualMinerals", [
     { labelKey: "labelMe", onClick: () => game.toggleMineralsMode(), getOn: () => game.mineralsMode, scheme: "brown", recompute: true },
@@ -1610,6 +1627,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(mineralsRow);
   wordModesBody.appendChild(mineralsRow);
+  attachPriorityControl(mineralsRow, "minerals");
 
   const rareRow = mkDualRow("dualRare", [
     { labelKey: "labelMe", onClick: () => game.toggleRareMode(), getOn: () => game.rareMode, scheme: "cyan", recompute: true },
@@ -1617,6 +1635,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(rareRow);
   wordModesBody.appendChild(rareRow);
+  attachPriorityControl(rareRow, "rare");
 
   const lenDualRow = mkDualRow("dualTargetLength", [
     { labelKey: "labelMe", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green", recompute: true },
@@ -1830,6 +1849,7 @@ function createOverlay(game) {
         color:styles.color,
         fontWeight:"700",
         fontSize:"0.92em",
+        fontFamily: SUGGESTION_FONT_STACK,
         transition:"transform 0.15s ease, background 0.15s ease",
         display:"inline-flex",
         alignItems:"center",
@@ -1856,6 +1876,7 @@ function createOverlay(game) {
           borderRadius:"999px",
           fontSize:"0.7rem",
           fontWeight:"600",
+          fontFamily: SUGGESTION_FONT_STACK,
           pointerEvents:"none",
           opacity:"0",
           transition:"opacity 0.18s ease, transform 0.18s ease",
@@ -2383,6 +2404,10 @@ async function setupBuddy() {
         game.generateSpectatorSuggestions(data.syllable, game.suggestionsLimit);
       }
       render();
+    } else if (data.type === "playerWord") {
+      if (data.myTurn) {
+        game.recordSelfSubmittedWord(data.word);
+      }
     } else if (data.type === "correctWord") {
       game.onCorrectWord(data.word, !!data.myTurn);
       render();

@@ -114,7 +114,7 @@ class Game {
     this.suggestionsLimit = 5;
 
     // Priority order (highest priority first)
-    this.priorityOrder = ["contains", "foul", "coverage", "hyphen", "length"];
+    this.priorityOrder = ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"];
 
     // Timing
     this.speed = 5;               // 1..12 (fastest unchanged; slowest slower)
@@ -142,6 +142,7 @@ class Game {
     this._roundPool = [];
     this._roundCandidatesDetailed = [];
     this._roundSelectionContext = null;
+    this._lastSelfSubmittedWord = "";
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -220,6 +221,7 @@ class Game {
     this.myTurn = next;
     if (prev && !next) {
       this._clearPendingSubmission();
+      this._lastSelfSubmittedWord = "";
     }
   }
 
@@ -560,7 +562,7 @@ class Game {
     this.mistakesProb = isFinite(n) ? n : 0.08;
   }
 
-  priorityFeatures() { return ["contains", "foul", "coverage", "hyphen", "length"]; }
+  priorityFeatures() { return ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"]; }
 
   _ensurePriorityOrder(order = this.priorityOrder) {
     const base = this.priorityFeatures();
@@ -807,6 +809,28 @@ class Game {
     return counts;
   }
 
+  recordSelfSubmittedWord(word) {
+    const raw = (word || '').toString();
+    this._lastSelfSubmittedWord = raw.trim();
+  }
+
+  _resolveSubmittedWord(word, pending, recorded, myTurn) {
+    const primary = (word || '').toString();
+    if (primary && primary.trim()) return primary;
+    if (!myTurn) return primary;
+    const candidates = [
+      pending?.finalWord,
+      pending?.word,
+      recorded
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const str = candidate.toString();
+      if (str && str.trim()) return str;
+    }
+    return primary;
+  }
+
   _maybeResetCoverageOnComplete() {
     let hasPositiveTarget = false;
     for (let i = 0; i < 26; i++) {
@@ -940,23 +964,17 @@ class Game {
       };
     }
 
-    const specialPriority = ['foul', 'pokemon', 'minerals', 'rare'];
-    const specialRanks = { foul: 4, pokemon: 3, minerals: 2, rare: 1 };
+    const specialFeatures = ['foul', 'pokemon', 'minerals', 'rare'];
 
     const candidates = Array.from(candidateMap.values()).map(info => {
       const word = info.word;
       const lower = word.toLowerCase();
-      let specialType = null;
-      let specialRank = 0;
-      for (const type of specialPriority) {
-        const enabled = (type === 'foul' ? foulMode : type === 'pokemon' ? pokemonMode : type === 'minerals' ? mineralsMode : rareMode);
-        if (!enabled) continue;
-        if (info.sources.has(type)) {
-          specialType = type;
-          specialRank = specialRanks[type];
-          break;
-        }
-      }
+      const specialMatches = {
+        foul: info.sources.has('foul'),
+        pokemon: info.sources.has('pokemon'),
+        minerals: info.sources.has('minerals'),
+        rare: info.sources.has('rare')
+      };
 
       const containsIdx = containsActive ? lower.indexOf(containsNeedle) : -1;
       const containsMatch = containsIdx >= 0 ? 1 : 0;
@@ -987,8 +1005,7 @@ class Game {
       return {
         word,
         lower,
-        specialType,
-        specialRank,
+        specialMatches,
         containsMatch,
         containsIdx,
         hyphenMatch,
@@ -999,6 +1016,14 @@ class Game {
         tone: 'default'
       };
     });
+
+    const matchesFeature = (candidate, feature) => !!(candidate.specialMatches && candidate.specialMatches[feature]);
+    const hasActiveSpecial = (candidate) => (
+      (foulMode && matchesFeature(candidate, 'foul')) ||
+      (pokemonMode && matchesFeature(candidate, 'pokemon')) ||
+      (mineralsMode && matchesFeature(candidate, 'minerals')) ||
+      (rareMode && matchesFeature(candidate, 'rare'))
+    );
 
     if (lengthMode && !coverageMode && candidates.length) {
       const hasExact = candidates.some(c => c.lengthCategory === 2);
@@ -1041,7 +1066,7 @@ class Game {
     }
 
     if (lengthMode && coverageMode && workingCandidates.length) {
-      const capped = workingCandidates.filter(c => c.word.length <= targetLen || c.specialRank > 0);
+      const capped = workingCandidates.filter(c => c.word.length <= targetLen || hasActiveSpecial(c));
       if (capped.length) {
         flags.lenCapApplied = true;
         if (capped.length !== workingCandidates.length) {
@@ -1050,12 +1075,12 @@ class Game {
           workingCandidates = capped;
         }
       } else {
-        const nonSpecial = workingCandidates.filter(c => c.specialRank === 0);
+        const nonSpecial = workingCandidates.filter(c => !hasActiveSpecial(c));
         if (nonSpecial.length) {
           const minLen = Math.min(...nonSpecial.map(c => c.word.length));
-          const fallbackPool = workingCandidates.filter(c => c.specialRank > 0 || c.word.length === minLen);
+          const fallbackPool = workingCandidates.filter(c => hasActiveSpecial(c) || c.word.length === minLen);
           fallbackPool.forEach(c => {
-            if (c.specialRank === 0 && c.word.length === minLen && c.lengthCategory === 0) {
+            if (!hasActiveSpecial(c) && c.word.length === minLen && c.lengthCategory === 0) {
               c.lengthCategory = 1;
               c.lengthDistance = Math.abs(c.word.length - targetLen);
             }
@@ -1065,6 +1090,13 @@ class Game {
         flags.lenCapRelaxed = true;
       }
     }
+
+    const compareSpecial = (feature, enabled, a, b) => {
+      if (!enabled) return 0;
+      const diff = (matchesFeature(b, feature) ? 1 : 0) - (matchesFeature(a, feature) ? 1 : 0);
+      if (diff !== 0) return diff;
+      return 0;
+    };
 
     const comparators = {
       contains: (a, b) => {
@@ -1076,10 +1108,10 @@ class Game {
         }
         return 0;
       },
-      foul: (a, b) => {
-        if (!foulMode && !pokemonMode && !mineralsMode && !rareMode) return 0;
-        return (b.specialRank - a.specialRank);
-      },
+      foul: (a, b) => compareSpecial('foul', foulMode, a, b),
+      pokemon: (a, b) => compareSpecial('pokemon', pokemonMode, a, b),
+      minerals: (a, b) => compareSpecial('minerals', mineralsMode, a, b),
+      rare: (a, b) => compareSpecial('rare', rareMode, a, b),
       coverage: (a, b) => {
         if (!coverageMode) return 0;
         const diff = b.coverageScore - a.coverageScore;
@@ -1119,7 +1151,10 @@ class Game {
       let tone = null;
       for (const feature of priority) {
         if (feature === 'contains' && containsActive && candidate.containsMatch) { tone = 'contains'; break; }
-        if (feature === 'foul' && candidate.specialRank > 0) { tone = candidate.specialType || 'default'; break; }
+        if (feature === 'foul' && foulMode && matchesFeature(candidate, 'foul')) { tone = 'foul'; break; }
+        if (feature === 'pokemon' && pokemonMode && matchesFeature(candidate, 'pokemon')) { tone = 'pokemon'; break; }
+        if (feature === 'minerals' && mineralsMode && matchesFeature(candidate, 'minerals')) { tone = 'minerals'; break; }
+        if (feature === 'rare' && rareMode && matchesFeature(candidate, 'rare')) { tone = 'rare'; break; }
         if (feature === 'hyphen' && hyphenMode && candidate.hyphenMatch) { tone = 'hyphen'; break; }
         if (feature === 'length' && lengthMode && !coverageMode) {
           if (candidate.lengthCategory === 2) { tone = 'lengthExact'; break; }
@@ -1130,8 +1165,11 @@ class Game {
         tone = 'coverage';
       }
       if (!tone) {
-        if (candidate.specialRank > 0) tone = candidate.specialType;
-        else if (lengthMode && !coverageMode) {
+        for (const feature of specialFeatures) {
+          const modeActive = feature === 'foul' ? foulMode : feature === 'pokemon' ? pokemonMode : feature === 'minerals' ? mineralsMode : rareMode;
+          if (modeActive && matchesFeature(candidate, feature)) { tone = feature; break; }
+        }
+        if (!tone && lengthMode && !coverageMode) {
           if (candidate.lengthCategory === 2) tone = 'lengthExact';
           else if (candidate.lengthCategory === 1) tone = 'lengthFlex';
         }
@@ -1148,7 +1186,7 @@ class Game {
     }
 
     if (lengthMode && (foulMode || pokemonMode || mineralsMode || rareMode)) {
-      const specialCount = workingCandidates.filter(c => c.specialRank > 0).length;
+      const specialCount = workingCandidates.filter(c => hasActiveSpecial(c)).length;
       if (specialCount >= lim && !coverageMode) {
         flags.lenSuppressed = true;
       }
@@ -1164,8 +1202,7 @@ class Game {
       word: c.word,
       lower: c.lower,
       rank: c.rank,
-      specialType: c.specialType,
-      specialRank: c.specialRank,
+      specialMatches: Object.assign({}, c.specialMatches),
       containsMatch: c.containsMatch,
       containsIdx: c.containsIdx,
       hyphenMatch: c.hyphenMatch,
@@ -1320,6 +1357,7 @@ class Game {
     const attemptBase = Math.max(0, Number(baseAttempt) || 0);
     this._pendingSubmission = {
       word: word,
+      finalWord: null,
       ignorePostfix: !!ignorePostfix,
       syllable: this.syllable,
       round: this.selfRound,
@@ -1586,6 +1624,7 @@ class Game {
   _pickNextNotFailed() {
     const detailed = Array.isArray(this._roundCandidatesDetailed) ? this._roundCandidatesDetailed : [];
     const context = this._roundSelectionContext || {};
+    const matchSpecial = (candidate, feature) => !!(candidate.specialMatches && candidate.specialMatches[feature]);
     if (detailed.length) {
       const available = detailed.filter(c => !this._roundFailed.has(c.lower));
       if (available.length) {
@@ -1596,9 +1635,20 @@ class Game {
             const matches = pool.filter(c => c.containsMatch > 0);
             if (matches.length) { pool = matches; continue; }
           }
-          if (feature === 'foul' && (context.foulMode || context.pokemonMode || context.mineralsMode || context.rareMode)) {
-            const bestRank = Math.max(...pool.map(c => c.specialRank || 0));
-            const matches = pool.filter(c => (c.specialRank || 0) === bestRank);
+          if (feature === 'foul' && context.foulMode) {
+            const matches = pool.filter(c => matchSpecial(c, 'foul'));
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'pokemon' && context.pokemonMode) {
+            const matches = pool.filter(c => matchSpecial(c, 'pokemon'));
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'minerals' && context.mineralsMode) {
+            const matches = pool.filter(c => matchSpecial(c, 'minerals'));
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'rare' && context.rareMode) {
+            const matches = pool.filter(c => matchSpecial(c, 'rare'));
             if (matches.length) { pool = matches; continue; }
           }
           if (feature === 'coverage' && context.coverageMode) {
@@ -1718,6 +1768,7 @@ class Game {
       if (!expectedValue) {
         return;
       }
+      this.recordSelfSubmittedWord(expectedValue);
       const enterOpts = { key: "Enter", code: "Enter", which: 13, keyCode: 13, bubbles: true, cancelable: true };
       input.dispatchEvent(new KeyboardEvent("keydown", enterOpts));
       input.dispatchEvent(new KeyboardEvent("keypress", enterOpts));
@@ -1731,6 +1782,9 @@ class Game {
       }
 
       this._trackPendingSubmission(word, ignorePostfix, attemptSeed);
+      if (this._pendingSubmission) {
+        this._pendingSubmission.finalWord = expectedValue;
+      }
     } finally {
       cleanup();
     }
@@ -1738,8 +1792,11 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
+    const pending = this._pendingSubmission;
+    const recorded = this._lastSelfSubmittedWord;
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const resolvedWord = this._resolveSubmittedWord(word, pending, recorded, myTurn);
+    const normalizedInfo = this._normalizeWordForLog(resolvedWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1747,23 +1804,41 @@ class Game {
         outcome: 'correct'
       });
     }
-    if (!myTurn) return;
+    if (!myTurn) {
+      this._lastSelfSubmittedWord = "";
+      return;
+    }
     // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+    const resolvedLower = (resolvedWord || "").toString().toLowerCase();
+    const letters = this._lettersOf(resolvedLower);
+    let changed = false;
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
-      }
+      if (idx < 0 || idx >= 26) return;
+      const target = Math.max(0, this.targetCounts[idx] || 0);
+      if (target <= 0) return;
+      const current = this.coverageCounts[idx] || 0;
+      const remaining = Math.max(0, target - current);
+      if (remaining <= 0) return;
+      const increment = Math.min(count, remaining);
+      if (increment <= 0) return;
+      this.coverageCounts[idx] = current + increment;
+      changed = true;
     });
-    this._maybeResetCoverageOnComplete();
-    this._emitTalliesChanged();
+    if (changed) {
+      this._maybeResetCoverageOnComplete();
+      this._emitTalliesChanged();
+    }
+    this._lastSelfSubmittedWord = "";
   }
 
   onFailedWord(myTurn, word, reason) {
-    this._reportInvalid(word, reason, myTurn).catch(() => {});
+    const pending = this._pendingSubmission;
+    const recorded = this._lastSelfSubmittedWord;
+    const resolvedWord = this._resolveSubmittedWord(word, pending, recorded, myTurn);
+    this._reportInvalid(resolvedWord, reason, myTurn).catch(() => {});
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const normalizedInfo = this._normalizeWordForLog(resolvedWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1771,15 +1846,19 @@ class Game {
         outcome: 'fail'
       });
     }
-    if (!myTurn) return;
-    if (word) {
-      const normalizedRaw = (word || "").toLowerCase();
+    if (!myTurn) {
+      this._lastSelfSubmittedWord = "";
+      return;
+    }
+    if (resolvedWord) {
+      const normalizedRaw = (resolvedWord || "").toLowerCase();
       const normalized = normalizedRaw.trim();
       if (normalized) this._roundFailed.add(normalized);
       if (normalizedInfo && normalizedInfo.normalized) {
         this._roundFailed.add(normalizedInfo.normalized);
       }
     }
+    this._lastSelfSubmittedWord = "";
     if (this.paused) return;
     const next = this._pickNextNotFailed();
     if (next) this.typeAndSubmit(next).catch(() => {});

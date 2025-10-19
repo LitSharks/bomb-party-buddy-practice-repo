@@ -1,5 +1,8 @@
 ﻿// injected.js
 
+let actual_word;
+const lastPlayerWords = new Map();
+
 socket.on("setup", (data) => {
   if (data.milestone.name != "round") return;
   window.postMessage({
@@ -29,22 +32,33 @@ socket.on("nextTurn", (playerId, syllable) => {
 });
 
 socket.on("failWord", (playerId, reason) => {
+  const word = lastPlayerWords.get(playerId) ?? actual_word;
   window.postMessage({
     type: "failWord",
     myTurn: playerId === selfPeerId,
-    word: actual_word,
+    word: word,
     reason: reason,
   }, "*");
 });
 
 socket.on("correctWord", (playerId) => {
+  const word = lastPlayerWords.get(playerId) ?? actual_word;
   window.postMessage({
     type: "correctWord",
-    word: actual_word,
+    word: word,
     myTurn: playerId === selfPeerId,
   }, "*");
 });
-
-let actual_word;
-socket.on("setPlayerWord", (_, word) => (actual_word = word));
+socket.on("setPlayerWord", (playerId, word) => {
+  actual_word = word;
+  if (playerId !== undefined && playerId !== null) {
+    lastPlayerWords.set(playerId, word);
+  }
+  window.postMessage({
+    type: "playerWord",
+    playerId: playerId,
+    word: word,
+    myTurn: playerId === selfPeerId,
+  }, "*");
+});
 
