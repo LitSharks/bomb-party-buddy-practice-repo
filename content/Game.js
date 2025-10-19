@@ -15,23 +15,6 @@ const WORD_CACHE = new Map();
 const WORD_CACHE_LOADING = new Map();
 const WORD_CACHE_TTL_MS = 5 * 60 * 1000;
 
-const LOCAL_MAIN_LISTS = Object.freeze({
-  "en": "words1/en.txt",
-  "de": "words1/de.txt",
-  "fr": "words1/fr.txt",
-  "es": "words1/es.txt",
-  "pt-br": "words1/pt-br.txt",
-  "nah": "words1/nah.txt",
-  "pok-en": "words1/pok-en.txt",
-  "pok-fr": "words1/pok-fr.txt",
-  "pok-de": "words1/pok-de.txt"
-});
-
-const LOCAL_FOUL_LISTS = Object.freeze({
-  "en": "words1/foul-words-en.txt",
-  "default": "words1/foul-words-en.txt"
-});
-
 const LANGUAGE_LABELS = Object.freeze({
   "en": { short: "EN", name: "English" },
   "de": { short: "DE", name: "Deutsch" },
@@ -76,19 +59,6 @@ function toWordArrayFromText(text) {
     pushWordCandidate(out, seen, line);
   }
   return out;
-}
-
-async function fetchLocalText(path) {
-  if (!path) return '';
-  try {
-    const url = chrome.runtime.getURL(path);
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return '';
-    return await res.text();
-  } catch (err) {
-    console.warn('[BombPartyShark] Failed to load local word list', path, err);
-    return '';
-  }
 }
 
 class Game {
@@ -274,7 +244,11 @@ class Game {
       "pokemon (fr)": "pok-fr", "pok-fr": "pok-fr",
       "pokemon (de)": "pok-de", "pok-de": "pok-de"
     };
-    return map[s] || map[raw] || "en";
+    const direct = map[s] || map[raw];
+    if (direct) return direct;
+    if (s.includes('portugu') || raw.includes('portugu')) return 'pt-br';
+    if (s.includes('brasil') || raw.includes('brasil') || s.includes('brazil') || raw.includes('brazil')) return 'pt-br';
+    return "en";
   }
 
   languageInfo(lang = this.lang) {
@@ -331,6 +305,16 @@ class Game {
     });
   }
 
+  _emitWordListError(info) {
+    if (typeof this._notifyWordListError === 'function') {
+      try {
+        this._notifyWordListError(info || {});
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+
 
   async loadWordlists() {
     const lang = this.lang;
@@ -381,11 +365,18 @@ class Game {
     let pokemonTxt = '';
     let mineralsTxt = '';
     let rareTxt = '';
+    let mainNotified = false;
+    let foulNotified = false;
+    let pokemonNotified = false;
+    let mineralsNotified = false;
+    let rareNotified = false;
 
     try {
       mainTxt = await this.extFetch(mainUrl);
     } catch (err) {
       console.warn('[BombPartyShark] Failed to load main word list from API for', lang, err);
+      this._emitWordListError({ type: 'main-failed', lang, error: err });
+      mainNotified = true;
     }
 
     try {
@@ -393,28 +384,36 @@ class Game {
     } catch (err) {
       const msg = (err && err.message) ? err.message : String(err || '');
       if (msg.includes('404')) {
-        console.info(`[BombPartyShark] No foul word list available from API for ${lang}; falling back to local default.`);
+        console.info(`[BombPartyShark] No foul word list available from API for ${lang}; using main list instead.`);
       } else {
         console.warn('[BombPartyShark] Failed to load foul word list from API for', lang, err);
       }
+      this._emitWordListError({ type: 'fallback', list: 'foul', lang, error: err });
+      foulNotified = true;
     }
 
     try {
       pokemonTxt = await this.extFetch(pokemonUrl);
     } catch (err) {
       console.warn('[BombPartyShark] Failed to load Pokémon word list from API for', lang, err);
+      this._emitWordListError({ type: 'fallback', list: 'pokemon', lang, error: err });
+      pokemonNotified = true;
     }
 
     try {
       mineralsTxt = await this.extFetch(mineralsUrl);
     } catch (err) {
       console.warn('[BombPartyShark] Failed to load minerals word list from API for', lang, err);
+      this._emitWordListError({ type: 'fallback', list: 'minerals', lang, error: err });
+      mineralsNotified = true;
     }
 
     try {
       rareTxt = await this.extFetch(rareUrl);
     } catch (err) {
       console.warn('[BombPartyShark] Failed to load rare word list from API for', lang, err);
+      this._emitWordListError({ type: 'fallback', list: 'rare', lang, error: err });
+      rareNotified = true;
     }
 
     let words = toWordArrayFromText(mainTxt);
@@ -424,23 +423,38 @@ class Game {
     let rareWords = toWordArrayFromText(rareTxt);
 
     if (!words.length) {
-      const localPath = LOCAL_MAIN_LISTS[lang] || LOCAL_MAIN_LISTS['en'];
-      if (localPath) {
-        const localTxt = await fetchLocalText(localPath);
-        words = toWordArrayFromText(localTxt);
+      if (!mainNotified) {
+        console.warn(`[BombPartyShark] Main word list from API was empty for ${lang}.`);
+        this._emitWordListError({ type: 'main-failed', lang });
+        mainNotified = true;
       }
-    }
-
-    if (!words.length) {
       throw new Error(`No word list available for language ${lang}`);
     }
 
     if (!foulWords.length) {
-      const foulPath = LOCAL_FOUL_LISTS[lang] || LOCAL_FOUL_LISTS.default;
-      if (foulPath) {
-        const foulLocalTxt = await fetchLocalText(foulPath);
-        foulWords = toWordArrayFromText(foulLocalTxt);
+      if (!foulNotified) {
+        console.info(`[BombPartyShark] Foul word list empty from API for ${lang}; using main list.`);
+        this._emitWordListError({ type: 'fallback', list: 'foul', lang });
+        foulNotified = true;
       }
+    }
+
+    if (!pokemonWords.length && !pokemonNotified) {
+      console.info(`[BombPartyShark] Pokémon word list empty from API for ${lang}; using main list.`);
+      this._emitWordListError({ type: 'fallback', list: 'pokemon', lang });
+      pokemonNotified = true;
+    }
+
+    if (!mineralWords.length && !mineralsNotified) {
+      console.info(`[BombPartyShark] Minerals word list empty from API for ${lang}; using main list.`);
+      this._emitWordListError({ type: 'fallback', list: 'minerals', lang });
+      mineralsNotified = true;
+    }
+
+    if (!rareWords.length && !rareNotified) {
+      console.info(`[BombPartyShark] Rare word list empty from API for ${lang}; using main list.`);
+      this._emitWordListError({ type: 'fallback', list: 'rare', lang });
+      rareNotified = true;
     }
 
     const letterWeights = Game.computeLetterWeights(words);
