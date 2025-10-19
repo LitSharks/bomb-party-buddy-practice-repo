@@ -793,7 +793,8 @@ class Game {
     const pre = word.slice(0, i);
     const mid = word.slice(i, i + syl.length);
     const post = word.slice(i + syl.length);
-    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em">${mid}</b>${post}`;
+    const highlightStyle = "font-weight:900;text-transform:uppercase;font-size:1.15em;font-family:'Roboto Mono','Noto Sans Mono','Cascadia Code','Fira Code','Source Code Pro','Consolas','Menlo',monospace";
+    return `${pre}<b style="${highlightStyle}">${mid}</b>${post}`;
   }
 
   _lettersOf(word) {
@@ -1738,24 +1739,44 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
+    const pending = this._pendingSubmission;
+    const pendingWord = pending?.word ? pending.word.toString() : '';
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+
+    const rawWord = (word || '').toString();
+    const resolvedWord = rawWord.trim() ? rawWord : pendingWord;
+    const normalizedInfo = this._normalizeWordForLog(resolvedWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
         fromSelf: !!myTurn,
         outcome: 'correct'
       });
+    } else if (resolvedWord.trim()) {
+      this._rememberWordUsage(resolvedWord, {
+        displayWord: resolvedWord,
+        fromSelf: !!myTurn,
+        outcome: 'correct'
+      });
     }
     if (!myTurn) return;
-    // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+    const coverageWord = normalizedInfo ? normalizedInfo.normalized : resolvedWord.trim().toLowerCase();
+    if (!coverageWord) return;
+    const letters = this._lettersOf(coverageWord);
+    let changed = false;
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
-      }
+      if (idx < 0 || idx >= 26) return;
+      const target = Math.max(0, this.targetCounts[idx] || 0);
+      if (target <= 0) return;
+      const current = Math.max(0, this.coverageCounts[idx] || 0);
+      if (current >= target) return;
+      const add = Math.min(count, target - current);
+      if (add <= 0) return;
+      this.coverageCounts[idx] = current + add;
+      changed = true;
     });
+    if (!changed) return;
     this._maybeResetCoverageOnComplete();
     this._emitTalliesChanged();
   }
