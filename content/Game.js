@@ -142,6 +142,7 @@ class Game {
     this._roundPool = [];
     this._roundCandidatesDetailed = [];
     this._roundSelectionContext = null;
+    this._lastSubmittedWord = null;
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -685,6 +686,32 @@ class Game {
     return { normalized: lower, display };
   }
 
+  _sanitizeSubmittedWord(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  _rememberLastSubmittedWord(word) {
+    const cleaned = this._sanitizeSubmittedWord(word);
+    if (!cleaned) return;
+    this._lastSubmittedWord = cleaned;
+  }
+
+  recordSubmittedWord(word) {
+    this._rememberLastSubmittedWord(word);
+  }
+
+  _resolveSubmittedWord(word, pending, myTurn) {
+    const direct = this._sanitizeSubmittedWord(word);
+    if (direct) return direct;
+    if (!myTurn) return direct;
+    const pendingWord = pending && this._sanitizeSubmittedWord(pending.word);
+    if (pendingWord) return pendingWord;
+    const lastWord = this._sanitizeSubmittedWord(this._lastSubmittedWord);
+    return lastWord || direct;
+  }
+
   _rememberWordUsage(word, meta = {}) {
     const raw = (word || '').toString();
     const normalized = raw.trim().toLowerCase();
@@ -793,7 +820,7 @@ class Game {
     const pre = word.slice(0, i);
     const mid = word.slice(i, i + syl.length);
     const post = word.slice(i + syl.length);
-    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em">${mid}</b>${post}`;
+    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em;font-family:'Noto Sans Mono','JetBrains Mono','Cascadia Mono','Consolas','Menlo','Monaco','Liberation Mono','Courier New',monospace;font-variant-ligatures:none;letter-spacing:0.02em">${mid}</b>${post}`;
   }
 
   _lettersOf(word) {
@@ -1307,8 +1334,10 @@ class Game {
   }
 
   _clearPendingSubmission() {
+    const pending = this._pendingSubmission;
     this._cancelPendingSubmissionTimer();
     this._pendingSubmission = null;
+    return pending;
   }
 
   clearPendingSubmission() {
@@ -1318,6 +1347,7 @@ class Game {
   _trackPendingSubmission(word, ignorePostfix, baseAttempt = 0) {
     this._cancelPendingSubmissionTimer();
     const attemptBase = Math.max(0, Number(baseAttempt) || 0);
+    this._rememberLastSubmittedWord(word);
     this._pendingSubmission = {
       word: word,
       ignorePostfix: !!ignorePostfix,
@@ -1738,8 +1768,12 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
-    this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const pending = this._clearPendingSubmission();
+    const effectiveWord = this._resolveSubmittedWord(word, pending, myTurn);
+    if (myTurn) {
+      this._rememberLastSubmittedWord(effectiveWord || word);
+    }
+    const normalizedInfo = this._normalizeWordForLog(effectiveWord || word);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1749,11 +1783,18 @@ class Game {
     }
     if (!myTurn) return;
     // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+    const letters = this._lettersOf(((effectiveWord || word || "")).toLowerCase());
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
+      if (idx >= 0 && idx < 26) {
+        const target = Math.max(0, this.targetCounts[idx] || 0);
+        if (target <= 0) return;
+        const have = Math.max(0, this.coverageCounts[idx] || 0);
+        const need = Math.max(0, target - have);
+        if (need <= 0) return;
+        const contribution = Math.min(need, count);
+        if (contribution <= 0) return;
+        this.coverageCounts[idx] = Math.min(target, have + contribution);
       }
     });
     this._maybeResetCoverageOnComplete();
@@ -1761,9 +1802,18 @@ class Game {
   }
 
   onFailedWord(myTurn, word, reason) {
-    this._reportInvalid(word, reason, myTurn).catch(() => {});
-    this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const pending = this._clearPendingSubmission();
+    const effectiveWord = this._resolveSubmittedWord(word, pending, myTurn);
+    if (myTurn) {
+      this._rememberLastSubmittedWord(effectiveWord || word);
+    }
+    const reportWord = this._sanitizeSubmittedWord(effectiveWord || word);
+    if (reportWord) {
+      this._reportInvalid(reportWord, reason, myTurn).catch(() => {});
+    } else {
+      this._reportInvalid(word, reason, myTurn).catch(() => {});
+    }
+    const normalizedInfo = this._normalizeWordForLog(effectiveWord || word);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1772,8 +1822,9 @@ class Game {
       });
     }
     if (!myTurn) return;
-    if (word) {
-      const normalizedRaw = (word || "").toLowerCase();
+    const failureWord = effectiveWord || word;
+    if (failureWord) {
+      const normalizedRaw = (failureWord || "").toLowerCase();
       const normalized = normalizedRaw.trim();
       if (normalized) this._roundFailed.add(normalized);
       if (normalizedInfo && normalizedInfo.normalized) {

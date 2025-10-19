@@ -2383,6 +2383,10 @@ async function setupBuddy() {
         game.generateSpectatorSuggestions(data.syllable, game.suggestionsLimit);
       }
       render();
+    } else if (data.type === "setPlayerWord") {
+      if (data.myTurn) {
+        game.recordSubmittedWord(data.word);
+      }
     } else if (data.type === "correctWord") {
       game.onCorrectWord(data.word, !!data.myTurn);
       render();

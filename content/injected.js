@@ -46,5 +46,12 @@ socket.on("correctWord", (playerId) => {
 });
 
 let actual_word;
-socket.on("setPlayerWord", (_, word) => (actual_word = word));
+socket.on("setPlayerWord", (playerId, word) => {
+  actual_word = word;
+  window.postMessage({
+    type: "setPlayerWord",
+    myTurn: playerId === selfPeerId,
+    word: word,
+  }, "*");
+});
 
