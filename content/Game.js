@@ -173,7 +173,7 @@ class Game {
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
-    this.excludeEnabled = false;
+    this.excludeEnabled = true;
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
     this._targetsManualOverride = false;
@@ -599,8 +599,10 @@ class Game {
     this.priorityOrder = order;
   }
 
-  setExcludeEnabled(b) {
-    this.excludeEnabled = !!b;
+  setExcludeEnabled() {
+    if (!this.excludeEnabled) {
+      this.excludeEnabled = true;
+    }
     if (!this._targetsManualOverride) this.recomputeTargets();
   }
   setExcludeSpec(spec) {
@@ -822,29 +824,55 @@ class Game {
     this.resetCoverage();
   }
 
+  _applyCoverageTallies(word) {
+    if (!word) return;
+    const letters = this._lettersOf(word.toLowerCase());
+    letters.forEach((count, c) => {
+      const idx = c.charCodeAt(0) - 97;
+      if (idx < 0 || idx >= 26) return;
+      const target = Math.max(0, this.targetCounts[idx] || 0);
+      if (target <= 0) return;
+      const have = Math.max(0, this.coverageCounts[idx] || 0);
+      const remaining = target - have;
+      if (remaining <= 0) return;
+      const gain = Math.min(remaining, Math.max(0, count || 0));
+      if (gain <= 0) return;
+      this.coverageCounts[idx] = have + gain;
+    });
+  }
+
   // Coverage score:
   //  - 1 * weight for each still-needed letter
   //  - +1 * weight extra if that letter is one-away (have == target-1)
   //  - small noise for tie-breaks
-  _coverageScore(word) {
+  _coverageMetrics(word) {
     const letters = this._lettersOf(word);
     let score = 0;
+    let gain = 0;
+    let unique = 0;
+    let finishing = 0;
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      const have = this.coverageCounts[idx] || 0;
-      const want = this.targetCounts[idx] || 0;
-      if (want <= 0) return;            // excluded/ignored
+      if (idx < 0 || idx >= 26) return;
+      const want = Math.max(0, this.targetCounts[idx] || 0);
+      if (want <= 0) return;
+      const have = Math.max(0, this.coverageCounts[idx] || 0);
       if (have >= want) return;
-      const need = Math.max(0, want - have);
-      const contribution = Math.min(count, need);
+      const need = want - have;
+      const contribution = Math.min(Math.max(0, count || 0), need);
       if (contribution <= 0) return;
-      const w = this.letterWeights[idx] || 1;
-      score += contribution * w;
+      const weight = this.letterWeights[idx] || 1;
+      gain += contribution;
+      unique += 1;
+      score += contribution * weight;
       if (have + contribution >= want) {
-        score += 1 * w; // finishing this letter
+        finishing += weight;
       }
     });
-    return score;
+    if (score > 0 && finishing > 0) {
+      score += finishing * 0.5;
+    }
+    return { score, gain, unique, finishing };
   }
 
   _pickCandidatesBase(syllable, pool) {
@@ -982,7 +1010,17 @@ class Game {
         }
       }
 
-      const coverageScore = coverageMode ? this._coverageScore(lower) : 0;
+      let coverageScore = 0;
+      let coverageGain = 0;
+      let coverageUnique = 0;
+      let coverageFinish = 0;
+      if (coverageMode) {
+        const metrics = this._coverageMetrics(lower);
+        coverageScore = metrics.score || 0;
+        coverageGain = metrics.gain || 0;
+        coverageUnique = metrics.unique || 0;
+        coverageFinish = metrics.finishing || 0;
+      }
 
       return {
         word,
@@ -996,6 +1034,9 @@ class Game {
         lengthTone,
         lengthDistance,
         coverageScore,
+        coverageGain,
+        coverageUnique,
+        coverageFinish,
         tone: 'default'
       };
     });
@@ -1082,9 +1123,15 @@ class Game {
       },
       coverage: (a, b) => {
         if (!coverageMode) return 0;
-        const diff = b.coverageScore - a.coverageScore;
-        if (diff !== 0) return diff;
-        return a.word.length - b.word.length;
+        const scoreDiff = (b.coverageScore || 0) - (a.coverageScore || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        const gainDiff = (b.coverageGain || 0) - (a.coverageGain || 0);
+        if (gainDiff !== 0) return gainDiff;
+        const uniqueDiff = (b.coverageUnique || 0) - (a.coverageUnique || 0);
+        if (uniqueDiff !== 0) return uniqueDiff;
+        const finishDiff = (b.coverageFinish || 0) - (a.coverageFinish || 0);
+        if (finishDiff !== 0) return finishDiff;
+        return b.word.length - a.word.length;
       },
       hyphen: (a, b) => {
         if (!hyphenMode) return 0;
@@ -1099,7 +1146,7 @@ class Game {
           if (closeDiff !== 0) return closeDiff;
         }
         if (coverageMode && a.word.length !== b.word.length) {
-          return a.word.length - b.word.length;
+          return b.word.length - a.word.length;
         }
         return 0;
       }
@@ -1110,8 +1157,11 @@ class Game {
         const cmp = (comparators[feature] || (() => 0))(a, b);
         if (cmp !== 0) return cmp;
       }
-      if (b.coverageScore !== a.coverageScore) return b.coverageScore - a.coverageScore;
-      if (a.word.length !== b.word.length) return a.word.length - b.word.length;
+      if ((b.coverageScore || 0) !== (a.coverageScore || 0)) return (b.coverageScore || 0) - (a.coverageScore || 0);
+      if ((b.coverageGain || 0) !== (a.coverageGain || 0)) return (b.coverageGain || 0) - (a.coverageGain || 0);
+      if ((b.coverageUnique || 0) !== (a.coverageUnique || 0)) return (b.coverageUnique || 0) - (a.coverageUnique || 0);
+      if ((b.coverageFinish || 0) !== (a.coverageFinish || 0)) return (b.coverageFinish || 0) - (a.coverageFinish || 0);
+      if (a.word.length !== b.word.length) return b.word.length - a.word.length;
       return a.word.localeCompare(b.word);
     });
 
@@ -1172,6 +1222,9 @@ class Game {
       lengthCategory: c.lengthCategory,
       lengthDistance: c.lengthDistance,
       coverageScore: c.coverageScore,
+      coverageGain: c.coverageGain,
+      coverageUnique: c.coverageUnique,
+      coverageFinish: c.coverageFinish,
       tone: c.tone
     }));
 
@@ -1758,19 +1811,7 @@ class Game {
     if (!myTurn) return;
     if (!resolvedWordRaw) return;
     // Only tally toward goals with target > 0 (respecting per-letter caps)
-    const letters = this._lettersOf(resolvedWordRaw.toLowerCase());
-    letters.forEach((count, c) => {
-      const idx = c.charCodeAt(0) - 97;
-      if (idx < 0 || idx >= 26) return;
-      const target = Math.max(0, this.targetCounts[idx] || 0);
-      if (target <= 0) return;
-      const current = Math.max(0, this.coverageCounts[idx] || 0);
-      const remaining = target - current;
-      if (remaining <= 0) return;
-      const gain = Math.min(remaining, Math.max(0, count || 0));
-      if (gain <= 0) return;
-      this.coverageCounts[idx] = current + gain;
-    });
+    this._applyCoverageTallies(resolvedWordRaw);
     this._maybeResetCoverageOnComplete();
     this._emitTalliesChanged();
   }

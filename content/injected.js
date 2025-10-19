@@ -28,23 +28,60 @@ socket.on("nextTurn", (playerId, syllable) => {
   }, "*");
 });
 
-socket.on("failWord", (playerId, reason) => {
+const lastPlayerWords = new Map();
+let actual_word;
+
+function rememberPlayerWord(playerId, word) {
+  if (typeof playerId === "string" && playerId.length) {
+    if (typeof word === "string") {
+      lastPlayerWords.set(playerId, word);
+    } else {
+      lastPlayerWords.delete(playerId);
+    }
+  }
+  if (typeof word === "string" && word.length) {
+    actual_word = word;
+  }
+}
+
+function resolvePlayerWord(playerId, fallback) {
+  if (typeof fallback === "string" && fallback.length) return fallback;
+  if (typeof playerId === "string" && lastPlayerWords.has(playerId)) {
+    return lastPlayerWords.get(playerId);
+  }
+  return typeof actual_word === "string" ? actual_word : "";
+}
+
+socket.on("failWord", (playerId, reason, providedWord) => {
+  const word = resolvePlayerWord(playerId, providedWord);
+  if (typeof playerId === "string") lastPlayerWords.delete(playerId);
   window.postMessage({
     type: "failWord",
     myTurn: playerId === selfPeerId,
-    word: actual_word,
+    word,
     reason: reason,
   }, "*");
 });
 
-socket.on("correctWord", (playerId) => {
+socket.on("correctWord", (playerId, providedWord) => {
+  const word = resolvePlayerWord(playerId, providedWord);
+  if (typeof playerId === "string") lastPlayerWords.delete(playerId);
   window.postMessage({
     type: "correctWord",
-    word: actual_word,
+    word,
     myTurn: playerId === selfPeerId,
   }, "*");
 });
 
-let actual_word;
-socket.on("setPlayerWord", (_, word) => (actual_word = word));
+socket.on("setPlayerWord", (...args) => {
+  let playerId = null;
+  let word = null;
+  if (args.length >= 2) {
+    playerId = args[0];
+    word = args[1];
+  } else if (args.length === 1) {
+    word = args[0];
+  }
+  rememberPlayerWord(playerId, word);
+});
 
