@@ -114,7 +114,7 @@ class Game {
     this.suggestionsLimit = 5;
 
     // Priority order (highest priority first)
-    this.priorityOrder = ["contains", "foul", "coverage", "hyphen", "length"];
+    this.priorityOrder = ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"];
 
     // Timing
     this.speed = 5;               // 1..12 (fastest unchanged; slowest slower)
@@ -142,6 +142,8 @@ class Game {
     this._roundPool = [];
     this._roundCandidatesDetailed = [];
     this._roundSelectionContext = null;
+
+    this._lastSubmittedWord = "";
 
     // Notice flags (for HUD messages)
     this.flagsRoundSelf = 0;
@@ -560,7 +562,9 @@ class Game {
     this.mistakesProb = isFinite(n) ? n : 0.08;
   }
 
-  priorityFeatures() { return ["contains", "foul", "coverage", "hyphen", "length"]; }
+  priorityFeatures() {
+    return ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"];
+  }
 
   _ensurePriorityOrder(order = this.priorityOrder) {
     const base = this.priorityFeatures();
@@ -793,7 +797,7 @@ class Game {
     const pre = word.slice(0, i);
     const mid = word.slice(i, i + syl.length);
     const post = word.slice(i + syl.length);
-    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em">${mid}</b>${post}`;
+    return `${pre}<b style="font-weight:900;text-transform:uppercase;font-size:1.15em;font-family:'Noto Sans Mono','Fira Code','Consolas','Menlo','Liberation Mono','Courier New',monospace;letter-spacing:0.35px">${mid}</b>${post}`;
   }
 
   _lettersOf(word) {
@@ -940,23 +944,22 @@ class Game {
       };
     }
 
-    const specialPriority = ['foul', 'pokemon', 'minerals', 'rare'];
     const specialRanks = { foul: 4, pokemon: 3, minerals: 2, rare: 1 };
 
     const candidates = Array.from(candidateMap.values()).map(info => {
       const word = info.word;
       const lower = word.toLowerCase();
+      const fromFoul = info.sources.has('foul');
+      const fromPokemon = info.sources.has('pokemon');
+      const fromMinerals = info.sources.has('minerals');
+      const fromRare = info.sources.has('rare');
       let specialType = null;
-      let specialRank = 0;
-      for (const type of specialPriority) {
-        const enabled = (type === 'foul' ? foulMode : type === 'pokemon' ? pokemonMode : type === 'minerals' ? mineralsMode : rareMode);
-        if (!enabled) continue;
-        if (info.sources.has(type)) {
-          specialType = type;
-          specialRank = specialRanks[type];
-          break;
-        }
-      }
+      if (fromFoul) specialType = 'foul';
+      else if (fromPokemon) specialType = 'pokemon';
+      else if (fromMinerals) specialType = 'minerals';
+      else if (fromRare) specialType = 'rare';
+      const specialRank = specialType ? (specialRanks[specialType] || 0) : 0;
+      const hasSpecial = fromFoul || fromPokemon || fromMinerals || fromRare;
 
       const containsIdx = containsActive ? lower.indexOf(containsNeedle) : -1;
       const containsMatch = containsIdx >= 0 ? 1 : 0;
@@ -989,6 +992,11 @@ class Game {
         lower,
         specialType,
         specialRank,
+        hasSpecial,
+        fromFoul,
+        fromPokemon,
+        fromMinerals,
+        fromRare,
         containsMatch,
         containsIdx,
         hyphenMatch,
@@ -1041,7 +1049,7 @@ class Game {
     }
 
     if (lengthMode && coverageMode && workingCandidates.length) {
-      const capped = workingCandidates.filter(c => c.word.length <= targetLen || c.specialRank > 0);
+      const capped = workingCandidates.filter(c => c.word.length <= targetLen || c.hasSpecial);
       if (capped.length) {
         flags.lenCapApplied = true;
         if (capped.length !== workingCandidates.length) {
@@ -1050,12 +1058,12 @@ class Game {
           workingCandidates = capped;
         }
       } else {
-        const nonSpecial = workingCandidates.filter(c => c.specialRank === 0);
+        const nonSpecial = workingCandidates.filter(c => !c.hasSpecial);
         if (nonSpecial.length) {
           const minLen = Math.min(...nonSpecial.map(c => c.word.length));
-          const fallbackPool = workingCandidates.filter(c => c.specialRank > 0 || c.word.length === minLen);
+          const fallbackPool = workingCandidates.filter(c => c.hasSpecial || c.word.length === minLen);
           fallbackPool.forEach(c => {
-            if (c.specialRank === 0 && c.word.length === minLen && c.lengthCategory === 0) {
+            if (!c.hasSpecial && c.word.length === minLen && c.lengthCategory === 0) {
               c.lengthCategory = 1;
               c.lengthDistance = Math.abs(c.word.length - targetLen);
             }
@@ -1077,8 +1085,20 @@ class Game {
         return 0;
       },
       foul: (a, b) => {
-        if (!foulMode && !pokemonMode && !mineralsMode && !rareMode) return 0;
-        return (b.specialRank - a.specialRank);
+        if (!foulMode) return 0;
+        return (Number(b.fromFoul) - Number(a.fromFoul));
+      },
+      pokemon: (a, b) => {
+        if (!pokemonMode) return 0;
+        return (Number(b.fromPokemon) - Number(a.fromPokemon));
+      },
+      minerals: (a, b) => {
+        if (!mineralsMode) return 0;
+        return (Number(b.fromMinerals) - Number(a.fromMinerals));
+      },
+      rare: (a, b) => {
+        if (!rareMode) return 0;
+        return (Number(b.fromRare) - Number(a.fromRare));
       },
       coverage: (a, b) => {
         if (!coverageMode) return 0;
@@ -1119,7 +1139,10 @@ class Game {
       let tone = null;
       for (const feature of priority) {
         if (feature === 'contains' && containsActive && candidate.containsMatch) { tone = 'contains'; break; }
-        if (feature === 'foul' && candidate.specialRank > 0) { tone = candidate.specialType || 'default'; break; }
+        if (feature === 'foul' && foulMode && candidate.fromFoul) { tone = 'foul'; break; }
+        if (feature === 'pokemon' && pokemonMode && candidate.fromPokemon) { tone = 'pokemon'; break; }
+        if (feature === 'minerals' && mineralsMode && candidate.fromMinerals) { tone = 'minerals'; break; }
+        if (feature === 'rare' && rareMode && candidate.fromRare) { tone = 'rare'; break; }
         if (feature === 'hyphen' && hyphenMode && candidate.hyphenMatch) { tone = 'hyphen'; break; }
         if (feature === 'length' && lengthMode && !coverageMode) {
           if (candidate.lengthCategory === 2) { tone = 'lengthExact'; break; }
@@ -1130,7 +1153,7 @@ class Game {
         tone = 'coverage';
       }
       if (!tone) {
-        if (candidate.specialRank > 0) tone = candidate.specialType;
+        if (candidate.hasSpecial) tone = candidate.specialType;
         else if (lengthMode && !coverageMode) {
           if (candidate.lengthCategory === 2) tone = 'lengthExact';
           else if (candidate.lengthCategory === 1) tone = 'lengthFlex';
@@ -1148,7 +1171,7 @@ class Game {
     }
 
     if (lengthMode && (foulMode || pokemonMode || mineralsMode || rareMode)) {
-      const specialCount = workingCandidates.filter(c => c.specialRank > 0).length;
+      const specialCount = workingCandidates.filter(c => c.hasSpecial).length;
       if (specialCount >= lim && !coverageMode) {
         flags.lenSuppressed = true;
       }
@@ -1166,6 +1189,11 @@ class Game {
       rank: c.rank,
       specialType: c.specialType,
       specialRank: c.specialRank,
+      hasSpecial: c.hasSpecial,
+      fromFoul: c.fromFoul,
+      fromPokemon: c.fromPokemon,
+      fromMinerals: c.fromMinerals,
+      fromRare: c.fromRare,
       containsMatch: c.containsMatch,
       containsIdx: c.containsIdx,
       hyphenMatch: c.hyphenMatch,
@@ -1318,6 +1346,7 @@ class Game {
   _trackPendingSubmission(word, ignorePostfix, baseAttempt = 0) {
     this._cancelPendingSubmissionTimer();
     const attemptBase = Math.max(0, Number(baseAttempt) || 0);
+    this._lastSubmittedWord = typeof word === 'string' ? word : (word ?? '').toString();
     this._pendingSubmission = {
       word: word,
       ignorePostfix: !!ignorePostfix,
@@ -1596,9 +1625,20 @@ class Game {
             const matches = pool.filter(c => c.containsMatch > 0);
             if (matches.length) { pool = matches; continue; }
           }
-          if (feature === 'foul' && (context.foulMode || context.pokemonMode || context.mineralsMode || context.rareMode)) {
-            const bestRank = Math.max(...pool.map(c => c.specialRank || 0));
-            const matches = pool.filter(c => (c.specialRank || 0) === bestRank);
+          if (feature === 'foul' && context.foulMode) {
+            const matches = pool.filter(c => c.fromFoul);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'pokemon' && context.pokemonMode) {
+            const matches = pool.filter(c => c.fromPokemon);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'minerals' && context.mineralsMode) {
+            const matches = pool.filter(c => c.fromMinerals);
+            if (matches.length) { pool = matches; continue; }
+          }
+          if (feature === 'rare' && context.rareMode) {
+            const matches = pool.filter(c => c.fromRare);
             if (matches.length) { pool = matches; continue; }
           }
           if (feature === 'coverage' && context.coverageMode) {
@@ -1738,8 +1778,18 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
+    const pendingWord = this._pendingSubmission?.word;
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const baseWord = (word ?? '').toString();
+    let effectiveWord = baseWord;
+    if (!effectiveWord && myTurn) {
+      if (pendingWord) {
+        effectiveWord = (pendingWord ?? '').toString();
+      } else if (this._lastSubmittedWord) {
+        effectiveWord = this._lastSubmittedWord;
+      }
+    }
+    const normalizedInfo = this._normalizeWordForLog(effectiveWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1748,8 +1798,9 @@ class Game {
       });
     }
     if (!myTurn) return;
+    this._lastSubmittedWord = effectiveWord;
     // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+    const letters = this._lettersOf((effectiveWord || "").toLowerCase());
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
       if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {

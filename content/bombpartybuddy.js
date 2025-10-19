@@ -224,9 +224,9 @@ function createOverlay(game) {
   addText({
     preventReuseSection: { en: "Word history", de: "Wortverlauf", es: "Historial de palabras", fr: "Historique des mots", "pt-br": "Histórico de palavras" },
     togglePreventReuse: { en: "Prevent word reuse", de: "Wortwiederholung verhindern", es: "Evitar reutilizar palabras", fr: "Éviter de réutiliser les mots", "pt-br": "Evitar reutilizar palavras" },
-    wordHistoryInfo: { en: "Words used this match won't be suggested again.", de: "Wörter aus dieser Runde werden nicht erneut vorgeschlagen.", es: "Las palabras usadas en esta partida no se sugerirán de nuevo.", fr: "Les mots utilisés pendant cette partie ne seront plus proposés.", "pt-br": "As palavras usadas nesta partida não serão sugeridas novamente." },
+    wordHistoryInfo: { en: "Used words won’t be suggested again during this round.", de: "Verwendete Wörter werden in dieser Runde nicht erneut vorgeschlagen.", es: "Las palabras usadas en esta partida no se sugerirán de nuevo.", fr: "Les mots utilisés pendant cette partie ne seront plus proposés.", "pt-br": "As palavras usadas nesta partida não serão sugeridas novamente." },
     wordLogHeading: { en: "Recent words", de: "Neueste Wörter", es: "Palabras recientes", fr: "Mots récents", "pt-br": "Palavras recentes" },
-    wordLogEmpty: { en: "No words logged yet.", de: "Noch keine Wörter protokolliert.", es: "Aún no hay palabras registradas.", fr: "Aucun mot enregistré pour l'instant.", "pt-br": "Nenhuma palavra registrada ainda." },
+    wordLogEmpty: { en: "No words have been used yet.", de: "Es wurden noch keine Wörter verwendet.", es: "Aún no se han usado palabras.", fr: "Aucun mot n’a encore été utilisé.", "pt-br": "Nenhuma palavra foi usada ainda." },
     wordLogSelfTag: { en: "You", de: "Du", es: "Tú", fr: "Vous", "pt-br": "Você" },
     wordLogOtherTag: { en: "Others", de: "Andere", es: "Otros", fr: "Autres", "pt-br": "Outros" },
     buttonResetWordLog: { en: "Reset logged words", de: "Wortverlauf zurücksetzen", es: "Restablecer registro de palabras", fr: "Réinitialiser l'historique", "pt-br": "Redefinir palavras registradas" },
@@ -922,9 +922,18 @@ function createOverlay(game) {
   const applyToggleBtn = (btn, on, scheme = "default", mode = "status") => applyToggleStyle(btn, !!on, scheme, mode);
 
   const priorityControls = new Map();
-  const priorityKeys = ["contains", "foul", "coverage", "hyphen", "length"];
+  const priorityKeys = (() => {
+    if (typeof game.priorityFeatures === "function") {
+      const features = game.priorityFeatures();
+      if (Array.isArray(features) && features.length) {
+        return features.slice();
+      }
+    }
+    return ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"];
+  })();
   const attachPriorityControl = (row, key) => {
     if (!row || !row._labelSpan || priorityControls.has(key)) return;
+    if (!priorityKeys.includes(key)) priorityKeys.push(key);
     const span = row._labelSpan;
     span.style.display = "inline-flex";
     span.style.alignItems = "center";
@@ -1603,6 +1612,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(pokemonRow);
   wordModesBody.appendChild(pokemonRow);
+  attachPriorityControl(pokemonRow, "pokemon");
 
   const mineralsRow = mkDualRow("dualMinerals", [
     { labelKey: "labelMe", onClick: () => game.toggleMineralsMode(), getOn: () => game.mineralsMode, scheme: "brown", recompute: true },
@@ -1610,6 +1620,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(mineralsRow);
   wordModesBody.appendChild(mineralsRow);
+  attachPriorityControl(mineralsRow, "minerals");
 
   const rareRow = mkDualRow("dualRare", [
     { labelKey: "labelMe", onClick: () => game.toggleRareMode(), getOn: () => game.rareMode, scheme: "cyan", recompute: true },
@@ -1617,6 +1628,7 @@ function createOverlay(game) {
   ]);
   dualToggleRows.push(rareRow);
   wordModesBody.appendChild(rareRow);
+  attachPriorityControl(rareRow, "rare");
 
   const lenDualRow = mkDualRow("dualTargetLength", [
     { labelKey: "labelMe", onClick: () => game.toggleLengthMode(), getOn: () => game.lengthMode, scheme: "green", recompute: true },
@@ -1830,6 +1842,7 @@ function createOverlay(game) {
         color:styles.color,
         fontWeight:"700",
         fontSize:"0.92em",
+        fontFamily:"'Noto Sans Mono','Fira Code','Consolas','Menlo','Liberation Mono','Courier New',monospace",
         transition:"transform 0.15s ease, background 0.15s ease",
         display:"inline-flex",
         alignItems:"center",
