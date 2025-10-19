@@ -114,7 +114,7 @@ class Game {
     this.suggestionsLimit = 5;
 
     // Priority order (highest priority first)
-    this.priorityOrder = ["contains", "foul", "coverage", "hyphen", "length"];
+    this.priorityOrder = ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"];
 
     // Timing
     this.speed = 5;               // 1..12 (fastest unchanged; slowest slower)
@@ -560,7 +560,9 @@ class Game {
     this.mistakesProb = isFinite(n) ? n : 0.08;
   }
 
-  priorityFeatures() { return ["contains", "foul", "coverage", "hyphen", "length"]; }
+  priorityFeatures() {
+    return ["contains", "foul", "pokemon", "minerals", "rare", "coverage", "hyphen", "length"];
+  }
 
   _ensurePriorityOrder(order = this.priorityOrder) {
     const base = this.priorityFeatures();
@@ -918,6 +920,19 @@ class Game {
     };
 
     const priority = this._ensurePriorityOrder();
+    const specialKeys = ['foul', 'pokemon', 'minerals', 'rare'];
+    const basePriority = this.priorityFeatures();
+    const indexForKey = (key) => {
+      const idx = priority.indexOf(key);
+      if (idx >= 0) return idx;
+      const fallbackIdx = basePriority.indexOf(key);
+      return fallbackIdx >= 0 ? priority.length + fallbackIdx : Number.MAX_SAFE_INTEGER;
+    };
+    const specialOrdering = specialKeys.slice().sort((a, b) => indexForKey(a) - indexForKey(b));
+    const specialRanks = {};
+    specialOrdering.forEach((key, idx) => {
+      specialRanks[key] = specialOrdering.length - idx;
+    });
 
     if (!candidateMap.size) {
       return {
@@ -940,23 +955,17 @@ class Game {
       };
     }
 
-    const specialPriority = ['foul', 'pokemon', 'minerals', 'rare'];
-    const specialRanks = { foul: 4, pokemon: 3, minerals: 2, rare: 1 };
-
     const candidates = Array.from(candidateMap.values()).map(info => {
       const word = info.word;
       const lower = word.toLowerCase();
-      let specialType = null;
-      let specialRank = 0;
-      for (const type of specialPriority) {
-        const enabled = (type === 'foul' ? foulMode : type === 'pokemon' ? pokemonMode : type === 'minerals' ? mineralsMode : rareMode);
-        if (!enabled) continue;
-        if (info.sources.has(type)) {
-          specialType = type;
-          specialRank = specialRanks[type];
-          break;
-        }
-      }
+      const specialFlags = {
+        foul: info.sources.has('foul') ? 1 : 0,
+        pokemon: info.sources.has('pokemon') ? 1 : 0,
+        minerals: info.sources.has('minerals') ? 1 : 0,
+        rare: info.sources.has('rare') ? 1 : 0,
+      };
+      const primarySpecial = specialOrdering.find(type => specialFlags[type]) || null;
+      const specialRank = primarySpecial ? (specialRanks[primarySpecial] || 0) : 0;
 
       const containsIdx = containsActive ? lower.indexOf(containsNeedle) : -1;
       const containsMatch = containsIdx >= 0 ? 1 : 0;
@@ -987,7 +996,6 @@ class Game {
       return {
         word,
         lower,
-        specialType,
         specialRank,
         containsMatch,
         containsIdx,
@@ -996,7 +1004,9 @@ class Game {
         lengthTone,
         lengthDistance,
         coverageScore,
-        tone: 'default'
+        tone: 'default',
+        specialFlags,
+        primarySpecial
       };
     });
 
@@ -1077,8 +1087,20 @@ class Game {
         return 0;
       },
       foul: (a, b) => {
-        if (!foulMode && !pokemonMode && !mineralsMode && !rareMode) return 0;
-        return (b.specialRank - a.specialRank);
+        if (!foulMode) return 0;
+        return (b.specialFlags.foul - a.specialFlags.foul);
+      },
+      pokemon: (a, b) => {
+        if (!pokemonMode) return 0;
+        return (b.specialFlags.pokemon - a.specialFlags.pokemon);
+      },
+      minerals: (a, b) => {
+        if (!mineralsMode) return 0;
+        return (b.specialFlags.minerals - a.specialFlags.minerals);
+      },
+      rare: (a, b) => {
+        if (!rareMode) return 0;
+        return (b.specialFlags.rare - a.specialFlags.rare);
       },
       coverage: (a, b) => {
         if (!coverageMode) return 0;
@@ -1110,6 +1132,7 @@ class Game {
         const cmp = (comparators[feature] || (() => 0))(a, b);
         if (cmp !== 0) return cmp;
       }
+      if (b.specialRank !== a.specialRank) return b.specialRank - a.specialRank;
       if (b.coverageScore !== a.coverageScore) return b.coverageScore - a.coverageScore;
       if (a.word.length !== b.word.length) return a.word.length - b.word.length;
       return a.word.localeCompare(b.word);
@@ -1119,7 +1142,10 @@ class Game {
       let tone = null;
       for (const feature of priority) {
         if (feature === 'contains' && containsActive && candidate.containsMatch) { tone = 'contains'; break; }
-        if (feature === 'foul' && candidate.specialRank > 0) { tone = candidate.specialType || 'default'; break; }
+        if (feature === 'foul' && foulMode && candidate.specialFlags.foul) { tone = 'foul'; break; }
+        if (feature === 'pokemon' && pokemonMode && candidate.specialFlags.pokemon) { tone = 'pokemon'; break; }
+        if (feature === 'minerals' && mineralsMode && candidate.specialFlags.minerals) { tone = 'minerals'; break; }
+        if (feature === 'rare' && rareMode && candidate.specialFlags.rare) { tone = 'rare'; break; }
         if (feature === 'hyphen' && hyphenMode && candidate.hyphenMatch) { tone = 'hyphen'; break; }
         if (feature === 'length' && lengthMode && !coverageMode) {
           if (candidate.lengthCategory === 2) { tone = 'lengthExact'; break; }
@@ -1130,7 +1156,7 @@ class Game {
         tone = 'coverage';
       }
       if (!tone) {
-        if (candidate.specialRank > 0) tone = candidate.specialType;
+        if (candidate.specialRank > 0) tone = candidate.primarySpecial;
         else if (lengthMode && !coverageMode) {
           if (candidate.lengthCategory === 2) tone = 'lengthExact';
           else if (candidate.lengthCategory === 1) tone = 'lengthFlex';
@@ -1164,8 +1190,9 @@ class Game {
       word: c.word,
       lower: c.lower,
       rank: c.rank,
-      specialType: c.specialType,
+      primarySpecial: c.primarySpecial,
       specialRank: c.specialRank,
+      specialFlags: Object.assign({}, c.specialFlags),
       containsMatch: c.containsMatch,
       containsIdx: c.containsIdx,
       hyphenMatch: c.hyphenMatch,
@@ -1738,8 +1765,10 @@ class Game {
 
 
   onCorrectWord(word, myTurn = false) {
+    const pending = this._pendingSubmission;
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const resolvedWord = word || (myTurn && pending ? pending.word : '');
+    const normalizedInfo = this._normalizeWordForLog(resolvedWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1749,7 +1778,7 @@ class Game {
     }
     if (!myTurn) return;
     // Only tally toward goals with target > 0
-    const letters = this._lettersOf((word || "").toLowerCase());
+    const letters = this._lettersOf((resolvedWord || "").toLowerCase());
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
       if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {

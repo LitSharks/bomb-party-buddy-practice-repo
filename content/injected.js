@@ -28,23 +28,45 @@ socket.on("nextTurn", (playerId, syllable) => {
   }, "*");
 });
 
-socket.on("failWord", (playerId, reason) => {
+let actual_word;
+let actual_word_owner = null;
+
+socket.on("failWord", (playerId, reason, details) => {
+  const resolvedWord = (details && typeof details.word === "string") ? details.word : "";
+  if (resolvedWord) {
+    actual_word = resolvedWord;
+    actual_word_owner = playerId;
+  }
   window.postMessage({
     type: "failWord",
     myTurn: playerId === selfPeerId,
-    word: actual_word,
+    word: resolvedWord,
     reason: reason,
   }, "*");
 });
 
-socket.on("correctWord", (playerId) => {
+socket.on("correctWord", (playerId, maybeWord) => {
+  let resolvedWord = "";
+  if (typeof maybeWord === "string") {
+    resolvedWord = maybeWord;
+  } else if (maybeWord && typeof maybeWord.word === "string") {
+    resolvedWord = maybeWord.word;
+  }
+  if (resolvedWord) {
+    actual_word = resolvedWord;
+    actual_word_owner = playerId;
+  }
+  const fallback = actual_word_owner === playerId ? (actual_word || "") : "";
+  const finalWord = resolvedWord || fallback;
   window.postMessage({
     type: "correctWord",
-    word: actual_word,
+    word: finalWord,
     myTurn: playerId === selfPeerId,
   }, "*");
 });
 
-let actual_word;
-socket.on("setPlayerWord", (_, word) => (actual_word = word));
+socket.on("setPlayerWord", (playerId, word) => {
+  actual_word = word;
+  actual_word_owner = playerId;
+});
 
