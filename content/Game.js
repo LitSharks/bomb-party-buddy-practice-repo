@@ -755,34 +755,43 @@ class Game {
 
   recomputeTargets() {
     const tgt = new Array(26).fill(1);
-    // Supported:
-    //  - tokens "a3 f2 x0"
-    //  - bare letters "xz" (means x0 z0)
-    //  - "majorityN" sets all to N before overrides
-    const s = (this.excludeSpec || "").toLowerCase().replace(/\s+/g, " ").trim();
-    if (s) {
-      const maj = s.match(/majority(\d{1,2})/);
-      if (maj) {
-        const base = Math.max(0, Math.min(99, parseInt(maj[1], 10)));
-        for (let i = 0; i < 26; i++) tgt[i] = base;
-      }
-      const pairRe = /([a-z])\s*(\d{1,2})/g;
-      let m;
-      while ((m = pairRe.exec(s))) {
-        const idx = m[1].charCodeAt(0) - 97;
-        const val = Math.max(0, Math.min(99, parseInt(m[2], 10)));
-        if (idx >= 0 && idx < 26) tgt[idx] = val;
-      }
-      const bare = s.replace(/majority\d{1,2}/g, "")
-                    .replace(/([a-z])\s*\d{1,2}/g, "")
-                    .replace(/\s+/g, "");
-      for (const ch of bare) {
-        const idx = ch.charCodeAt(0) - 97;
-        if (idx >= 0 && idx < 26) tgt[idx] = 0;
+    if (this.excludeEnabled) {
+      // Supported:
+      //  - tokens "a3 f2 x0"
+      //  - bare letters "xz" (means x0 z0)
+      //  - "majorityN" sets all to N before overrides
+      const s = (this.excludeSpec || "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (s) {
+        const maj = s.match(/majority(\d{1,2})/);
+        if (maj) {
+          const base = Math.max(0, Math.min(99, parseInt(maj[1], 10)));
+          for (let i = 0; i < 26; i++) tgt[i] = base;
+        }
+        const pairRe = /([a-z])\s*(\d{1,2})/g;
+        let m;
+        while ((m = pairRe.exec(s))) {
+          const idx = m[1].charCodeAt(0) - 97;
+          const val = Math.max(0, Math.min(99, parseInt(m[2], 10)));
+          if (idx >= 0 && idx < 26) tgt[idx] = val;
+        }
+        const bare = s.replace(/majority\d{1,2}/g, "")
+                      .replace(/([a-z])\s*\d{1,2}/g, "")
+                      .replace(/\s+/g, "");
+        for (const ch of bare) {
+          const idx = ch.charCodeAt(0) - 97;
+          if (idx >= 0 && idx < 26) tgt[idx] = 0;
+        }
       }
     }
     this.targetCounts = tgt;
+    for (let i = 0; i < 26; i++) {
+      const target = Math.max(0, this.targetCounts[i] || 0);
+      if ((this.coverageCounts[i] || 0) > target) {
+        this.coverageCounts[i] = target;
+      }
+    }
     this._targetsManualOverride = false;
+    this._emitTalliesChanged();
   }
 
 
@@ -1084,6 +1093,9 @@ class Game {
         if (!coverageMode) return 0;
         const diff = b.coverageScore - a.coverageScore;
         if (diff !== 0) return diff;
+        if (!lengthMode && a.word.length !== b.word.length) {
+          return b.word.length - a.word.length;
+        }
         return a.word.length - b.word.length;
       },
       hyphen: (a, b) => {
@@ -1111,6 +1123,9 @@ class Game {
         if (cmp !== 0) return cmp;
       }
       if (b.coverageScore !== a.coverageScore) return b.coverageScore - a.coverageScore;
+      if (coverageMode && !lengthMode && a.word.length !== b.word.length) {
+        return b.word.length - a.word.length;
+      }
       if (a.word.length !== b.word.length) return a.word.length - b.word.length;
       return a.word.localeCompare(b.word);
     });
@@ -1752,9 +1767,12 @@ class Game {
     const letters = this._lettersOf((word || "").toLowerCase());
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
-      if (idx >= 0 && idx < 26 && this.targetCounts[idx] > 0) {
-        this.coverageCounts[idx] += count;
-      }
+      if (idx < 0 || idx >= 26) return;
+      const target = Math.max(0, this.targetCounts[idx] || 0);
+      if (target <= 0) return;
+      const current = Math.max(0, this.coverageCounts[idx] || 0);
+      const next = Math.min(target, current + count);
+      this.coverageCounts[idx] = next;
     });
     this._maybeResetCoverageOnComplete();
     this._emitTalliesChanged();
