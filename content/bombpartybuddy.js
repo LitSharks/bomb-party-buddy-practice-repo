@@ -1807,6 +1807,8 @@ function createOverlay(game) {
     return { bg:"rgba(255,255,255,0.08)", border:"rgba(255,255,255,0.18)", color:"#f8fafc" };
   }
 
+  const suggestionFontStack = "\"Noto Sans Mono\", \"DejaVu Sans Mono\", \"Cascadia Mono\", \"Consolas\", \"Fira Mono\", \"Source Code Pro\", \"Menlo\", monospace";
+
   function clickableWords(container, entries, syllable) {
     container.innerHTML = "";
     if (!entries || !entries.length) { container.textContent = translator.t("listEmpty"); return; }
@@ -1830,6 +1832,7 @@ function createOverlay(game) {
         color:styles.color,
         fontWeight:"700",
         fontSize:"0.92em",
+        fontFamily: suggestionFontStack,
         transition:"transform 0.15s ease, background 0.15s ease",
         display:"inline-flex",
         alignItems:"center",
