@@ -386,7 +386,7 @@ function createOverlay(game) {
   setIfString(savedSettings?.specContainsText, (val) => game.setSpecContainsText(val));
   setIfString(savedSettings?.excludeSpec, (val) => game.setExcludeSpec(val));
 
-  game.setExcludeEnabled(getBool(savedSettings?.excludeEnabled, game.excludeEnabled));
+  game.setExcludeEnabled(true);
   if (Array.isArray(savedSettings?.priorityOrder)) {
     game.setPriorityOrder(savedSettings.priorityOrder);
   }
@@ -1357,10 +1357,6 @@ function createOverlay(game) {
   coverageCard.appendChild(coverageToggle);
   attachPriorityControl(coverageToggle, "coverage");
 
-  const exTop = mkRow("toggleExclude", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal", "status", { recompute: true });
-  toggleRefs.push(exTop);
-  coverageCard.appendChild(exTop);
-
   const coverageEditButtons = [];
   const coverageCells = [];
 
@@ -1389,7 +1385,6 @@ function createOverlay(game) {
     render();
   };
   if (coverageToggle?._btn) coverageToggle._btn.addEventListener("click", () => { coverageEditMode = "off"; });
-  if (exTop?._btn) exTop._btn.addEventListener("click", () => { coverageEditMode = "off"; });
   editModes.forEach(cfg => {
     const btn = document.createElement("button");
     if (cfg.labelKey) {
@@ -2352,7 +2347,7 @@ async function setupBuddy() {
   document.body.appendChild(s);
 
   const game = new Game(getInput());
-  setTimeout(() => (game.input = getInput()), 1000);
+  setTimeout(() => game.setInputElement(getInput()), 1000);
 
   const { render } = createOverlay(game);
 

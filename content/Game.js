@@ -63,7 +63,7 @@ function toWordArrayFromText(text) {
 
 class Game {
   constructor(inputEl) {
-    this.input = inputEl;
+    this.input = null;
 
     // Word data
     this.lang = "en";
@@ -173,7 +173,7 @@ class Game {
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
-    this.excludeEnabled = false;
+    this.excludeEnabled = true;
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
     this._targetsManualOverride = false;
@@ -202,6 +202,12 @@ class Game {
     this._pendingSubmissionTimer = null;
     this._pendingSubmissionRetryDelayMs = 1000;
 
+    // Manual submission tracking (for coverage tallies & history)
+    this._trackedInput = null;
+    this._trackedInputCleanup = null;
+    this._lastSubmittedWord = null;
+    this._lastSubmittedAt = 0;
+
     // Event hooks
     this._onWordLogChanged = null;
 
@@ -212,6 +218,8 @@ class Game {
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
 
     this._lastLoadedLang = null;
+
+    this.setInputElement(inputEl);
   }
 
   setMyTurn(isMine) {
@@ -600,7 +608,15 @@ class Game {
   }
 
   setExcludeEnabled(b) {
-    this.excludeEnabled = !!b;
+    const next = b !== undefined ? !!b : true;
+    if (!next) {
+      // Coverage exclusions/goals are always active; ignore attempts to disable.
+      this.excludeEnabled = true;
+      if (!this._targetsManualOverride) this.recomputeTargets();
+      return;
+    }
+    if (this.excludeEnabled === next) return;
+    this.excludeEnabled = next;
     if (!this._targetsManualOverride) this.recomputeTargets();
   }
   setExcludeSpec(spec) {
@@ -617,6 +633,16 @@ class Game {
     if (typeof this._onTalliesChanged === 'function') {
       try { this._onTalliesChanged(); } catch (err) { console.warn('[BombPartyShark] tally listener failed', err); }
     }
+  }
+
+  setInputElement(node) {
+    const el = node && document?.body?.contains(node) ? node : (node || null);
+    if (this.input === el) {
+      this._bindSubmissionTracker(this.input);
+      return;
+    }
+    this.input = el;
+    this._bindSubmissionTracker(this.input);
   }
 
   _emitWordListWarnings(warnings) {
@@ -1249,12 +1275,14 @@ class Game {
   // -------- typing / submitting --------
   _ensureInput() {
     if (this.input && document.body.contains(this.input)) return this.input;
+    let inputNode = null;
     const selfTurns = document.getElementsByClassName("selfTurn");
     if (selfTurns.length) {
-      this.input = selfTurns[0].getElementsByTagName("input")[0] || null;
+      inputNode = selfTurns[0].getElementsByTagName("input")[0] || null;
     } else {
-      this.input = document.querySelector("input") || null;
+      inputNode = document.querySelector("input") || null;
     }
+    this.setInputElement(inputNode);
     return this.input;
   }
 
@@ -1361,6 +1389,56 @@ class Game {
     this.typeAndSubmit(pending.word, pending.ignorePostfix, { attempt }).catch((err) => {
       console.warn('[BombPartyShark] Failed to retry submission', err);
     });
+  }
+
+  _recordSubmittedWord(word) {
+    const raw = (word ?? '').toString();
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    this._lastSubmittedWord = trimmed;
+    this._lastSubmittedAt = Date.now();
+  }
+
+  _recentSubmittedWord(maxAgeMs = 8000) {
+    if (!this._lastSubmittedWord) return '';
+    const age = Date.now() - this._lastSubmittedAt;
+    if (!Number.isFinite(age) || age > Math.max(1000, maxAgeMs)) return '';
+    return this._lastSubmittedWord;
+  }
+
+  _clearRecentSubmittedWord() {
+    this._lastSubmittedWord = null;
+    this._lastSubmittedAt = 0;
+  }
+
+  _bindSubmissionTracker(input) {
+    if (this._trackedInput === input) return;
+    if (this._trackedInputCleanup) {
+      try { this._trackedInputCleanup(); } catch (_) { /* ignore */ }
+      this._trackedInputCleanup = null;
+    }
+    this._trackedInput = null;
+    if (!input) return;
+
+    const handleKeyDown = (ev) => {
+      if (ev && ev.key === 'Enter') {
+        this._recordSubmittedWord(input.value);
+      }
+    };
+    const handleSubmit = () => {
+      this._recordSubmittedWord(input.value);
+    };
+
+    input.addEventListener('keydown', handleKeyDown, true);
+    const form = input.closest('form');
+    if (form) form.addEventListener('submit', handleSubmit, true);
+
+    this._trackedInput = input;
+    this._trackedInputCleanup = () => {
+      input.removeEventListener('keydown', handleKeyDown, true);
+      if (form) form.removeEventListener('submit', handleSubmit, true);
+      if (this._trackedInput === input) this._trackedInput = null;
+    };
   }
 
   _scheduleTypingRetry(word, ignorePostfix, attemptSeed = 0) {
@@ -1740,10 +1818,14 @@ class Game {
   onCorrectWord(word, myTurn = false) {
     const pending = this._pendingSubmission;
     const fallbackWord = pending?.word;
+    const manualWord = myTurn ? this._recentSubmittedWord() : '';
     this._clearPendingSubmission();
     const resolvedWordRaw = typeof word === 'string' && word.trim().length
       ? word
-      : (typeof fallbackWord === 'string' ? fallbackWord : '');
+      : (typeof fallbackWord === 'string' && fallbackWord.trim().length
+        ? fallbackWord
+        : (manualWord || ''));
+    if (myTurn) this._clearRecentSubmittedWord();
     const normalizedInfo = this._normalizeWordForLog(resolvedWordRaw);
     if (normalizedInfo) {
       const displayWord = typeof word === 'string' && word.trim().length
@@ -1776,9 +1858,14 @@ class Game {
   }
 
   onFailedWord(myTurn, word, reason) {
-    this._reportInvalid(word, reason, myTurn).catch(() => {});
+    let resolvedWordRaw = typeof word === 'string' && word.trim().length ? word : '';
+    if (myTurn && !resolvedWordRaw) {
+      resolvedWordRaw = this._recentSubmittedWord() || '';
+    }
+    if (myTurn) this._clearRecentSubmittedWord();
+    this._reportInvalid(resolvedWordRaw || word, reason, myTurn).catch(() => {});
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const normalizedInfo = this._normalizeWordForLog(resolvedWordRaw || word);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord: normalizedInfo.display,
@@ -1787,8 +1874,8 @@ class Game {
       });
     }
     if (!myTurn) return;
-    if (word) {
-      const normalizedRaw = (word || "").toLowerCase();
+    if (resolvedWordRaw) {
+      const normalizedRaw = (resolvedWordRaw || "").toLowerCase();
       const normalized = normalizedRaw.trim();
       if (normalized) this._roundFailed.add(normalized);
       if (normalizedInfo && normalizedInfo.normalized) {
