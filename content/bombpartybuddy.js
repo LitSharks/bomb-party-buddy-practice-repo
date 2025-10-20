@@ -68,6 +68,16 @@ function createOverlay(game) {
     zIndex: "2147483647", userSelect: "none",
   });
 
+  let coverageLogBox = null;
+  const updateCoverageLog = (text) => {
+    if (!coverageLogBox) return;
+    const next = typeof text === "string" ? text : "";
+    if (coverageLogBox.value !== next) {
+      coverageLogBox.value = next;
+    }
+    coverageLogBox.scrollTop = coverageLogBox.scrollHeight;
+  };
+
   const STORAGE_KEY = "bombpartybuddy.settings.v1";
   const SESSION_KEY = "bombpartybuddy.session.v1";
 
@@ -1484,7 +1494,40 @@ function createOverlay(game) {
   resetBtn.onclick = ()=>{ game.resetCoverage(); setCoverageEditMode("off"); render(); };
   coverageCard.appendChild(resetBtn);
 
+  const logLabel = document.createElement("div");
+  logLabel.textContent = "Coverage debug log";
+  Object.assign(logLabel.style, {
+    marginTop: "10px",
+    fontWeight: "700",
+    fontSize: "12px",
+    letterSpacing: "0.25px",
+    color: "rgba(226,232,240,0.85)"
+  });
+  coverageCard.appendChild(logLabel);
+
+  coverageLogBox = document.createElement("textarea");
+  coverageLogBox.readOnly = true;
+  coverageLogBox.spellcheck = false;
+  coverageLogBox.placeholder = "Coverage debug output will appear here";
+  Object.assign(coverageLogBox.style, {
+    marginTop: "6px",
+    width: "100%",
+    minHeight: "140px",
+    resize: "vertical",
+    borderRadius: "10px",
+    border: "1px solid rgba(20,184,166,0.45)",
+    background: "rgba(15,23,42,0.65)",
+    color: "#e0f2f1",
+    fontFamily: "ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontSize: "11px",
+    lineHeight: "1.45",
+    padding: "8px 10px",
+    boxSizing: "border-box"
+  });
+  coverageCard.appendChild(coverageLogBox);
+
   covSec.appendChild(coverageCard);
+  game.setCoverageLogCallback(updateCoverageLog);
 
   // =============== WORDS TAB =================
   const wordsGrid = document.createElement("div");
