@@ -173,7 +173,7 @@ class Game {
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
-    this.excludeEnabled = false;
+    this.excludeEnabled = true;
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
     this._targetsManualOverride = false;
@@ -212,6 +212,8 @@ class Game {
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
 
     this._lastLoadedLang = null;
+
+    this.recomputeTargets();
   }
 
   setMyTurn(isMine) {
@@ -600,8 +602,10 @@ class Game {
   }
 
   setExcludeEnabled(b) {
-    this.excludeEnabled = !!b;
-    if (!this._targetsManualOverride) this.recomputeTargets();
+    const next = b !== false;
+    const prev = !!this.excludeEnabled;
+    this.excludeEnabled = next;
+    if (!this._targetsManualOverride && next !== prev) this.recomputeTargets();
   }
   setExcludeSpec(spec) {
     this.excludeSpec = (spec || "");
@@ -755,6 +759,11 @@ class Game {
 
   recomputeTargets() {
     const tgt = new Array(26).fill(1);
+    if (!this.excludeEnabled) {
+      this.targetCounts = tgt;
+      this._targetsManualOverride = false;
+      return;
+    }
     // Supported:
     //  - tokens "a3 f2 x0"
     //  - bare letters "xz" (means x0 z0)

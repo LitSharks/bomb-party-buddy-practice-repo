@@ -385,8 +385,6 @@ function createOverlay(game) {
   setIfString(savedSettings?.containsText, (val) => game.setContainsText(val));
   setIfString(savedSettings?.specContainsText, (val) => game.setSpecContainsText(val));
   setIfString(savedSettings?.excludeSpec, (val) => game.setExcludeSpec(val));
-
-  game.setExcludeEnabled(getBool(savedSettings?.excludeEnabled, game.excludeEnabled));
   if (Array.isArray(savedSettings?.priorityOrder)) {
     game.setPriorityOrder(savedSettings.priorityOrder);
   }
@@ -409,7 +407,6 @@ function createOverlay(game) {
     autoJoinAlways: !!game.autoJoinAlways,
     foulMode: !!game.foulMode,
     coverageMode: !!game.coverageMode,
-    excludeEnabled: !!game.excludeEnabled,
     lengthMode: !!game.lengthMode,
     specLengthMode: !!game.specLengthMode,
     specFoulMode: !!game.specFoulMode,
@@ -1357,10 +1354,6 @@ function createOverlay(game) {
   coverageCard.appendChild(coverageToggle);
   attachPriorityControl(coverageToggle, "coverage");
 
-  const exTop = mkRow("toggleExclude", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal", "status", { recompute: true });
-  toggleRefs.push(exTop);
-  coverageCard.appendChild(exTop);
-
   const coverageEditButtons = [];
   const coverageCells = [];
 
@@ -1389,7 +1382,6 @@ function createOverlay(game) {
     render();
   };
   if (coverageToggle?._btn) coverageToggle._btn.addEventListener("click", () => { coverageEditMode = "off"; });
-  if (exTop?._btn) exTop._btn.addEventListener("click", () => { coverageEditMode = "off"; });
   editModes.forEach(cfg => {
     const btn = document.createElement("button");
     if (cfg.labelKey) {
@@ -2356,6 +2348,35 @@ async function setupBuddy() {
 
   const { render } = createOverlay(game);
 
+  const normalizeActorId = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "object") {
+      if (value.actorId !== undefined) return normalizeActorId(value.actorId);
+      if (value.peerId !== undefined) return normalizeActorId(value.peerId);
+      if (value.peerID !== undefined) return normalizeActorId(value.peerID);
+      if (value.playerId !== undefined) return normalizeActorId(value.playerId);
+      if (value.id !== undefined) return normalizeActorId(value.id);
+    }
+    const str = String(value);
+    return str ? str : null;
+  };
+
+  let selfActorId = null;
+  const markSelfActor = (value) => {
+    const id = normalizeActorId(value);
+    if (id) selfActorId = id;
+  };
+  const actorMatchesSelf = (value) => {
+    const id = normalizeActorId(value);
+    return !!id && !!selfActorId && id === selfActorId;
+  };
+  const computeFromSelf = (data, actorId, prevMyTurn) => {
+    if (data?.myTurn === true) return true;
+    if (actorMatchesSelf(actorId)) return true;
+    if ((actorId === undefined || actorId === null) && prevMyTurn) return true;
+    return false;
+  };
+
   const notifySettingsChanged = (opts = {}) => {
     if (typeof game._notifySettingsChanged === "function") {
       try {
@@ -2369,10 +2390,13 @@ async function setupBuddy() {
   window.addEventListener("message", async (event) => {
     if (!event.origin.endsWith("jklm.fun")) return;
     const data = event.data;
+    const actorIdRaw = data?.actorId ?? data?.playerId ?? data?.peerId ?? null;
+    const prevMyTurn = !!game.myTurn;
 
     if ("myTurn" in data) game.setMyTurn(data.myTurn);
 
     if (data.type === "setup") {
+      if (data.myTurn) markSelfActor(actorIdRaw);
       await game.setLang(data.language);
       if (data.myTurn) {
         game.syllable = data.syllable;
@@ -2385,12 +2409,17 @@ async function setupBuddy() {
       }
       render();
     } else if (data.type === "correctWord") {
-      game.onCorrectWord(data.word, !!data.myTurn);
+      const fromSelf = computeFromSelf(data, actorIdRaw, prevMyTurn);
+      if (fromSelf) markSelfActor(actorIdRaw ?? selfActorId);
+      game.onCorrectWord(data.word, fromSelf);
       render();
     } else if (data.type === "failWord") {
-      game.onFailedWord(!!data.myTurn, data.word, data.reason);
+      const fromSelf = computeFromSelf(data, actorIdRaw, prevMyTurn);
+      if (fromSelf) markSelfActor(actorIdRaw ?? selfActorId);
+      game.onFailedWord(fromSelf, data.word, data.reason);
       render();
     } else if (data.type === "nextTurn") {
+      if (data.myTurn) markSelfActor(actorIdRaw);
       if (data.myTurn) {
         game.syllable = data.syllable;
         game.selfRound = (game.selfRound|0) + 1;     // new round for me
