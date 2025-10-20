@@ -173,7 +173,7 @@ class Game {
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
-    this.excludeEnabled = false;
+    this.excludeEnabled = true;
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
     this._targetsManualOverride = false;
@@ -218,6 +218,7 @@ class Game {
 
     this._lastLoadedLang = null;
 
+    this.recomputeTargets();
     this._logCoverage('init', {
       coverageCounts: this.coverageCounts.slice(0, 26),
       targetCounts: this.targetCounts.slice(0, 26),
@@ -615,9 +616,11 @@ class Game {
   }
 
   setExcludeEnabled(b) {
-    this.excludeEnabled = !!b;
-    this._logCoverage('setExcludeEnabled', { enabled: this.excludeEnabled });
-    if (!this._targetsManualOverride) this.recomputeTargets();
+    const requested = !!b;
+    const prev = this.excludeEnabled;
+    this.excludeEnabled = true;
+    this._logCoverage('setExcludeEnabled', { requested, enabled: this.excludeEnabled });
+    if (!this._targetsManualOverride && prev !== this.excludeEnabled) this.recomputeTargets();
   }
   setExcludeSpec(spec) {
     this.excludeSpec = (spec || "");
@@ -736,6 +739,12 @@ class Game {
       }
     }
     return { normalized: lower, display };
+  }
+
+  _normalizeForCompare(word) {
+    const raw = (word || '').toString();
+    const trimmed = raw.trim();
+    return trimmed ? trimmed.toLowerCase() : '';
   }
 
   _rememberWordUsage(word, meta = {}) {
@@ -1399,11 +1408,13 @@ class Game {
     this._clearPendingSubmission();
   }
 
-  _trackPendingSubmission(word, ignorePostfix, baseAttempt = 0) {
+  _trackPendingSubmission(word, ignorePostfix, baseAttempt = 0, submittedWord = null) {
     this._cancelPendingSubmissionTimer();
     const attemptBase = Math.max(0, Number(baseAttempt) || 0);
+    const submitted = submittedWord != null ? String(submittedWord) : (word != null ? String(word) : '');
     this._pendingSubmission = {
       word: word,
+      submittedWord: submitted,
       ignorePostfix: !!ignorePostfix,
       syllable: this.syllable,
       round: this.selfRound,
@@ -1814,7 +1825,7 @@ class Game {
         form.requestSubmit();
       }
 
-      this._trackPendingSubmission(word, ignorePostfix, attemptSeed);
+      this._trackPendingSubmission(word, ignorePostfix, attemptSeed, input.value);
     } finally {
       cleanup();
     }
@@ -1823,24 +1834,47 @@ class Game {
 
   onCorrectWord(word, myTurn = false) {
     const pending = this._pendingSubmission;
-    const fallbackWord = pending?.word;
+    const fallbackWord = pending?.submittedWord || pending?.word;
     this._clearPendingSubmission();
     const resolvedWordRaw = typeof word === 'string' && word.trim().length
       ? word
       : (typeof fallbackWord === 'string' ? fallbackWord : '');
     const normalizedInfo = this._normalizeWordForLog(resolvedWordRaw);
+    const pendingNormalizedInfo = pending && (pending.submittedWord || pending.word)
+      ? this._normalizeWordForLog(pending.submittedWord || pending.word)
+      : null;
+    const pendingRawNorm = this._normalizeForCompare(pending?.submittedWord || pending?.word);
+    const resolvedRawNorm = this._normalizeForCompare(resolvedWordRaw);
+    let pendingMatches = false;
+    if (pendingNormalizedInfo?.normalized && normalizedInfo?.normalized) {
+      pendingMatches = pendingNormalizedInfo.normalized === normalizedInfo.normalized;
+    }
+    if (!pendingMatches && pendingRawNorm && resolvedRawNorm) {
+      pendingMatches = pendingRawNorm === resolvedRawNorm;
+    }
+    let treatAsMine = !!myTurn;
+    if (!treatAsMine && pending && pendingMatches) {
+      treatAsMine = true;
+    }
     if (normalizedInfo) {
       const displayWord = typeof word === 'string' && word.trim().length
         ? word
         : normalizedInfo.display;
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord,
-        fromSelf: !!myTurn,
+        fromSelf: !!treatAsMine,
         outcome: 'correct'
       });
     }
-    if (!myTurn) {
-      this._logCoverage('onCorrectWord:ignored', { reason: 'notMyTurn', word: resolvedWordRaw });
+    if (!treatAsMine) {
+      this._logCoverage('onCorrectWord:ignored', {
+        reason: 'notMyTurn',
+        word: resolvedWordRaw,
+        myTurnFlag: !!myTurn,
+        pendingWord: pending?.word || null,
+        pendingSubmitted: pending?.submittedWord || null,
+        pendingMatched: pendingMatches
+      });
       return;
     }
     if (!resolvedWordRaw) {
@@ -1852,7 +1886,9 @@ class Game {
     this._logCoverage('onCorrectWord:start', {
       word: resolvedWordRaw,
       normalized: normalizedInfo ? normalizedInfo.normalized : null,
-      letters: Object.fromEntries(letters)
+      letters: Object.fromEntries(letters),
+      pendingMatched,
+      fromSelf: true
     });
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
