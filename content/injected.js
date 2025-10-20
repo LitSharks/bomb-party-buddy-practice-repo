@@ -1,139 +1,243 @@
 // injected.js
 
-function normalizeId(value) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "object") {
-    if (value.peerId !== undefined) return normalizeId(value.peerId);
-    if (value.peerID !== undefined) return normalizeId(value.peerID);
-    if (value.playerId !== undefined) return normalizeId(value.playerId);
-    if (value.id !== undefined) return normalizeId(value.id);
-  }
-  const str = String(value);
-  return str ? str : null;
-}
-
-let cachedSelfPeerId = null;
-function refreshSelfPeerId() {
-  const candidates = [
-    () => normalizeId(window?.selfPeerId),
-    () => normalizeId(window?.selfPlayerPeerId),
-    () => normalizeId(window?.selfPlayerId),
-    () => normalizeId(socket?.id),
-  ];
-  for (const pick of candidates) {
-    try {
-      const val = pick();
-      if (val) {
-        cachedSelfPeerId = val;
-        return cachedSelfPeerId;
+(function() {
+  const socketRef = (typeof socket !== "undefined") ? socket : null;
+  function normalizeId(value) {
+    if (value === null || value === undefined) return null;
+    if (Array.isArray(value)) {
+      for (const v of value) {
+        const normalized = normalizeId(v);
+        if (normalized) return normalized;
       }
-    } catch (_) {
-      // ignore access errors
+      return null;
+    }
+    if (typeof value === "object") {
+      if (value.peerId !== undefined) return normalizeId(value.peerId);
+      if (value.peerID !== undefined) return normalizeId(value.peerID);
+      if (value.playerId !== undefined) return normalizeId(value.playerId);
+      if (value.id !== undefined) return normalizeId(value.id);
+    }
+    const str = String(value);
+    return str ? str : null;
+  }
+
+  const knownSelfIds = new Set();
+
+  function addSelfCandidate(value) {
+    const id = normalizeId(value);
+    if (!id) return;
+    knownSelfIds.add(id);
+  }
+
+  function addManySelfCandidates(values) {
+    if (!values) return;
+    if (Array.isArray(values)) {
+      values.forEach(addSelfCandidate);
+      return;
+    }
+    addSelfCandidate(values);
+  }
+
+  function refreshSelfCandidates() {
+    const getters = [
+      () => window?.selfPeerId,
+      () => window?.selfPlayerPeerId,
+      () => window?.selfPlayerId,
+      () => window?.playerId,
+      () => window?.you,
+      () => window?.you?.id,
+      () => window?.you?.peerId,
+      () => window?.state?.you,
+      () => window?.state?.you?.id,
+      () => window?.state?.you?.peerId,
+      () => window?.game?.you,
+      () => window?.game?.you?.id,
+      () => window?.game?.you?.peerId,
+      () => socketRef?.id,
+    ];
+    for (const getter of getters) {
+      try {
+        const value = getter();
+        if (Array.isArray(value)) {
+          value.forEach(addSelfCandidate);
+        } else if (value && typeof value === "object" && !(value instanceof String)) {
+          addManySelfCandidates(Object.values(value));
+        } else {
+          addSelfCandidate(value);
+        }
+      } catch (_) {
+        // ignore
+      }
     }
   }
-  return cachedSelfPeerId;
-}
 
-function resolveSelfPeerId() {
-  return refreshSelfPeerId();
-}
-
-socket.on("connect", () => { refreshSelfPeerId(); });
-
-function isActorSelf(actorId) {
-  const actor = normalizeId(actorId);
-  const selfId = resolveSelfPeerId();
-  if (!actor || !selfId) return false;
-  return actor === normalizeId(selfId);
-}
-
-function actorFromMilestone(milestone) {
-  if (!milestone) return null;
-  if (milestone.currentPlayerPeerId !== undefined && milestone.currentPlayerPeerId !== null) {
-    return milestone.currentPlayerPeerId;
+  refreshSelfCandidates();
+  if (socketRef && typeof socketRef.on === "function") {
+    socketRef.on("connect", () => refreshSelfCandidates());
   }
-  if (milestone.currentPlayerId !== undefined && milestone.currentPlayerId !== null) {
-    return milestone.currentPlayerId;
+
+  function matchesSelf(value) {
+    const id = normalizeId(value);
+    if (!id) return false;
+    if (knownSelfIds.has(id)) return true;
+    refreshSelfCandidates();
+    return knownSelfIds.has(id);
   }
-  if (milestone.currentPlayer && typeof milestone.currentPlayer === "object") {
-    const { peerId, peerID, playerId, id } = milestone.currentPlayer;
-    if (peerId !== undefined) return peerId;
-    if (peerID !== undefined) return peerID;
-    if (playerId !== undefined) return playerId;
-    if (id !== undefined) return id;
+
+  function collectActorIdsFromMilestone(milestone) {
+    const ids = [];
+    const push = (val) => {
+      if (val === null || val === undefined) return;
+      if (Array.isArray(val)) {
+        val.forEach(push);
+        return;
+      }
+      if (typeof val === "object") {
+        push(val.peerId);
+        push(val.peerID);
+        push(val.playerId);
+        push(val.id);
+        return;
+      }
+      ids.push(val);
+    };
+    if (!milestone) return ids;
+    push(milestone.currentPlayerPeerId);
+    push(milestone.currentPlayerId);
+    push(milestone.currentPlayer);
+    push(milestone.player);
+    return ids;
   }
-  return null;
-}
 
-function payloadWithActor(base, actorId) {
-  if (actorId === undefined) return base;
-  return Object.assign({}, base, { actorId });
-}
+  function fallbackDomMyTurn() {
+    try {
+      const input = document.querySelector('.selfTurn input');
+      if (input && !input.disabled) return true;
+      return !!document.querySelector('.selfTurn');
+    } catch (_) {
+      return false;
+    }
+  }
 
-let actual_word;
-let actual_actor;
+  function uniqueIds(values) {
+    const out = [];
+    const seen = new Set();
+    for (const v of values || []) {
+      const id = normalizeId(v);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  }
 
-socket.on("setup", (data) => {
-  if (data.milestone.name != "round") return;
-  refreshSelfPeerId();
-  const actorId = actorFromMilestone(data.milestone);
-  const myTurn = isActorSelf(actorId);
-  window.postMessage(payloadWithActor({
-    type: "setup",
-    myTurn,
-    syllable: data.milestone.syllable,
-    language: data.milestone.dictionaryManifest.name,
-  }, actorId), "*");
-});
+  function actorList(value) {
+    if (value === null || value === undefined) return [];
+    if (Array.isArray(value)) return value.slice();
+    return [value];
+  }
 
-socket.on("setMilestone", (newMilestone) => {
-  if (newMilestone.name != "round") return;
-  refreshSelfPeerId();
-  const actorId = actorFromMilestone(newMilestone);
-  const myTurn = isActorSelf(actorId);
-  window.postMessage(payloadWithActor({
-    type: "setup",
-    myTurn,
-    syllable: newMilestone.syllable,
-    language: newMilestone.dictionaryManifest.name,
-  }, actorId), "*");
-});
+  let actual_word = "";
+  let actual_actor = null;
+  let lastTurnWasMine = false;
 
-socket.on("nextTurn", (playerId, syllable) => {
-  refreshSelfPeerId();
-  const actorId = playerId;
-  const myTurn = isActorSelf(actorId);
-  window.postMessage(payloadWithActor({
-    type: "nextTurn",
-    myTurn,
-    syllable: syllable,
-  }, actorId), "*");
-});
+  function postMessage(payload) {
+    try {
+      window.postMessage(payload, "*");
+    } catch (_) {
+      // ignore
+    }
+  }
 
-socket.on("failWord", (playerId, reason) => {
-  refreshSelfPeerId();
-  const actorId = playerId ?? actual_actor;
-  const myTurn = isActorSelf(actorId);
-  window.postMessage(payloadWithActor({
-    type: "failWord",
-    myTurn,
-    word: actual_word,
-    reason: reason,
-  }, actorId), "*");
-});
+  function handleSetupLike(milestone) {
+    if (!milestone || milestone.name !== "round") return;
+    refreshSelfCandidates();
+    const actorIds = uniqueIds(collectActorIdsFromMilestone(milestone));
+    let myTurn = actorIds.some(matchesSelf);
+    if (myTurn) {
+      actorIds.forEach(addSelfCandidate);
+    } else if (fallbackDomMyTurn()) {
+      myTurn = true;
+      actorIds.forEach(addSelfCandidate);
+    }
+    lastTurnWasMine = myTurn;
+    postMessage({
+      type: "setup",
+      myTurn,
+      syllable: milestone.syllable,
+      language: milestone.dictionaryManifest?.name || milestone.dictionaryManifest,
+    });
+  }
 
-socket.on("correctWord", (playerId) => {
-  refreshSelfPeerId();
-  const actorId = playerId ?? actual_actor;
-  const myTurn = isActorSelf(actorId);
-  window.postMessage(payloadWithActor({
-    type: "correctWord",
-    word: actual_word,
-    myTurn,
-  }, actorId), "*");
-});
+  if (socketRef && typeof socketRef.on === "function") {
+    socketRef.on("setup", (data) => {
+      if (!data) return;
+      handleSetupLike(data.milestone);
+    });
 
-socket.on("setPlayerWord", (playerId, word) => {
-  actual_actor = playerId;
-  actual_word = word;
-});
+    socketRef.on("setMilestone", (milestone) => {
+      handleSetupLike(milestone);
+    });
+
+    socketRef.on("nextTurn", (playerId, syllable) => {
+      refreshSelfCandidates();
+      const candidates = uniqueIds(actorList(playerId));
+      let myTurn = candidates.some(matchesSelf);
+      if (myTurn) {
+        candidates.forEach(addSelfCandidate);
+      } else if (fallbackDomMyTurn()) {
+        myTurn = true;
+        candidates.forEach(addSelfCandidate);
+      }
+      lastTurnWasMine = myTurn;
+      postMessage({
+        type: "nextTurn",
+        myTurn,
+        syllable,
+      });
+    });
+
+    socketRef.on("failWord", (playerId, reason) => {
+      refreshSelfCandidates();
+      const candidates = uniqueIds(actorList(playerId ?? actual_actor));
+      let myTurn = candidates.some(matchesSelf);
+      if (!candidates.length && lastTurnWasMine) {
+        myTurn = true;
+      }
+      if (myTurn) {
+        candidates.forEach(addSelfCandidate);
+      }
+      postMessage({
+        type: "failWord",
+        myTurn,
+        word: actual_word,
+        reason,
+      });
+    });
+
+    socketRef.on("correctWord", (playerId) => {
+      refreshSelfCandidates();
+      const candidates = uniqueIds(actorList(playerId ?? actual_actor));
+      let myTurn = candidates.some(matchesSelf);
+      if (!candidates.length && lastTurnWasMine) {
+        myTurn = true;
+      }
+      if (myTurn) {
+        candidates.forEach(addSelfCandidate);
+      }
+      postMessage({
+        type: "correctWord",
+        myTurn,
+        word: actual_word,
+      });
+    });
+
+    socketRef.on("setPlayerWord", (playerId, word) => {
+      actual_actor = playerId;
+      actual_word = word;
+      if (fallbackDomMyTurn()) {
+        addManySelfCandidates(playerId);
+      }
+    });
+  }
+})();

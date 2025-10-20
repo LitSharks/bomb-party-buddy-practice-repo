@@ -63,7 +63,7 @@ function toWordArrayFromText(text) {
 
 class Game {
   constructor(inputEl) {
-    this.input = inputEl;
+    this.input = null;
 
     // Word data
     this.lang = "en";
@@ -202,6 +202,11 @@ class Game {
     this._pendingSubmissionTimer = null;
     this._pendingSubmissionRetryDelayMs = 1000;
 
+    // Manual submission tracking
+    this._inputListener = null;
+    this._lastManualSubmission = null;
+    this._lastManualSubmissionAt = 0;
+
     // Event hooks
     this._onWordLogChanged = null;
 
@@ -214,6 +219,8 @@ class Game {
     this._lastLoadedLang = null;
 
     this.recomputeTargets();
+
+    this.updateInputElement(inputEl);
   }
 
   setMyTurn(isMine) {
@@ -222,6 +229,8 @@ class Game {
     this.myTurn = next;
     if (prev && !next) {
       this._clearPendingSubmission();
+      this._lastManualSubmission = null;
+      this._lastManualSubmissionAt = 0;
     }
   }
 
@@ -1259,10 +1268,14 @@ class Game {
   _ensureInput() {
     if (this.input && document.body.contains(this.input)) return this.input;
     const selfTurns = document.getElementsByClassName("selfTurn");
+    let nextInput = null;
     if (selfTurns.length) {
-      this.input = selfTurns[0].getElementsByTagName("input")[0] || null;
+      nextInput = selfTurns[0].getElementsByTagName("input")[0] || null;
     } else {
-      this.input = document.querySelector("input") || null;
+      nextInput = document.querySelector("input") || null;
+    }
+    if (nextInput !== this.input) {
+      this.updateInputElement(nextInput);
     }
     return this.input;
   }
@@ -1308,6 +1321,66 @@ class Game {
     return finalValue;
   }
 
+  updateInputElement(inputEl) {
+    if (this._inputListener && this.input) {
+      try { this.input.removeEventListener('keydown', this._inputListener, true); }
+      catch (_) { /* ignore */ }
+    }
+    this.input = inputEl || null;
+    if (!this.input) {
+      this._inputListener = null;
+      return;
+    }
+    const handler = (ev) => {
+      if (!ev || ev.key !== 'Enter') return;
+      if (ev.isComposing) return;
+      const target = ev.target;
+      if (!target || typeof target.value !== 'string') return;
+      this._rememberManualSubmission(target.value);
+    };
+    this.input.addEventListener('keydown', handler, true);
+    this._inputListener = handler;
+  }
+
+  _rememberManualSubmission(rawWord) {
+    if (!this.myTurn) {
+      this._lastManualSubmission = null;
+      this._lastManualSubmissionAt = 0;
+      return;
+    }
+    const normalized = this._computeNormalizedWord(rawWord);
+    if (!normalized) {
+      this._lastManualSubmission = null;
+      this._lastManualSubmissionAt = 0;
+      return;
+    }
+    this._lastManualSubmission = normalized;
+    this._lastManualSubmissionAt = Date.now();
+  }
+
+  _consumeManualSubmissionMatch(normalizedWord) {
+    if (!normalizedWord) return false;
+    const stored = this._lastManualSubmission;
+    if (!stored) return false;
+    const age = Date.now() - (this._lastManualSubmissionAt || 0);
+    if (age > 15000) {
+      this._lastManualSubmission = null;
+      this._lastManualSubmissionAt = 0;
+      return false;
+    }
+    if (normalizedWord !== stored) return false;
+    this._lastManualSubmission = null;
+    this._lastManualSubmissionAt = 0;
+    return true;
+  }
+
+  _computeNormalizedWord(word) {
+    const info = this._normalizeWordForLog(word);
+    if (info && info.normalized) return info.normalized;
+    const raw = (word || '').toString().trim().toLowerCase();
+    return raw;
+  }
+
   _cancelPendingSubmissionTimer() {
     if (this._pendingSubmissionTimer) {
       clearTimeout(this._pendingSubmissionTimer);
@@ -1327,6 +1400,7 @@ class Game {
   _trackPendingSubmission(word, ignorePostfix, baseAttempt = 0) {
     this._cancelPendingSubmissionTimer();
     const attemptBase = Math.max(0, Number(baseAttempt) || 0);
+    const normalizedWord = this._computeNormalizedWord(word);
     this._pendingSubmission = {
       word: word,
       ignorePostfix: !!ignorePostfix,
@@ -1334,6 +1408,7 @@ class Game {
       round: this.selfRound,
       attempt: attemptBase + 1,
       submittedAt: Date.now(),
+      normalized: normalizedWord,
     };
     this._pendingSubmissionTimer = setTimeout(() => {
       this._handlePendingSubmissionTimeout();
@@ -1749,22 +1824,27 @@ class Game {
   onCorrectWord(word, myTurn = false) {
     const pending = this._pendingSubmission;
     const fallbackWord = pending?.word;
+    const pendingNormalized = pending?.normalized ?? this._computeNormalizedWord(fallbackWord);
     this._clearPendingSubmission();
     const resolvedWordRaw = typeof word === 'string' && word.trim().length
       ? word
       : (typeof fallbackWord === 'string' ? fallbackWord : '');
     const normalizedInfo = this._normalizeWordForLog(resolvedWordRaw);
+    const normalizedWord = normalizedInfo?.normalized || this._computeNormalizedWord(resolvedWordRaw);
+    const matchesPending = !!normalizedWord && !!pendingNormalized && normalizedWord === pendingNormalized;
+    const matchesManual = normalizedWord ? this._consumeManualSubmissionMatch(normalizedWord) : false;
+    const fromSelf = !!myTurn || matchesPending || matchesManual;
     if (normalizedInfo) {
       const displayWord = typeof word === 'string' && word.trim().length
         ? word
         : normalizedInfo.display;
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord,
-        fromSelf: !!myTurn,
+        fromSelf,
         outcome: 'correct'
       });
     }
-    if (!myTurn) return;
+    if (!fromSelf) return;
     if (!resolvedWordRaw) return;
     // Only tally toward goals with target > 0 (respecting per-letter caps)
     const letters = this._lettersOf(resolvedWordRaw.toLowerCase());

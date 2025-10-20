@@ -2344,37 +2344,18 @@ async function setupBuddy() {
   document.body.appendChild(s);
 
   const game = new Game(getInput());
-  setTimeout(() => (game.input = getInput()), 1000);
+  setTimeout(() => game.updateInputElement(getInput()), 1000);
 
   const { render } = createOverlay(game);
 
-  const normalizeActorId = (value) => {
-    if (value === null || value === undefined) return null;
-    if (typeof value === "object") {
-      if (value.actorId !== undefined) return normalizeActorId(value.actorId);
-      if (value.peerId !== undefined) return normalizeActorId(value.peerId);
-      if (value.peerID !== undefined) return normalizeActorId(value.peerID);
-      if (value.playerId !== undefined) return normalizeActorId(value.playerId);
-      if (value.id !== undefined) return normalizeActorId(value.id);
+  const detectDomMyTurn = () => {
+    try {
+      const input = document.querySelector('.selfTurn input');
+      if (input && !input.disabled) return true;
+      return !!document.querySelector('.selfTurn');
+    } catch (_) {
+      return false;
     }
-    const str = String(value);
-    return str ? str : null;
-  };
-
-  let selfActorId = null;
-  const markSelfActor = (value) => {
-    const id = normalizeActorId(value);
-    if (id) selfActorId = id;
-  };
-  const actorMatchesSelf = (value) => {
-    const id = normalizeActorId(value);
-    return !!id && !!selfActorId && id === selfActorId;
-  };
-  const computeFromSelf = (data, actorId, prevMyTurn) => {
-    if (data?.myTurn === true) return true;
-    if (actorMatchesSelf(actorId)) return true;
-    if ((actorId === undefined || actorId === null) && prevMyTurn) return true;
-    return false;
   };
 
   const notifySettingsChanged = (opts = {}) => {
@@ -2389,18 +2370,21 @@ async function setupBuddy() {
 
   window.addEventListener("message", async (event) => {
     if (!event.origin.endsWith("jklm.fun")) return;
-    const data = event.data;
-    const actorIdRaw = data?.actorId ?? data?.playerId ?? data?.peerId ?? null;
-    const prevMyTurn = !!game.myTurn;
+    const data = event.data || {};
+    const type = data.type;
+    const incomingMyTurn = data.myTurn === true;
 
-    if ("myTurn" in data) game.setMyTurn(data.myTurn);
-
-    if (data.type === "setup") {
-      if (data.myTurn) markSelfActor(actorIdRaw);
-      await game.setLang(data.language);
-      if (data.myTurn) {
+    if (type === "setup" || type === "nextTurn") {
+      const domTurn = detectDomMyTurn();
+      const finalMyTurn = incomingMyTurn || domTurn;
+      game.setMyTurn(finalMyTurn);
+      game.updateInputElement(getInput());
+      if (type === "setup") {
+        await game.setLang(data.language);
+      }
+      if (finalMyTurn) {
         game.syllable = data.syllable;
-        game.selfRound = (game.selfRound|0) + 1;     // new round for me
+        game.selfRound = (game.selfRound|0) + 1;
         game.lastTopPicksSelf = game.getTopCandidates(data.syllable, game.suggestionsLimit);
         if (!game.paused) game.playTurn().catch(err => console.error("[BombPartyShark] playTurn failed", err));
       } else {
@@ -2408,27 +2392,18 @@ async function setupBuddy() {
         game.generateSpectatorSuggestions(data.syllable, game.suggestionsLimit);
       }
       render();
-    } else if (data.type === "correctWord") {
-      const fromSelf = computeFromSelf(data, actorIdRaw, prevMyTurn);
-      if (fromSelf) markSelfActor(actorIdRaw ?? selfActorId);
-      game.onCorrectWord(data.word, fromSelf);
+      return;
+    }
+
+    if ("myTurn" in data) {
+      game.setMyTurn(incomingMyTurn);
+    }
+
+    if (type === "correctWord") {
+      game.onCorrectWord(data.word, incomingMyTurn);
       render();
-    } else if (data.type === "failWord") {
-      const fromSelf = computeFromSelf(data, actorIdRaw, prevMyTurn);
-      if (fromSelf) markSelfActor(actorIdRaw ?? selfActorId);
-      game.onFailedWord(fromSelf, data.word, data.reason);
-      render();
-    } else if (data.type === "nextTurn") {
-      if (data.myTurn) markSelfActor(actorIdRaw);
-      if (data.myTurn) {
-        game.syllable = data.syllable;
-        game.selfRound = (game.selfRound|0) + 1;     // new round for me
-        game.lastTopPicksSelf = game.getTopCandidates(data.syllable, game.suggestionsLimit);
-        if (!game.paused) game.playTurn().catch(err => console.error("[BombPartyShark] playTurn failed", err));
-      } else {
-        game.spectatorRound = (game.spectatorRound|0) + 1;
-        game.generateSpectatorSuggestions(data.syllable, game.suggestionsLimit);
-      }
+    } else if (type === "failWord") {
+      game.onFailedWord(incomingMyTurn, data.word, data.reason);
       render();
     }
   });
