@@ -173,10 +173,15 @@ class Game {
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
-    this.excludeEnabled = false;
+    this.excludeEnabled = true;
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
     this._targetsManualOverride = false;
+
+    // Coverage debug logging
+    this._coverageLog = [];
+    this._coverageLogCallback = null;
+    this._coverageLogCounter = 0;
 
     // Tallies persistence hook
     this._onTalliesChanged = null;
@@ -212,6 +217,14 @@ class Game {
     this._typeAndSubmit = this.typeAndSubmit.bind(this);
 
     this._lastLoadedLang = null;
+
+    this.recomputeTargets();
+    this._logCoverage('init', {
+      coverageCounts: this.coverageCounts.slice(0, 26),
+      targetCounts: this.targetCounts.slice(0, 26),
+      excludeSpec: this.excludeSpec,
+      excludeEnabled: this.excludeEnabled
+    });
   }
 
   setMyTurn(isMine) {
@@ -509,7 +522,10 @@ class Game {
   togglePause() { this.paused = !this.paused; }
   toggleInstantMode() { this.instantMode = !this.instantMode; }
   toggleFoulMode() { this.foulMode = !this.foulMode; }
-  toggleCoverageMode() { this.coverageMode = !this.coverageMode; }
+  toggleCoverageMode() {
+    this.coverageMode = !this.coverageMode;
+    this._logCoverage('toggleCoverageMode', { enabled: this.coverageMode });
+  }
   toggleMistakes() { this.mistakesEnabled = !this.mistakesEnabled; }
   toggleAutoSuicide() { this.autoSuicide = !this.autoSuicide; }
   toggleAutoJoinAlways() { this.autoJoinAlways = !this.autoJoinAlways; }
@@ -600,12 +616,16 @@ class Game {
   }
 
   setExcludeEnabled(b) {
-    this.excludeEnabled = !!b;
-    if (!this._targetsManualOverride) this.recomputeTargets();
+    const requested = !!b;
+    const prev = this.excludeEnabled;
+    this.excludeEnabled = true;
+    this._logCoverage('setExcludeEnabled', { requested, enabled: this.excludeEnabled });
+    if (!this._targetsManualOverride && prev !== this.excludeEnabled) this.recomputeTargets();
   }
   setExcludeSpec(spec) {
     this.excludeSpec = (spec || "");
     this._targetsManualOverride = false;
+    this._logCoverage('setExcludeSpec', { spec: this.excludeSpec });
     this.recomputeTargets();
   }
 
@@ -613,10 +633,46 @@ class Game {
     this._onTalliesChanged = typeof fn === 'function' ? fn : null;
   }
 
+  setCoverageLogCallback(fn) {
+    this._coverageLogCallback = typeof fn === 'function' ? fn : null;
+    this._emitCoverageLog();
+  }
+
   _emitTalliesChanged() {
     if (typeof this._onTalliesChanged === 'function') {
       try { this._onTalliesChanged(); } catch (err) { console.warn('[BombPartyShark] tally listener failed', err); }
     }
+  }
+
+  _emitCoverageLog() {
+    if (typeof this._coverageLogCallback === 'function') {
+      try {
+        this._coverageLogCallback(this._coverageLog.join('\n'));
+      } catch (err) {
+        console.warn('[BombPartyShark] coverage log listener failed', err);
+      }
+    }
+  }
+
+  _logCoverage(event, details) {
+    try {
+      const ts = new Date();
+      const stamp = ts.toISOString();
+      let payload = '';
+      if (details !== undefined) {
+        if (typeof details === 'string') payload = details;
+        else payload = JSON.stringify(details);
+      }
+      const line = `${++this._coverageLogCounter} ${stamp} [${event}] ${payload}`.trimEnd();
+      this._coverageLog.push(line);
+      const maxEntries = 400;
+      if (this._coverageLog.length > maxEntries) {
+        this._coverageLog.splice(0, this._coverageLog.length - maxEntries);
+      }
+    } catch (err) {
+      console.warn('[BombPartyShark] failed to record coverage log', err);
+    }
+    this._emitCoverageLog();
   }
 
   _emitWordListWarnings(warnings) {
@@ -685,6 +741,12 @@ class Game {
     return { normalized: lower, display };
   }
 
+  _normalizeForCompare(word) {
+    const raw = (word || '').toString();
+    const trimmed = raw.trim();
+    return trimmed ? trimmed.toLowerCase() : '';
+  }
+
   _rememberWordUsage(word, meta = {}) {
     const raw = (word || '').toString();
     const normalized = raw.trim().toLowerCase();
@@ -703,7 +765,13 @@ class Game {
     }
     this._emitWordLogChanged();
   }
-  resetCoverage() { this.coverageCounts.fill(0); this._roundFailed.clear(); this._emitTalliesChanged(); }
+  resetCoverage() {
+    const before = this.coverageCounts.slice(0, 26);
+    this.coverageCounts.fill(0);
+    this._roundFailed.clear();
+    this._logCoverage('resetCoverage', { before, after: this.coverageCounts.slice(0, 26) });
+    this._emitTalliesChanged();
+  }
 
   setCoverageCount(idx, value) {
     const n = Math.floor(Number(value));
@@ -712,7 +780,9 @@ class Game {
     const target = Math.max(0, this.targetCounts[idx] || 0);
     const max = target;
     const clamped = Math.max(0, Math.min(max, n));
+    const before = this.coverageCounts[idx] || 0;
     this.coverageCounts[idx] = clamped;
+    this._logCoverage('setCoverageCount', { idx, before, requested: n, clamped, target, counts: this.coverageCounts.slice(0, 26) });
     this._emitTalliesChanged();
   }
 
@@ -726,11 +796,15 @@ class Game {
     if (!Number.isFinite(n)) return;
     if (idx < 0 || idx >= 26) return;
     const clamped = Math.max(0, Math.min(99, n));
+    const beforeTarget = this.targetCounts[idx] || 0;
     this.targetCounts[idx] = clamped;
     if ((this.coverageCounts[idx] || 0) > clamped) {
+      const beforeCount = this.coverageCounts[idx] || 0;
       this.coverageCounts[idx] = clamped;
+      this._logCoverage('setTargetCount:trimCoverage', { idx, beforeCount, afterCount: clamped });
     }
     this._targetsManualOverride = true;
+    this._logCoverage('setTargetCount', { idx, before: beforeTarget, requested: n, clamped, targets: this.targetCounts.slice(0, 26) });
     this._emitTalliesChanged();
   }
 
@@ -743,6 +817,8 @@ class Game {
     const n = Math.floor(Number(value));
     if (!Number.isFinite(n)) return;
     const clamped = Math.max(0, Math.min(99, n));
+    const beforeTargets = this.targetCounts.slice(0, 26);
+    const beforeCounts = this.coverageCounts.slice(0, 26);
     for (let i = 0; i < 26; i++) {
       this.targetCounts[i] = clamped;
       if ((this.coverageCounts[i] || 0) > clamped) {
@@ -750,6 +826,14 @@ class Game {
       }
     }
     this._targetsManualOverride = true;
+    this._logCoverage('setAllTargetCounts', {
+      requested: n,
+      clamped,
+      beforeTargets,
+      afterTargets: this.targetCounts.slice(0, 26),
+      beforeCounts,
+      afterCounts: this.coverageCounts.slice(0, 26)
+    });
     this._emitTalliesChanged();
   }
 
@@ -781,8 +865,10 @@ class Game {
         if (idx >= 0 && idx < 26) tgt[idx] = 0;
       }
     }
+    const before = this.targetCounts.slice(0, 26);
     this.targetCounts = tgt;
     this._targetsManualOverride = false;
+    this._logCoverage('recomputeTargets', { spec: this.excludeSpec, before, after: this.targetCounts.slice(0, 26), excludeEnabled: this.excludeEnabled });
   }
 
 
@@ -814,11 +900,13 @@ class Game {
       if (target > 0) {
         hasPositiveTarget = true;
         if ((this.coverageCounts[i] || 0) < target) {
+          this._logCoverage('_maybeResetCoverageOnComplete', { status: 'incomplete', firstIncompleteIndex: i, target, have: this.coverageCounts[i] || 0 });
           return;
         }
       }
     }
     if (!hasPositiveTarget) return;
+    this._logCoverage('_maybeResetCoverageOnComplete', { status: 'complete', counts: this.coverageCounts.slice(0, 26), targets: this.targetCounts.slice(0, 26) });
     this.resetCoverage();
   }
 
@@ -829,6 +917,7 @@ class Game {
   _coverageScore(word) {
     const letters = this._lettersOf(word);
     let score = 0;
+    const breakdown = [];
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
       const have = this.coverageCounts[idx] || 0;
@@ -842,8 +931,12 @@ class Game {
       score += contribution * w;
       if (have + contribution >= want) {
         score += 1 * w; // finishing this letter
+        breakdown.push({ letter: c, count, have, want, need, contribution, weight: w, finished: true, partialScore: contribution * w + (1 * w) });
+      } else {
+        breakdown.push({ letter: c, count, have, want, need, contribution, weight: w, finished: false, partialScore: contribution * w });
       }
     });
+    this._logCoverage('_coverageScore', { word, score, breakdown, coverageCounts: this.coverageCounts.slice(0, 26), targetCounts: this.targetCounts.slice(0, 26) });
     return score;
   }
 
@@ -1315,11 +1408,13 @@ class Game {
     this._clearPendingSubmission();
   }
 
-  _trackPendingSubmission(word, ignorePostfix, baseAttempt = 0) {
+  _trackPendingSubmission(word, ignorePostfix, baseAttempt = 0, submittedWord = null) {
     this._cancelPendingSubmissionTimer();
     const attemptBase = Math.max(0, Number(baseAttempt) || 0);
+    const submitted = submittedWord != null ? String(submittedWord) : (word != null ? String(word) : '');
     this._pendingSubmission = {
       word: word,
+      submittedWord: submitted,
       ignorePostfix: !!ignorePostfix,
       syllable: this.syllable,
       round: this.selfRound,
@@ -1730,7 +1825,7 @@ class Game {
         form.requestSubmit();
       }
 
-      this._trackPendingSubmission(word, ignorePostfix, attemptSeed);
+      this._trackPendingSubmission(word, ignorePostfix, attemptSeed, input.value);
     } finally {
       cleanup();
     }
@@ -1739,26 +1834,62 @@ class Game {
 
   onCorrectWord(word, myTurn = false) {
     const pending = this._pendingSubmission;
-    const fallbackWord = pending?.word;
+    const fallbackWord = pending?.submittedWord || pending?.word;
     this._clearPendingSubmission();
     const resolvedWordRaw = typeof word === 'string' && word.trim().length
       ? word
       : (typeof fallbackWord === 'string' ? fallbackWord : '');
     const normalizedInfo = this._normalizeWordForLog(resolvedWordRaw);
+    const pendingNormalizedInfo = pending && (pending.submittedWord || pending.word)
+      ? this._normalizeWordForLog(pending.submittedWord || pending.word)
+      : null;
+    const pendingRawNorm = this._normalizeForCompare(pending?.submittedWord || pending?.word);
+    const resolvedRawNorm = this._normalizeForCompare(resolvedWordRaw);
+    let pendingMatches = false;
+    if (pendingNormalizedInfo?.normalized && normalizedInfo?.normalized) {
+      pendingMatches = pendingNormalizedInfo.normalized === normalizedInfo.normalized;
+    }
+    if (!pendingMatches && pendingRawNorm && resolvedRawNorm) {
+      pendingMatches = pendingRawNorm === resolvedRawNorm;
+    }
+    let treatAsMine = !!myTurn;
+    if (!treatAsMine && pending && pendingMatches) {
+      treatAsMine = true;
+    }
     if (normalizedInfo) {
       const displayWord = typeof word === 'string' && word.trim().length
         ? word
         : normalizedInfo.display;
       this._rememberWordUsage(normalizedInfo.normalized, {
         displayWord,
-        fromSelf: !!myTurn,
+        fromSelf: !!treatAsMine,
         outcome: 'correct'
       });
     }
-    if (!myTurn) return;
-    if (!resolvedWordRaw) return;
+    if (!treatAsMine) {
+      this._logCoverage('onCorrectWord:ignored', {
+        reason: 'notMyTurn',
+        word: resolvedWordRaw,
+        myTurnFlag: !!myTurn,
+        pendingWord: pending?.word || null,
+        pendingSubmitted: pending?.submittedWord || null,
+        pendingMatched: pendingMatches
+      });
+      return;
+    }
+    if (!resolvedWordRaw) {
+      this._logCoverage('onCorrectWord:ignored', { reason: 'noResolvedWord' });
+      return;
+    }
     // Only tally toward goals with target > 0 (respecting per-letter caps)
     const letters = this._lettersOf(resolvedWordRaw.toLowerCase());
+    this._logCoverage('onCorrectWord:start', {
+      word: resolvedWordRaw,
+      normalized: normalizedInfo ? normalizedInfo.normalized : null,
+      letters: Object.fromEntries(letters),
+      pendingMatched,
+      fromSelf: true
+    });
     letters.forEach((count, c) => {
       const idx = c.charCodeAt(0) - 97;
       if (idx < 0 || idx >= 26) return;
@@ -1769,8 +1900,21 @@ class Game {
       if (remaining <= 0) return;
       const gain = Math.min(remaining, Math.max(0, count || 0));
       if (gain <= 0) return;
+      const before = this.coverageCounts[idx] || 0;
       this.coverageCounts[idx] = current + gain;
+      this._logCoverage('onCorrectWord:letterGain', {
+        letter: c,
+        idx,
+        count,
+        target,
+        current,
+        remaining,
+        gain,
+        before,
+        after: this.coverageCounts[idx]
+      });
     });
+    this._logCoverage('onCorrectWord:end', { counts: this.coverageCounts.slice(0, 26) });
     this._maybeResetCoverageOnComplete();
     this._emitTalliesChanged();
   }
