@@ -173,10 +173,11 @@ class Game {
 
     // Coverage / goals
     this.coverageCounts = new Array(26).fill(0);
-    this.excludeEnabled = false;
+    this.excludeEnabled = true;
     this.excludeSpec = "x0 z0";       // default goals: treat x,z as 0
     this.targetCounts = new Array(26).fill(1);
     this._targetsManualOverride = false;
+    this.recomputeTargets();
 
     // Tallies persistence hook
     this._onTalliesChanged = null;
@@ -599,9 +600,11 @@ class Game {
     this.priorityOrder = order;
   }
 
-  setExcludeEnabled(b) {
-    this.excludeEnabled = !!b;
-    if (!this._targetsManualOverride) this.recomputeTargets();
+  setExcludeEnabled(_) {
+    this.excludeEnabled = true;
+    if (!this._targetsManualOverride) {
+      this.recomputeTargets();
+    }
   }
   setExcludeSpec(spec) {
     this.excludeSpec = (spec || "");

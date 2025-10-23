@@ -149,7 +149,6 @@ function createOverlay(game) {
     inputPostfix: { en: "Characters to append (e.g., <3)", de: "Zeichen anhängen (z. B. <3)", es: "Caracteres para añadir (p. ej., <3)", fr: "Caractères à ajouter (ex. : <3)", "pt-br": "Caracteres para adicionar (ex.: <3)" },
     sectionAlphabet: { en: "Alphabet mastery", de: "Alphabet-Training", es: "Dominio del alfabeto", fr: "Maîtrise de l'alphabet", "pt-br": "Domínio do alfabeto" },
     toggleCoverage: { en: "Alphabet coverage", de: "Alphabet-Abdeckung", es: "Cobertura del alfabeto", fr: "Couverture de l'alphabet", "pt-br": "Cobertura do alfabeto" },
-    toggleExclude: { en: "A-Z goals / exclusions", de: "A-Z-Ziele / Ausschlüsse", es: "Objetivos/exclusiones A-Z", fr: "Objectifs/exclusions A-Z", "pt-br": "Metas/exclusões A-Z" },
     labelEditingMode: { en: "Editing mode", de: "Bearbeitungsmodus", es: "Modo de edición", fr: "Mode d'édition", "pt-br": "Modo de edição" },
     editOff: { en: "Off", de: "Aus", es: "Apagado", fr: "Arrêt", "pt-br": "Desligado" },
     editTallies: { en: "Edit tallies", de: "Zählwerte bearbeiten", es: "Editar conteos", fr: "Modifier les comptes", "pt-br": "Editar contagens" },
@@ -386,7 +385,6 @@ function createOverlay(game) {
   setIfString(savedSettings?.specContainsText, (val) => game.setSpecContainsText(val));
   setIfString(savedSettings?.excludeSpec, (val) => game.setExcludeSpec(val));
 
-  game.setExcludeEnabled(getBool(savedSettings?.excludeEnabled, game.excludeEnabled));
   if (Array.isArray(savedSettings?.priorityOrder)) {
     game.setPriorityOrder(savedSettings.priorityOrder);
   }
@@ -409,7 +407,6 @@ function createOverlay(game) {
     autoJoinAlways: !!game.autoJoinAlways,
     foulMode: !!game.foulMode,
     coverageMode: !!game.coverageMode,
-    excludeEnabled: !!game.excludeEnabled,
     lengthMode: !!game.lengthMode,
     specLengthMode: !!game.specLengthMode,
     specFoulMode: !!game.specFoulMode,
@@ -1357,10 +1354,6 @@ function createOverlay(game) {
   coverageCard.appendChild(coverageToggle);
   attachPriorityControl(coverageToggle, "coverage");
 
-  const exTop = mkRow("toggleExclude", ()=>game.setExcludeEnabled(!game.excludeEnabled), ()=>game.excludeEnabled, "teal", "status", { recompute: true });
-  toggleRefs.push(exTop);
-  coverageCard.appendChild(exTop);
-
   const coverageEditButtons = [];
   const coverageCells = [];
 
@@ -1389,7 +1382,6 @@ function createOverlay(game) {
     render();
   };
   if (coverageToggle?._btn) coverageToggle._btn.addEventListener("click", () => { coverageEditMode = "off"; });
-  if (exTop?._btn) exTop._btn.addEventListener("click", () => { coverageEditMode = "off"; });
   editModes.forEach(cfg => {
     const btn = document.createElement("button");
     if (cfg.labelKey) {
