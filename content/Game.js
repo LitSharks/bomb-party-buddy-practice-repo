@@ -183,6 +183,29 @@ class Game {
     this._onTalliesChanged = null;
     this._notifyWordListIssue = null;
 
+    // Manual submission tracking (for coverage tallies when typing by hand)
+    this._manualSubmissionEntry = null;
+    this._manualSubmissionListener = (event) => {
+      if (!event || event.key !== 'Enter') return;
+      if (!event.isTrusted) return;
+      if (!this.myTurn) return;
+      const target = event.target;
+      if (!target || target.tagName !== 'INPUT') return;
+      if (target.closest?.('.selfTurn') == null) return;
+      const input = this._ensureInput();
+      if (input && target !== input) return;
+      const raw = typeof target.value === 'string' ? target.value : '';
+      const trimmed = raw.trim();
+      if (!trimmed.length) {
+        this._manualSubmissionEntry = null;
+        return;
+      }
+      this._manualSubmissionEntry = { word: trimmed, ts: Date.now() };
+    };
+    if (typeof document !== 'undefined' && document?.addEventListener) {
+      document.addEventListener('keydown', this._manualSubmissionListener, true);
+    }
+
     // HUD lists
     this.lastTopPicksSelf = [];
     this.lastTopPicksSelfDisplay = [];
@@ -622,6 +645,14 @@ class Game {
     }
   }
 
+  dispose() {
+    if (this._manualSubmissionListener && typeof document !== 'undefined' && document?.removeEventListener) {
+      try { document.removeEventListener('keydown', this._manualSubmissionListener, true); } catch (_) {}
+    }
+    this._manualSubmissionListener = null;
+    this._manualSubmissionEntry = null;
+  }
+
   _emitWordListWarnings(warnings) {
     if (!Array.isArray(warnings) || !warnings.length) return;
     const notify = this._notifyWordListIssue;
@@ -686,6 +717,28 @@ class Game {
       }
     }
     return { normalized: lower, display };
+  }
+
+  _consumeManualSubmission(maxAgeMs = 8000) {
+    const entry = this._manualSubmissionEntry;
+    this._manualSubmissionEntry = null;
+    if (!entry || !entry.word) return '';
+    const ts = Number(entry.ts) || 0;
+    if (maxAgeMs > 0 && Number.isFinite(maxAgeMs)) {
+      const age = Date.now() - ts;
+      if (age > maxAgeMs) return '';
+    }
+    const text = (entry.word || '').toString().trim();
+    return text.length ? text : '';
+  }
+
+  _resolveSubmittedWord(...candidates) {
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const trimmed = candidate.trim();
+      if (trimmed.length) return trimmed;
+    }
+    return '';
   }
 
   _rememberWordUsage(word, meta = {}) {
@@ -1743,10 +1796,9 @@ class Game {
   onCorrectWord(word, myTurn = false) {
     const pending = this._pendingSubmission;
     const fallbackWord = pending?.word;
+    const manualWord = myTurn ? this._consumeManualSubmission() : '';
     this._clearPendingSubmission();
-    const resolvedWordRaw = typeof word === 'string' && word.trim().length
-      ? word
-      : (typeof fallbackWord === 'string' ? fallbackWord : '');
+    const resolvedWordRaw = this._resolveSubmittedWord(word, fallbackWord, manualWord);
     const normalizedInfo = this._normalizeWordForLog(resolvedWordRaw);
     if (normalizedInfo) {
       const displayWord = typeof word === 'string' && word.trim().length
@@ -1779,24 +1831,28 @@ class Game {
   }
 
   onFailedWord(myTurn, word, reason) {
-    this._reportInvalid(word, reason, myTurn).catch(() => {});
+    const pending = this._pendingSubmission;
+    const fallbackWord = pending?.word;
+    const manualWord = myTurn ? this._consumeManualSubmission() : '';
+    const resolvedWordRaw = this._resolveSubmittedWord(word, fallbackWord, manualWord);
+    const reportWord = resolvedWordRaw || word || fallbackWord || manualWord || '';
+    this._reportInvalid(reportWord, reason, myTurn).catch(() => {});
     this._clearPendingSubmission();
-    const normalizedInfo = this._normalizeWordForLog(word);
+    const logWord = resolvedWordRaw || reportWord;
+    const normalizedInfo = this._normalizeWordForLog(logWord);
     if (normalizedInfo) {
       this._rememberWordUsage(normalizedInfo.normalized, {
-        displayWord: normalizedInfo.display,
+        displayWord: typeof word === 'string' && word.trim().length ? word : normalizedInfo.display,
         fromSelf: !!myTurn,
         outcome: 'fail'
       });
     }
     if (!myTurn) return;
-    if (word) {
-      const normalizedRaw = (word || "").toLowerCase();
-      const normalized = normalizedRaw.trim();
+    if (normalizedInfo && normalizedInfo.normalized) {
+      this._roundFailed.add(normalizedInfo.normalized);
+    } else if (logWord) {
+      const normalized = logWord.toLowerCase().trim();
       if (normalized) this._roundFailed.add(normalized);
-      if (normalizedInfo && normalizedInfo.normalized) {
-        this._roundFailed.add(normalizedInfo.normalized);
-      }
     }
     if (this.paused) return;
     const next = this._pickNextNotFailed();
