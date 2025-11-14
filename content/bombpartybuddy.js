@@ -2336,6 +2336,604 @@ function createOverlay(game) {
   return { render };
 }
 
+const DEVICE_ID_STORAGE_KEY = "litsharkDeviceId";
+const ACCOUNT_TOKEN_STORAGE_KEY = "litsharkAccountToken";
+
+function safeRandomUuid() {
+  try {
+    if (typeof crypto?.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch (_) { /* ignore */ }
+  const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).slice(-4);
+  return `${s4()}${s4()}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
+}
+
+function storageGet(area, keys) {
+  return new Promise((resolve) => {
+    try {
+      const api = chrome?.storage?.[area];
+      if (!api || typeof api.get !== "function") {
+        resolve({});
+        return;
+      }
+      api.get(keys, (result) => {
+        if (chrome.runtime?.lastError) {
+          console.warn(`[BombPartyShark] Failed to read ${area} storage`, chrome.runtime.lastError);
+          resolve({});
+          return;
+        }
+        resolve(result || {});
+      });
+    } catch (err) {
+      console.warn(`[BombPartyShark] Failed to access ${area} storage`, err);
+      resolve({});
+    }
+  });
+}
+
+function storageSet(area, data) {
+  return new Promise((resolve) => {
+    try {
+      const api = chrome?.storage?.[area];
+      if (!api || typeof api.set !== "function") {
+        resolve(false);
+        return;
+      }
+      api.set(data, () => {
+        if (chrome.runtime?.lastError) {
+          console.warn(`[BombPartyShark] Failed to write ${area} storage`, chrome.runtime.lastError);
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      });
+    } catch (err) {
+      console.warn(`[BombPartyShark] Failed to write ${area} storage`, err);
+      resolve(false);
+    }
+  });
+}
+
+function sendPresenceCommand(message) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage(message, (resp) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        if (!resp) {
+          resolve(null);
+          return;
+        }
+        if (resp.error) {
+          reject(new Error(resp.error));
+          return;
+        }
+        resolve(resp);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+class PresenceReporter {
+  constructor(game) {
+    this.game = game || null;
+    const manifest = typeof chrome?.runtime?.getManifest === "function" ? chrome.runtime.getManifest() : null;
+    this.version = manifest?.version || "0";
+    this.sessionId = safeRandomUuid();
+    this.lang = (this.game && typeof this.game.lang === "string" && this.game.lang) ? this.game.lang : "en";
+    this.roomCode = this.extractRoomCode();
+    this.username = null;
+    this.authLabel = null;
+    this.selfPeerId = null;
+    this.maxPeerSeen = null;
+    this.deviceId = null;
+    this.deviceIdPromise = this.ensureDeviceId();
+    this.accountToken = null;
+    this.registered = false;
+    this.leaveSent = false;
+    this.disposed = false;
+    this.suspended = document.visibilityState === "hidden";
+    this.nextHeartbeatTimer = null;
+    this.retryTimer = null;
+    this.retryAttempt = 0;
+    this.sending = false;
+    this.pendingImmediate = false;
+    this.chattersObserver = null;
+    this.chattersContainer = null;
+    this.rosterCheckTimer = null;
+    this.roomMonitorTimer = null;
+    this.storageListener = null;
+
+    this.visibilityHandler = () => this.handleVisibilityChange();
+    this.pageHideHandler = () => this.handlePageHide();
+    this.beforeUnloadHandler = () => this.handleBeforeUnload();
+
+    document.addEventListener("visibilitychange", this.visibilityHandler, true);
+    window.addEventListener("pagehide", this.pageHideHandler);
+    window.addEventListener("beforeunload", this.beforeUnloadHandler);
+
+    this.ensureRosterObserver();
+    this.rosterCheckTimer = window.setInterval(() => this.ensureRosterObserver(), 2000);
+    this.roomMonitorTimer = window.setInterval(() => this.checkRoomCode(false), 2000);
+    this.checkRoomCode(true);
+
+    if (chrome?.storage?.onChanged && typeof chrome.storage.onChanged.addListener === "function") {
+      this.storageListener = (changes, area) => this.handleStorageChange(changes, area);
+      chrome.storage.onChanged.addListener(this.storageListener);
+    }
+
+    this.deviceIdPromise.then((id) => {
+      this.deviceId = id;
+      return this.registerSession();
+    }).then(() => {
+      this.queueHeartbeat({ immediate: true });
+    }).catch((err) => {
+      console.warn("[BombPartyShark] Failed to initialize device id", err);
+    });
+
+    this.refreshAccountToken();
+    this.updateSelfFromRoster();
+    this.queueHeartbeat();
+  }
+
+  async ensureDeviceId() {
+    if (this.deviceId) return this.deviceId;
+    const data = await storageGet("local", [DEVICE_ID_STORAGE_KEY]);
+    let id = data?.[DEVICE_ID_STORAGE_KEY];
+    if (typeof id !== "string" || !id) {
+      id = safeRandomUuid();
+      await storageSet("local", { [DEVICE_ID_STORAGE_KEY]: id });
+    }
+    this.deviceId = id;
+    return id;
+  }
+
+  async registerSession() {
+    if (this.registered || this.disposed) return;
+    const deviceId = await this.ensureDeviceId().catch(() => null);
+    if (!deviceId) return;
+    try {
+      await sendPresenceCommand({ type: "presenceRegister", sessionId: this.sessionId, deviceId });
+      this.registered = true;
+    } catch (err) {
+      console.warn("[BombPartyShark] Failed to register presence session", err);
+    }
+  }
+
+  async unregisterSession() {
+    if (!this.registered) return;
+    this.registered = false;
+    try {
+      await sendPresenceCommand({ type: "presenceUnregister", sessionId: this.sessionId });
+    } catch (err) {
+      console.warn("[BombPartyShark] Failed to unregister presence session", err);
+    }
+  }
+
+  async postPresencePayload(payload) {
+    await sendPresenceCommand({ type: "presenceSend", payload });
+  }
+
+  computeHeartbeatDelay() {
+    const base = 30000;
+    const jitter = (Math.random() * 6000) - 3000;
+    return Math.max(12000, Math.round(base + jitter));
+  }
+
+  computeRetryDelay() {
+    const base = 5000;
+    const attempt = Math.max(0, this.retryAttempt - 1);
+    const capped = Math.min(120000, base * Math.pow(2, attempt));
+    const jitter = Math.random() * 4000;
+    return Math.round(capped + jitter);
+  }
+
+  clearHeartbeatTimers() {
+    if (this.nextHeartbeatTimer != null) {
+      clearTimeout(this.nextHeartbeatTimer);
+      this.nextHeartbeatTimer = null;
+    }
+    if (this.retryTimer != null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+  }
+
+  clearTimers() {
+    this.clearHeartbeatTimers();
+    if (this.rosterCheckTimer) {
+      clearInterval(this.rosterCheckTimer);
+      this.rosterCheckTimer = null;
+    }
+    if (this.roomMonitorTimer) {
+      clearInterval(this.roomMonitorTimer);
+      this.roomMonitorTimer = null;
+    }
+  }
+
+  queueHeartbeat(opts = {}) {
+    if (this.disposed) return;
+    const immediate = !!opts.immediate;
+    if (this.suspended && !immediate) return;
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    if (immediate) {
+      if (this.nextHeartbeatTimer != null) {
+        clearTimeout(this.nextHeartbeatTimer);
+        this.nextHeartbeatTimer = null;
+      }
+      this.sendHeartbeat();
+      return;
+    }
+    if (this.nextHeartbeatTimer != null) return;
+    const delay = this.computeHeartbeatDelay();
+    this.nextHeartbeatTimer = window.setTimeout(() => {
+      this.nextHeartbeatTimer = null;
+      this.sendHeartbeat();
+    }, delay);
+  }
+
+  async sendHeartbeat() {
+    if (this.disposed) return;
+    if (this.sending) {
+      this.pendingImmediate = true;
+      return;
+    }
+    if (this.suspended) {
+      this.queueHeartbeat();
+      return;
+    }
+    const deviceReady = await this.ensureDeviceId().then(() => true).catch((err) => {
+      console.warn("[BombPartyShark] Failed to ensure device id", err);
+      return false;
+    });
+    if (!deviceReady) {
+      this.queueHeartbeat();
+      return;
+    }
+
+    this.sending = true;
+    try {
+      await this.registerSession();
+      const payload = await this.buildHeartbeatPayload();
+      await this.postPresencePayload(payload);
+      this.retryAttempt = 0;
+    } catch (err) {
+      console.warn("[BombPartyShark] Failed to send presence heartbeat", err);
+      this.retryAttempt += 1;
+      const delay = this.computeRetryDelay();
+      this.retryTimer = window.setTimeout(() => {
+        this.retryTimer = null;
+        this.queueHeartbeat({ immediate: true });
+      }, delay);
+      return;
+    } finally {
+      this.sending = false;
+    }
+
+    if (this.pendingImmediate) {
+      this.pendingImmediate = false;
+      this.queueHeartbeat({ immediate: true });
+      return;
+    }
+    this.queueHeartbeat();
+  }
+
+  buildDisplayName() {
+    const base = this.username || "Unknown Player";
+    const auth = this.authLabel && this.authLabel !== "Guest" ? this.authLabel : null;
+    return auth ? `${base} (${auth})` : base;
+  }
+
+  async buildHeartbeatPayload() {
+    const deviceId = await this.ensureDeviceId();
+    const lang = (typeof this.lang === "string" && this.lang) ? this.lang : "en";
+    const payload = {
+      action: "heartbeat",
+      session_id: this.sessionId,
+      device_id: deviceId,
+      version: this.version,
+      lang,
+      room_code: this.roomCode || null,
+      username: this.buildDisplayName()
+    };
+    if (this.accountToken) payload.account_token = this.accountToken;
+    return payload;
+  }
+
+  handleVisibilityChange() {
+    const hidden = document.visibilityState === "hidden";
+    if (hidden) {
+      this.suspended = true;
+      this.clearHeartbeatTimers();
+    } else {
+      const wasSuspended = this.suspended;
+      this.suspended = false;
+      this.queueHeartbeat({ immediate: wasSuspended });
+    }
+  }
+
+  handlePageHide() {
+    this.trySendLeave();
+  }
+
+  handleBeforeUnload() {
+    this.trySendLeave();
+    this.dispose();
+  }
+
+  async trySendLeave() {
+    if (this.leaveSent || !this.sessionId) return;
+    this.leaveSent = true;
+    const deviceId = await this.ensureDeviceId().catch(() => null);
+    if (!deviceId) {
+      await this.unregisterSession();
+      return;
+    }
+    const payload = {
+      action: "leave",
+      session_id: this.sessionId,
+      device_id: deviceId
+    };
+    try {
+      await this.postPresencePayload(payload);
+    } catch (err) {
+      console.warn("[BombPartyShark] Failed to send presence leave", err);
+    } finally {
+      await this.unregisterSession();
+    }
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.clearTimers();
+    if (this.chattersObserver) {
+      try { this.chattersObserver.disconnect(); } catch (_) { /* ignore */ }
+      this.chattersObserver = null;
+    }
+    this.chattersContainer = null;
+    if (this.storageListener && chrome?.storage?.onChanged && typeof chrome.storage.onChanged.removeListener === "function") {
+      try { chrome.storage.onChanged.removeListener(this.storageListener); } catch (_) { /* ignore */ }
+      this.storageListener = null;
+    }
+    document.removeEventListener("visibilitychange", this.visibilityHandler, true);
+    window.removeEventListener("pagehide", this.pageHideHandler);
+    window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    this.trySendLeave();
+  }
+
+  handleStorageChange(changes, area) {
+    if (!changes) return;
+    if (area !== "sync" && area !== "local") return;
+    if (!Object.prototype.hasOwnProperty.call(changes, ACCOUNT_TOKEN_STORAGE_KEY)) return;
+    this.refreshAccountToken();
+  }
+
+  async refreshAccountToken() {
+    const readKey = async (area) => {
+      const data = await storageGet(area, [ACCOUNT_TOKEN_STORAGE_KEY]);
+      const raw = data?.[ACCOUNT_TOKEN_STORAGE_KEY];
+      if (typeof raw !== "string") return null;
+      const trimmed = raw.trim();
+      return trimmed ? trimmed : null;
+    };
+    let token = await readKey("sync");
+    if (!token) token = await readKey("local");
+    if (token !== this.accountToken) {
+      this.accountToken = token;
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
+  ensureRosterObserver() {
+    if (this.disposed) return;
+    const container = document.querySelector(".chatters");
+    if (container && container !== this.chattersContainer) {
+      if (this.chattersObserver) {
+        try { this.chattersObserver.disconnect(); } catch (_) { /* ignore */ }
+      }
+      this.chattersContainer = container;
+      this.chattersObserver = new MutationObserver(() => this.handleRosterMutated());
+      try {
+        this.chattersObserver.observe(container, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["data-peer-id", "class"]
+        });
+      } catch (_) { /* ignore */ }
+      this.updateSelfFromRoster();
+    } else if (!container && this.chattersContainer) {
+      if (this.chattersObserver) {
+        try { this.chattersObserver.disconnect(); } catch (_) { /* ignore */ }
+      }
+      this.chattersContainer = null;
+      this.chattersObserver = null;
+    }
+  }
+
+  handleRosterMutated() {
+    this.updateSelfFromRoster();
+  }
+
+  updateSelfFromRoster() {
+    if (this.disposed) return;
+    const nodes = Array.from(document.querySelectorAll(".chatters .chatter[data-peer-id]"));
+    if (!nodes.length) return;
+
+    let storedNode = null;
+    let maxNode = null;
+    let maxPeerId = -Infinity;
+
+    for (const node of nodes) {
+      const attr = node.getAttribute("data-peer-id") || "";
+      const value = Number(attr);
+      if (Number.isFinite(value) && value > maxPeerId) {
+        maxPeerId = value;
+        maxNode = node;
+      }
+      if (!storedNode && this.selfPeerId != null && attr === this.selfPeerId) {
+        storedNode = node;
+      }
+      if (!storedNode && node.classList?.contains("self")) {
+        storedNode = node;
+      }
+    }
+
+    let rosterReset = false;
+    if (Number.isFinite(maxPeerId)) {
+      if (this.maxPeerSeen != null && maxPeerId < this.maxPeerSeen) {
+        rosterReset = true;
+      }
+      this.maxPeerSeen = maxPeerId;
+    }
+
+    if (rosterReset) {
+      this.selfPeerId = null;
+      this.username = null;
+      this.authLabel = null;
+      storedNode = null;
+    }
+
+    const targetNode = storedNode || maxNode;
+    if (!targetNode) return;
+
+    const peerAttr = targetNode.getAttribute("data-peer-id") || null;
+    let contextChanged = false;
+
+    if (peerAttr && peerAttr !== this.selfPeerId) {
+      this.selfPeerId = peerAttr;
+      contextChanged = true;
+    }
+
+    const nicknameEl = targetNode.querySelector(".nickname");
+    const nickname = nicknameEl ? (nicknameEl.textContent || "").trim() : "";
+    if (nickname && nickname !== this.username) {
+      this.username = nickname;
+      contextChanged = true;
+    } else if (!this.username && nickname) {
+      this.username = nickname;
+      contextChanged = true;
+    }
+
+    const authEl = targetNode.querySelector(".auth");
+    const auth = authEl ? (authEl.textContent || "").trim() : "";
+    const authLabel = auth || "Guest";
+    if (authLabel !== this.authLabel) {
+      this.authLabel = authLabel;
+      contextChanged = true;
+    }
+
+    if (!this.username) this.username = "Unknown Player";
+    if (!this.authLabel) this.authLabel = "Guest";
+
+    if (contextChanged) {
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
+  checkRoomCode(initial) {
+    if (this.disposed) return;
+    const newCode = this.extractRoomCode();
+    if (newCode === this.roomCode) return;
+    this.roomCode = newCode;
+    this.selfPeerId = null;
+    this.maxPeerSeen = null;
+    this.username = null;
+    this.authLabel = null;
+    this.updateSelfFromRoster();
+    if (!initial) {
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
+  extractRoomCode() {
+    const normalize = (value) => {
+      if (value == null) return null;
+      const trimmed = value.toString().trim();
+      if (!trimmed) return null;
+      const alnum = trimmed.replace(/[^0-9a-z]/gi, "");
+      if (!alnum) return null;
+      if (alnum.length < 3 || alnum.length > 6) return null;
+      return alnum.toUpperCase();
+    };
+
+    try {
+      if (window.room && typeof window.room.code === "string") {
+        const code = normalize(window.room.code);
+        if (code) return code;
+      }
+    } catch (_) { /* ignore */ }
+
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      const code = normalize(params.get("room"));
+      if (code) return code;
+    } catch (_) { /* ignore */ }
+
+    const segments = (window.location.pathname || "").split("/").filter(Boolean);
+    for (let i = segments.length - 1; i >= 0; i -= 1) {
+      const code = normalize(segments[i]);
+      if (code) return code;
+    }
+
+    const host = window.location.hostname || "";
+    if (host.includes(".")) {
+      const first = host.split(".")[0];
+      const code = normalize(first);
+      if (code) return code;
+    }
+
+    if (document.referrer) {
+      try {
+        const ref = new URL(document.referrer);
+        const refSegments = ref.pathname.split("/").filter(Boolean);
+        for (let i = refSegments.length - 1; i >= 0; i -= 1) {
+          const code = normalize(refSegments[i]);
+          if (code) return code;
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    try {
+      if (window.top && window.top !== window) {
+        try {
+          const topPath = window.top.location?.pathname || "";
+          const topSegments = topPath.split("/").filter(Boolean);
+          for (let i = topSegments.length - 1; i >= 0; i -= 1) {
+            const code = normalize(topSegments[i]);
+            if (code) return code;
+          }
+        } catch (_) { /* ignore cross-origin */ }
+      }
+    } catch (_) { /* ignore */ }
+
+    return null;
+  }
+
+  updateLanguage(newLang) {
+    if (this.disposed) return;
+    let next = typeof newLang === "string" ? newLang : "";
+    if (this.game && typeof this.game.normalizeLang === "function") {
+      try { next = this.game.normalizeLang(newLang); }
+      catch (_) { /* ignore */ }
+    }
+    if (!next) next = "en";
+    if (next !== this.lang) {
+      this.lang = next;
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+}
+
 async function setupBuddy() {
   // Inject page-side listener (emits myTurn/correct/fail events)
   const s = document.createElement("script");
@@ -2345,6 +2943,9 @@ async function setupBuddy() {
 
   const game = new Game(getInput());
   setTimeout(() => (game.input = getInput()), 1000);
+
+  const presence = new PresenceReporter(game);
+  presence.updateLanguage(game.lang);
 
   const { render } = createOverlay(game);
 
@@ -2366,6 +2967,7 @@ async function setupBuddy() {
 
     if (data.type === "setup") {
       await game.setLang(data.language);
+      presence.updateLanguage(game.lang);
       if (data.myTurn) {
         game.syllable = data.syllable;
         game.selfRound = (game.selfRound|0) + 1;     // new round for me

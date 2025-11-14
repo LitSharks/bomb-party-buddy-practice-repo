@@ -22,9 +22,93 @@ const LANGUAGE_LABELS = Object.freeze({
   "es": { short: "ES", name: "Español" },
   "pt-br": { short: "PT", name: "Português (Brasil)" },
   "nah": { short: "NAH", name: "Nahuatl" },
+  "br": { short: "BR", name: "Breton" },
+  "eu": { short: "EU", name: "Basque" },
   "pok-en": { short: "PokEN", name: "Pokémon (EN)" },
   "pok-fr": { short: "PokFR", name: "Pokémon (FR)" },
   "pok-de": { short: "PokDE", name: "Pokémon (DE)" }
+});
+
+const JKLM_LANG_PRIMARY = Object.freeze({
+  "Brazilian Portuguese": "pt-br",
+  "Breton": "br",
+  "English": "en",
+  "French": "fr",
+  "German": "de",
+  "Nahuatl": "nah",
+  "Basque": "eu",
+  "Spanish": "es",
+  "Pokemon": "pok-en",
+  "Pokémon (French)": "pok-fr",
+  "Pokemon (German)": "pok-de"
+});
+
+const JKLM_LANG_PRIMARY_LOWER = Object.freeze(Object.entries(JKLM_LANG_PRIMARY)
+  .reduce((acc, [label, code]) => {
+    acc[label.toLowerCase()] = code;
+    return acc;
+  }, {}));
+
+const LANGUAGE_ALIAS_MAP = Object.freeze({
+  "english": "en",
+  "en": "en",
+  "eng": "en",
+  "german": "de",
+  "de": "de",
+  "deutsch": "de",
+  "french": "fr",
+  "fr": "fr",
+  "francais": "fr",
+  "français": "fr",
+  "spanish": "es",
+  "es": "es",
+  "espanol": "es",
+  "español": "es",
+  "brazilian portuguese": "pt-br",
+  "portuguese": "pt-br",
+  "português": "pt-br",
+  "portugues": "pt-br",
+  "portuguese (br)": "pt-br",
+  "portuguese (brasil)": "pt-br",
+  "portuguese (brazil)": "pt-br",
+  "portuguese brazil": "pt-br",
+  "portuguese brazilian": "pt-br",
+  "português brazil": "pt-br",
+  "português (br)": "pt-br",
+  "português (brasil)": "pt-br",
+  "português (brazil)": "pt-br",
+  "português brazil": "pt-br",
+  "pt-br": "pt-br",
+  "pt": "pt-br",
+  "ptbr": "pt-br",
+  "pt-brasil": "pt-br",
+  "pt-brazil": "pt-br",
+  "ptbrasil": "pt-br",
+  "br": "pt-br",
+  "brasil": "pt-br",
+  "brazil": "pt-br",
+  "nahuatl": "nah",
+  "nah": "nah",
+  "breton": "br",
+  "brezhoneg": "br",
+  "bre": "br",
+  "basque": "eu",
+  "euskara": "eu",
+  "euskera": "eu",
+  "eus": "eu",
+  "eu": "eu",
+  "pokemon": "pok-en",
+  "pokémon": "pok-en",
+  "pokemon (en)": "pok-en",
+  "pok-en": "pok-en",
+  "pokemon (fr)": "pok-fr",
+  "pokemon (french)": "pok-fr",
+  "pok-fr": "pok-fr",
+  "pokémon (french)": "pok-fr",
+  "pokemon (de)": "pok-de",
+  "pokemon (german)": "pok-de",
+  "pok-de": "pok-de",
+  "pokémon (german)": "pok-de"
 });
 
 function pushWordCandidate(output, seen, candidate) {
@@ -227,35 +311,29 @@ class Game {
   apiBase() { return "https://extensions.litshark.ca/api"; }
 
   normalizeLang(name) {
-    const raw = (name || "").toString().trim().toLowerCase();
-    const cleaned = raw.replace(/[<>]/g, "");
-    const s = cleaned.replace(/_/g, "-");
-    const map = {
-      "english": "en", "en": "en",
-      "german": "de", "de": "de",
-      "french": "fr", "fr": "fr",
-      "spanish": "es", "es": "es",
-      "espanol": "es", "español": "es",
-      "portuguese": "pt-br", "português": "pt-br",
-      "portuguese (br)": "pt-br", "portuguese (brasil)": "pt-br",
-      "portuguese (brazil)": "pt-br", "portuguese brazil": "pt-br",
-      "portuguese brazilian": "pt-br", "português brazil": "pt-br",
-      "português (br)": "pt-br", "português (brasil)": "pt-br",
-      "português (brazil)": "pt-br", "português brazil": "pt-br",
-      "pt-br": "pt-br", "pt": "pt-br", "ptbr": "pt-br", "pt-brasil": "pt-br",
-      "pt-brazil": "pt-br", "ptbrasil": "pt-br",
-      "br": "pt-br", "brasil": "pt-br", "brazil": "pt-br",
-      "nahuatl": "nah", "nah": "nah",
-      "pokemon (en)": "pok-en", "pok-en": "pok-en",
-      "pokemon (fr)": "pok-fr", "pok-fr": "pok-fr",
-      "pokemon (de)": "pok-de", "pok-de": "pok-de"
-    };
-    if (map[s]) return map[s];
-    if (map[raw]) return map[raw];
-    if (s.includes("portugu")) {
+    const rawInput = (name || "").toString().trim();
+    if (!rawInput) return "en";
+    const normalized = typeof rawInput.normalize === "function"
+      ? rawInput.normalize("NFKC")
+      : rawInput;
+    const lower = normalized.toLowerCase();
+    const cleaned = lower.replace(/[<>]/g, "");
+    const dashed = cleaned.replace(/_/g, "-");
+
+    const directPrimary = JKLM_LANG_PRIMARY[normalized];
+    if (directPrimary) return directPrimary;
+    const lowerPrimary = JKLM_LANG_PRIMARY_LOWER[lower] || JKLM_LANG_PRIMARY_LOWER[cleaned];
+    if (lowerPrimary) return lowerPrimary;
+
+    const aliasMatch = LANGUAGE_ALIAS_MAP[dashed]
+      || LANGUAGE_ALIAS_MAP[cleaned]
+      || LANGUAGE_ALIAS_MAP[lower];
+    if (aliasMatch) return aliasMatch;
+
+    if (dashed.includes("portugu")) {
       return "pt-br";
     }
-    if (raw.includes("portugu")) {
+    if (cleaned.includes("portugu")) {
       return "pt-br";
     }
     return "en";
