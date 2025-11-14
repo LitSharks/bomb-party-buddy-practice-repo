@@ -64,9 +64,9 @@ function normalizeRoomCodeForMessage(value) {
   if (!trimmed) return null;
   const alnum = trimmed.replace(/[^0-9a-z]/gi, "");
   if (!alnum) return null;
-  if (alnum.length !== 4) return null;
+  if (alnum.length < 4 || alnum.length > 6) return null;
   const upper = alnum.toUpperCase();
-  if (!/^[A-Z0-9]{4}$/.test(upper)) return null;
+  if (!/^[A-Z0-9]{4,6}$/.test(upper)) return null;
   return upper;
 }
 

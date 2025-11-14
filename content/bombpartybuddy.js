@@ -2610,6 +2610,9 @@ class DiagnosticsLog {
 
 const DEVICE_ID_STORAGE_KEY = "litsharkDeviceId";
 const ACCOUNT_TOKEN_STORAGE_KEY = "litsharkAccountToken";
+const LOBBY_PROFILE_STORAGE_KEY = "litsharkLobbyProfile";
+const TOP_CONTEXT_REQUEST_TYPE = "litsharkTopContextRequest";
+const TOP_CONTEXT_RESPONSE_TYPE = "litsharkTopContext";
 
 function safeRandomUuid() {
   try {
@@ -2667,6 +2670,261 @@ function storageSet(area, data) {
   });
 }
 
+const TOP_CONTEXT_POLL_INTERVAL = 2500;
+
+function isJklmOrigin(origin) {
+  if (!origin || origin === "null") return false;
+  try {
+    const url = new URL(origin);
+    return !!url.hostname && url.hostname.endsWith("jklm.fun");
+  } catch (_) {
+    return false;
+  }
+}
+
+function safeTrim(value) {
+  if (value == null) return "";
+  try { return String(value).trim(); }
+  catch (_) { return ""; }
+}
+
+function gatherTopContextSnapshot() {
+  const snapshot = {
+    roomCode: null,
+    roomCodeSource: null,
+    roomUrl: null,
+    nickname: null,
+    nicknameSource: null,
+    authLabel: null,
+    authSource: null,
+    authProvider: null
+  };
+
+  try {
+    snapshot.roomUrl = window?.location?.href || null;
+  } catch (_) {
+    snapshot.roomUrl = null;
+  }
+
+  const roomCandidates = [
+    { selector: "[data-room-code]", extractor: (el) => el.getAttribute("data-room-code") || el.textContent },
+    { selector: "[data-roomcode]", extractor: (el) => el.getAttribute("data-roomcode") || el.textContent },
+    { selector: "[data-room]", extractor: (el) => el.getAttribute("data-room") || el.textContent },
+    { selector: ".top .info .roomCode", extractor: (el) => el.textContent },
+    { selector: ".roomCode", extractor: (el) => el.textContent },
+    { selector: ".room-code", extractor: (el) => el.textContent }
+  ];
+  for (const candidate of roomCandidates) {
+    try {
+      const node = document.querySelector(candidate.selector);
+      if (!node) continue;
+      const raw = candidate.extractor ? candidate.extractor(node) : (node.textContent || "");
+      const value = safeTrim(raw);
+      if (!value) continue;
+      snapshot.roomCode = value;
+      snapshot.roomCodeSource = candidate.selector;
+      break;
+    } catch (_) {
+      /* ignore selector errors */
+    }
+  }
+
+  const nicknameSelectors = [
+    ".setup .auth .nickname",
+    ".setup .nickname",
+    "[data-nickname]",
+    ".profile .nickname",
+    ".account .nickname"
+  ];
+  for (const selector of nicknameSelectors) {
+    try {
+      const node = document.querySelector(selector);
+      if (!node) continue;
+      const attr = node.getAttribute ? (node.getAttribute("data-nickname") || node.getAttribute("data-name")) : "";
+      const raw = attr || node.textContent || "";
+      const value = safeTrim(raw);
+      if (!value) continue;
+      snapshot.nickname = value;
+      snapshot.nicknameSource = selector;
+      break;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  const authLabelSelectors = [
+    "[data-auth-label]",
+    ".setup .auth [data-label]",
+    ".setup .auth .authLabel",
+    ".setup .auth .label",
+    ".setup .auth .auth"
+  ];
+  for (const selector of authLabelSelectors) {
+    try {
+      const node = document.querySelector(selector);
+      if (!node) continue;
+      const attr = node.getAttribute ? (node.getAttribute("data-auth-label") || node.getAttribute("data-label")) : "";
+      const raw = attr || node.textContent || "";
+      const value = safeTrim(raw);
+      if (!value) continue;
+      if (value.length <= 2) continue;
+      snapshot.authLabel = value;
+      snapshot.authSource = selector;
+      break;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  try {
+    const authButton = document.querySelector(".setup .auth");
+    if (authButton) {
+      if (!snapshot.authLabel) {
+        const title = safeTrim(authButton.getAttribute("data-auth") || authButton.getAttribute("title") || "");
+        if (title && title.length > 2 && title.toLowerCase() !== "you are") {
+          snapshot.authLabel = title;
+          snapshot.authSource = ".setup .auth";
+        }
+      }
+      const providerAttr = authButton.getAttribute("data-service")
+        || authButton.getAttribute("data-provider")
+        || (authButton.dataset ? (authButton.dataset.service || authButton.dataset.provider) : "");
+      const provider = safeTrim(providerAttr);
+      if (provider) snapshot.authProvider = provider;
+      const serviceImg = authButton.querySelector(".service");
+      if (serviceImg) {
+        const alt = safeTrim(serviceImg.getAttribute("alt"));
+        if (alt) snapshot.authProvider = alt;
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+
+  if (!snapshot.authLabel) {
+    try {
+      const badge = document.querySelector(".mainBadge");
+      if (badge) {
+        const title = safeTrim(badge.getAttribute("title") || badge.textContent || "");
+        if (title && title.length > 2 && title.toLowerCase() !== "you are") {
+          snapshot.authLabel = title;
+          snapshot.authSource = ".mainBadge";
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  return snapshot;
+}
+
+function buildTopContextPayload(context, reason) {
+  return {
+    type: TOP_CONTEXT_RESPONSE_TYPE,
+    reason: reason || null,
+    timestamp: Date.now(),
+    context: { ...context }
+  };
+}
+
+function setupTopContextBridge() {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  if (window.__litsharkTopBridgeReady) return;
+  try { window.__litsharkTopBridgeReady = true; }
+  catch (_) { /* ignore */ }
+
+  let disposed = false;
+  let currentSnapshot = gatherTopContextSnapshot();
+  let currentSnapshotJson = JSON.stringify(currentSnapshot);
+  let lastStoredProfileJson = "";
+
+  const broadcast = (context, reason) => {
+    const payload = buildTopContextPayload(context, reason);
+    for (let i = 0; i < window.frames.length; i += 1) {
+      const frame = window.frames[i];
+      try { frame.postMessage(payload, "*"); }
+      catch (_) { /* ignore cross-origin failures */ }
+    }
+  };
+
+  const storeProfile = (context) => {
+    const profile = {
+      nickname: context.nickname || null,
+      authLabel: context.authLabel || null,
+      authProvider: context.authProvider || null
+    };
+    const json = JSON.stringify(profile);
+    if (json === lastStoredProfileJson) return;
+    lastStoredProfileJson = json;
+    storageSet("local", { [LOBBY_PROFILE_STORAGE_KEY]: { ...profile, updatedAt: Date.now() } }).catch(() => {});
+  };
+
+  const refresh = (reason) => {
+    if (disposed) return;
+    const snapshot = gatherTopContextSnapshot();
+    const json = JSON.stringify(snapshot);
+    if (json === currentSnapshotJson) return;
+    currentSnapshot = snapshot;
+    currentSnapshotJson = json;
+    try { window.__litsharkTopContext = { ...snapshot }; }
+    catch (_) { /* ignore */ }
+    broadcast(snapshot, reason);
+    storeProfile(snapshot);
+  };
+
+  const handleMessage = (event) => {
+    if (disposed) return;
+    const data = event?.data;
+    if (!data || data.type !== TOP_CONTEXT_REQUEST_TYPE) return;
+    if (!event.source || typeof event.source.postMessage !== "function") return;
+    if (!isJklmOrigin(event.origin)) return;
+    refresh("request");
+    try {
+      const payload = buildTopContextPayload(currentSnapshot, data.reason || "response");
+      const origin = event.origin && event.origin !== "null" ? event.origin : "*";
+      event.source.postMessage(payload, origin);
+    } catch (_) {
+      /* ignore */
+    }
+  };
+
+  window.addEventListener("message", handleMessage);
+
+  let observer = null;
+  try {
+    observer = new MutationObserver(() => refresh("mutation"));
+    observer.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true
+    });
+  } catch (_) {
+    observer = null;
+  }
+
+  const interval = window.setInterval(() => refresh("interval"), TOP_CONTEXT_POLL_INTERVAL);
+
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    try { window.removeEventListener("message", handleMessage); } catch (_) { /* ignore */ }
+    if (observer) {
+      try { observer.disconnect(); } catch (_) { /* ignore */ }
+      observer = null;
+    }
+    window.clearInterval(interval);
+    try { delete window.__litsharkTopBridgeReady; } catch (_) { /* ignore */ }
+  };
+
+  window.addEventListener("pagehide", dispose, true);
+  window.addEventListener("beforeunload", dispose, true);
+
+  storeProfile(currentSnapshot);
+  broadcast(currentSnapshot, "init");
+}
+
 function sendPresenceCommand(message) {
   return new Promise((resolve, reject) => {
     try {
@@ -2701,6 +2959,7 @@ class PresenceReporter {
     this.lang = (this.game && typeof this.game.lang === "string" && this.game.lang) ? this.game.lang : "en";
     const initialRoom = this.extractRoomCodeDetails();
     this.roomCode = initialRoom.code;
+    this.roomUrl = this.extractRoomUrl();
     this.username = null;
     this.authLabel = null;
     this.selfPeerId = null;
@@ -2708,9 +2967,13 @@ class PresenceReporter {
     this.deviceId = null;
     this.deviceIdPromise = this.ensureDeviceId();
     this.accountToken = null;
+    this.lobbyNickname = null;
+    this.lobbyAuthLabel = null;
+    this.lobbyAuthProvider = null;
     this.registered = false;
     this.leaveSent = false;
     this.disposed = false;
+    this.roomCodeLockUntil = 0;
     this.suspended = document.visibilityState === "hidden";
     this.nextHeartbeatTimer = null;
     this.retryTimer = null;
@@ -2722,6 +2985,7 @@ class PresenceReporter {
     this.rosterCheckTimer = null;
     this.roomMonitorTimer = null;
     this.storageListener = null;
+    this.topContextInterval = null;
 
     this.log("presence", "constructor", {
       sessionId: this.sessionId,
@@ -2763,8 +3027,11 @@ class PresenceReporter {
     });
 
     this.refreshAccountToken();
+    this.refreshLobbyProfile();
     this.updateSelfFromRoster();
     this.queueHeartbeat();
+    this.requestTopContext("constructor");
+    this.startTopContextPolling();
   }
 
   log(category, event, detail) {
@@ -2790,6 +3057,210 @@ class PresenceReporter {
       clone.account_token = this.maskToken(clone.account_token);
     }
     return clone;
+  }
+
+  applyIdentityFallbacks(reason, options = {}) {
+    if (this.disposed) return false;
+    const { log = true } = options;
+    let changed = false;
+
+    const priorUsername = this.username;
+    const priorAuthLabel = this.authLabel;
+
+    if ((!this.username || this.username === "Unknown Player") && this.lobbyNickname) {
+      if (this.username !== this.lobbyNickname) {
+        this.username = this.lobbyNickname;
+        changed = true;
+      }
+    }
+    if (!this.username || !this.username.trim()) {
+      if (this.username !== "Unknown Player") {
+        this.username = "Unknown Player";
+        changed = true;
+      }
+    }
+
+    const lobbyAuth = this.lobbyAuthLabel && this.lobbyAuthLabel.trim() ? this.lobbyAuthLabel.trim() : null;
+    if ((!this.authLabel || this.authLabel === "Guest") && lobbyAuth) {
+      if (this.authLabel !== lobbyAuth) {
+        this.authLabel = lobbyAuth;
+        changed = true;
+      }
+    }
+
+    if ((!this.authLabel || this.authLabel === "Guest") && this.lobbyAuthProvider && this.username && this.username !== "Unknown Player") {
+      const provider = this.lobbyAuthProvider.trim();
+      if (provider && provider.toLowerCase() !== "guest") {
+        const fallback = `${this.username} on ${provider}`;
+        if (this.authLabel !== fallback) {
+          this.authLabel = fallback;
+          changed = true;
+        }
+      }
+    }
+
+    if (!this.authLabel || !this.authLabel.trim()) {
+      if (this.authLabel !== "Guest") {
+        this.authLabel = "Guest";
+        changed = true;
+      }
+    }
+
+    if (changed && log) {
+      this.log("presence", "identity_fallback", {
+        reason: reason || null,
+        usernameBefore: priorUsername || null,
+        usernameAfter: this.username || null,
+        authBefore: priorAuthLabel || null,
+        authAfter: this.authLabel || null,
+        lobbyNickname: this.lobbyNickname || null,
+        lobbyAuthLabel: this.lobbyAuthLabel || null,
+        lobbyAuthProvider: this.lobbyAuthProvider || null
+      });
+    }
+
+    return changed;
+  }
+
+  async refreshLobbyProfile() {
+    try {
+      const data = await storageGet("local", [LOBBY_PROFILE_STORAGE_KEY]);
+      const profile = data?.[LOBBY_PROFILE_STORAGE_KEY];
+      this.applyLobbyProfile(profile, "storage");
+    } catch (err) {
+      this.log("presence", "lobby_profile_error", { error: err?.message || String(err) });
+    }
+  }
+
+  applyLobbyProfile(profile, source) {
+    if (this.disposed) return;
+    const nickname = typeof profile?.nickname === "string" ? profile.nickname.trim() : "";
+    const authLabel = typeof profile?.authLabel === "string" ? profile.authLabel.trim() : "";
+    const authProvider = typeof profile?.authProvider === "string" ? profile.authProvider.trim() : "";
+
+    this.log("presence", "lobby_profile_update", {
+      source: source || null,
+      nickname: nickname || null,
+      authLabel: authLabel || null,
+      authProvider: authProvider || null
+    });
+
+    let changed = false;
+    if (nickname !== (this.lobbyNickname || "")) {
+      this.lobbyNickname = nickname || null;
+      changed = true;
+    }
+    if (authLabel !== (this.lobbyAuthLabel || "")) {
+      this.lobbyAuthLabel = authLabel || null;
+      changed = true;
+    }
+    if (authProvider !== (this.lobbyAuthProvider || "")) {
+      this.lobbyAuthProvider = authProvider || null;
+      changed = true;
+    }
+
+    const identityChanged = this.applyIdentityFallbacks("lobby_profile", { log: true });
+    if ((changed || identityChanged) && !this.disposed) {
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
+  requestTopContext(reason) {
+    if (this.disposed) return;
+    if (!window?.parent || window.parent === window) return;
+    try {
+      const payload = {
+        type: TOP_CONTEXT_REQUEST_TYPE,
+        reason: reason || null,
+        href: window.location?.href || null,
+        timestamp: Date.now()
+      };
+      window.parent.postMessage(payload, "*");
+      this.log("presence", "top_context_request", { reason: reason || null });
+    } catch (err) {
+      this.log("presence", "top_context_request_error", { error: err?.message || String(err) });
+    }
+  }
+
+  startTopContextPolling() {
+    if (this.topContextInterval || this.disposed) return;
+    this.topContextInterval = window.setInterval(() => this.requestTopContext("poll"), TOP_CONTEXT_POLL_INTERVAL * 2);
+  }
+
+  stopTopContextPolling() {
+    if (!this.topContextInterval) return;
+    window.clearInterval(this.topContextInterval);
+    this.topContextInterval = null;
+  }
+
+  handleTopContext(message) {
+    if (this.disposed || !message || typeof message !== "object") return;
+    const context = message.context;
+    if (!context || typeof context !== "object") return;
+
+    this.log("presence", "top_context_message", {
+      reason: message.reason || null,
+      context
+    });
+
+    let contextChanged = false;
+
+    const rawRoomCode = context.roomCode || context.code || null;
+    const normalizedRoom = this.normalizeRoomCode(rawRoomCode);
+    if (normalizedRoom && normalizedRoom !== this.roomCode) {
+      const previous = this.roomCode || null;
+      this.roomCode = normalizedRoom;
+      this.roomCodeLockUntil = Date.now() + 8000;
+      this.selfPeerId = null;
+      this.maxPeerSeen = null;
+      this.username = null;
+      this.authLabel = null;
+      contextChanged = true;
+      this.log("presence", "top_context_room_code", { from: previous, to: normalizedRoom, source: context.roomCodeSource || null });
+      this.updateSelfFromRoster();
+    } else if (!normalizedRoom && !rawRoomCode && this.roomCode) {
+      const previous = this.roomCode;
+      this.roomCode = null;
+      this.roomCodeLockUntil = Date.now() + 4000;
+      this.selfPeerId = null;
+      this.maxPeerSeen = null;
+      this.username = null;
+      this.authLabel = null;
+      contextChanged = true;
+      this.log("presence", "top_context_room_clear", { from: previous });
+      this.updateSelfFromRoster();
+    }
+
+    if (typeof context.roomUrl === "string" && context.roomUrl.trim()) {
+      const trimmed = context.roomUrl.trim();
+      if (trimmed !== (this.roomUrl || "")) {
+        this.roomUrl = trimmed;
+        contextChanged = true;
+      }
+    }
+
+    const nickname = typeof context.nickname === "string" ? context.nickname.trim() : "";
+    if (nickname && nickname !== (this.lobbyNickname || "")) {
+      this.lobbyNickname = nickname;
+      contextChanged = true;
+    }
+
+    const authLabel = typeof context.authLabel === "string" ? context.authLabel.trim() : "";
+    if (authLabel !== (this.lobbyAuthLabel || "")) {
+      this.lobbyAuthLabel = authLabel || null;
+      contextChanged = true;
+    }
+
+    const authProvider = typeof context.authProvider === "string" ? context.authProvider.trim() : "";
+    if (authProvider !== (this.lobbyAuthProvider || "")) {
+      this.lobbyAuthProvider = authProvider || null;
+      contextChanged = true;
+    }
+
+    const identityChanged = this.applyIdentityFallbacks("top_context", { log: true });
+    if ((contextChanged || identityChanged) && !this.disposed) {
+      this.queueHeartbeat({ immediate: true });
+    }
   }
 
   async ensureDeviceId() {
@@ -3010,15 +3481,12 @@ class PresenceReporter {
     this.queueHeartbeat();
   }
 
-  buildDisplayName() {
-    const base = this.username || "Unknown Player";
-    const auth = this.authLabel && this.authLabel !== "Guest" ? this.authLabel : null;
-    return auth ? `${base} (${auth})` : base;
-  }
-
   async buildHeartbeatPayload() {
     const deviceId = await this.ensureDeviceId();
     const lang = (typeof this.lang === "string" && this.lang) ? this.lang : "en";
+    this.applyIdentityFallbacks("build_payload", { log: false });
+    const username = (this.username && this.username.trim()) ? this.username : "Unknown Player";
+    const authLabel = (this.authLabel && this.authLabel.trim()) ? this.authLabel.trim() : null;
     const payload = {
       action: "heartbeat",
       session_id: this.sessionId,
@@ -3026,8 +3494,10 @@ class PresenceReporter {
       version: this.version,
       lang,
       room_code: this.roomCode || null,
-      username: this.buildDisplayName()
+      username
     };
+    if (authLabel) payload.auth_label = authLabel;
+    if (this.roomUrl) payload.room_url = this.roomUrl;
     if (this.accountToken) payload.account_token = this.accountToken;
     return payload;
   }
@@ -3044,6 +3514,7 @@ class PresenceReporter {
       this.suspended = false;
       this.log("presence", "visibility_visible", { wasSuspended });
       this.queueHeartbeat({ immediate: wasSuspended });
+      this.requestTopContext("visibility");
     }
   }
 
@@ -3089,6 +3560,7 @@ class PresenceReporter {
     this.disposed = true;
     this.log("presence", "dispose", {});
     this.clearTimers();
+    this.stopTopContextPolling();
     if (this.chattersObserver) {
       try { this.chattersObserver.disconnect(); } catch (_) { /* ignore */ }
       this.chattersObserver = null;
@@ -3136,12 +3608,18 @@ class PresenceReporter {
     if (username && username !== this.username) {
       this.username = username;
       contextChanged = true;
+      if (!this.lobbyNickname || this.lobbyNickname !== username) {
+        this.lobbyNickname = username;
+      }
     }
 
     const auth = typeof message.authLabel === "string" ? message.authLabel.trim() : "";
     if (auth && auth !== this.authLabel) {
       this.authLabel = auth;
       contextChanged = true;
+      if (!this.lobbyAuthLabel || this.lobbyAuthLabel !== auth) {
+        this.lobbyAuthLabel = auth;
+      }
     }
 
     if (!this.username && username) {
@@ -3157,8 +3635,7 @@ class PresenceReporter {
       this.updateLanguage(message.lang);
     }
 
-    if (!this.username) this.username = "Unknown Player";
-    if (!this.authLabel) this.authLabel = "Guest";
+    const identityChanged = this.applyIdentityFallbacks("presence_context", { log: true });
 
     this.log("presence", "context_message", {
       reason,
@@ -3172,7 +3649,7 @@ class PresenceReporter {
       usernameSources: Array.isArray(message.usernameSources) ? message.usernameSources.slice(0, 10) : null
     });
 
-    if (contextChanged) {
+    if (contextChanged || identityChanged) {
       this.queueHeartbeat({ immediate: true });
     }
   }
@@ -3180,9 +3657,18 @@ class PresenceReporter {
   handleStorageChange(changes, area) {
     if (!changes) return;
     if (area !== "sync" && area !== "local") return;
-    if (!Object.prototype.hasOwnProperty.call(changes, ACCOUNT_TOKEN_STORAGE_KEY)) return;
-    this.log("presence", "storage_change", { area });
-    this.refreshAccountToken();
+    let handled = false;
+    if (Object.prototype.hasOwnProperty.call(changes, ACCOUNT_TOKEN_STORAGE_KEY)) {
+      this.log("presence", "storage_change_account_token", { area });
+      this.refreshAccountToken();
+      handled = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, LOBBY_PROFILE_STORAGE_KEY)) {
+      this.log("presence", "storage_change_lobby_profile", { area });
+      this.refreshLobbyProfile();
+      handled = true;
+    }
+    if (!handled) return;
   }
 
   async refreshAccountToken() {
@@ -3244,28 +3730,47 @@ class PresenceReporter {
 
   updateSelfFromRoster() {
     if (this.disposed) return;
-    const nodes = Array.from(document.querySelectorAll(".chatters .chatter[data-peer-id]"));
+    const nodes = Array.from(document.querySelectorAll("[data-peer-id]")).filter((node) => {
+      if (!node || typeof node.getAttribute !== "function") return false;
+      if (!node.querySelector) return false;
+      return !!node.querySelector(".nickname");
+    });
     if (!nodes.length) {
       this.log("presence", "roster_empty", {});
+      if (this.applyIdentityFallbacks("roster_empty", { log: true })) {
+        this.queueHeartbeat({ immediate: true });
+      }
       return;
     }
 
     let storedNode = null;
+    let explicitSelfNode = null;
+    let nicknameNode = null;
     let maxNode = null;
     let maxPeerId = -Infinity;
+    const normalizedNickname = (this.lobbyNickname || "").trim().toLowerCase();
 
     for (const node of nodes) {
       const attr = node.getAttribute("data-peer-id") || "";
-      const value = Number(attr);
-      if (Number.isFinite(value) && value > maxPeerId) {
-        maxPeerId = value;
+      const trimmedAttr = attr.trim();
+      if (!storedNode && this.selfPeerId != null && trimmedAttr === this.selfPeerId) {
+        storedNode = node;
+      }
+      if (!explicitSelfNode && node.classList?.contains("self")) {
+        explicitSelfNode = node;
+      }
+      if (!nicknameNode && normalizedNickname) {
+        const nickText = (node.querySelector(".nickname")?.textContent || "").trim().toLowerCase();
+        if (nickText && nickText === normalizedNickname) {
+          nicknameNode = node;
+        }
+      }
+      const numeric = Number(trimmedAttr);
+      if (Number.isFinite(numeric) && numeric > maxPeerId) {
+        maxPeerId = numeric;
         maxNode = node;
-      }
-      if (!storedNode && this.selfPeerId != null && attr === this.selfPeerId) {
-        storedNode = node;
-      }
-      if (!storedNode && node.classList?.contains("self")) {
-        storedNode = node;
+      } else if (!Number.isFinite(numeric) && !maxNode) {
+        maxNode = node;
       }
     }
 
@@ -3285,9 +3790,12 @@ class PresenceReporter {
       this.log("presence", "roster_reset_detected", { nodes: nodes.length });
     }
 
-    const targetNode = storedNode || maxNode;
+    const targetNode = storedNode || explicitSelfNode || nicknameNode || maxNode;
     if (!targetNode) {
       this.log("presence", "roster_no_target", { nodes: nodes.length });
+      if (this.applyIdentityFallbacks("roster_no_target", { log: true })) {
+        this.queueHeartbeat({ immediate: true });
+      }
       return;
     }
 
@@ -3317,10 +3825,9 @@ class PresenceReporter {
       contextChanged = true;
     }
 
-    if (!this.username) this.username = "Unknown Player";
-    if (!this.authLabel) this.authLabel = "Guest";
+    const identityChanged = this.applyIdentityFallbacks("roster_update", { log: true });
 
-    if (contextChanged) {
+    if (contextChanged || identityChanged) {
       this.log("presence", "roster_context_update", {
         selfPeerId: this.selfPeerId,
         username: this.username,
@@ -3334,8 +3841,16 @@ class PresenceReporter {
 
   checkRoomCode(initial) {
     if (this.disposed) return;
+    const href = this.extractRoomUrl();
+    if (href && href !== (this.roomUrl || "")) {
+      this.roomUrl = href;
+    }
     const details = this.extractRoomCodeDetails();
     const newCode = details.code;
+    const now = Date.now();
+    if (!newCode && this.roomCode && this.roomCodeLockUntil && now < this.roomCodeLockUntil) {
+      return;
+    }
     if (newCode === this.roomCode) return;
     this.log("presence", "room_code_update", {
       from: this.roomCode || null,
@@ -3351,7 +3866,16 @@ class PresenceReporter {
     this.updateSelfFromRoster();
     if (!initial) {
       this.queueHeartbeat({ immediate: true });
+      this.requestTopContext("room_change");
     }
+  }
+
+  extractRoomUrl() {
+    try {
+      const href = window?.location?.href;
+      if (typeof href === "string" && href.trim()) return href.trim();
+    } catch (_) { /* ignore */ }
+    return null;
   }
 
   extractRoomCode() {
@@ -3365,9 +3889,9 @@ class PresenceReporter {
     if (!trimmed) return null;
     const alnum = trimmed.replace(/[^0-9a-z]/gi, "");
     if (!alnum) return null;
-    if (alnum.length !== 4) return null;
+    if (alnum.length < 4 || alnum.length > 6) return null;
     const upper = alnum.toUpperCase();
-    if (!/^[A-Z0-9]{4}$/.test(upper)) return null;
+    if (!/^[A-Z0-9]{4,6}$/.test(upper)) return null;
     return upper;
   }
 
@@ -3622,6 +4146,10 @@ async function setupBuddy() {
       if (presence && typeof presence.handlePresenceContext === "function") {
         presence.handlePresenceContext(data);
       }
+    } else if (data.type === TOP_CONTEXT_RESPONSE_TYPE) {
+      if (presence && typeof presence.handleTopContext === "function") {
+        presence.handleTopContext(data);
+      }
     } else if (data.type === "setup") {
       await game.setLang(data.language);
       presence.updateLanguage(game.lang);
@@ -3655,6 +4183,8 @@ async function setupBuddy() {
     }
   });
 
+  presence.requestTopContext("listener_ready");
+
   // hotkeys
   window.addEventListener("keydown", function (ev) {
     if (!ev.altKey) return;
@@ -3676,6 +4206,14 @@ async function setupBuddy() {
     render();
     ev.preventDefault();
   });
+}
+
+try {
+  if (window.top === window) {
+    setupTopContextBridge();
+  }
+} catch (err) {
+  console.warn("[BombPartyShark] Failed to setup top context bridge", err);
 }
 
 if (isBombPartyFrame()) setupBuddy();
