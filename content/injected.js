@@ -64,13 +64,13 @@ function normalizeRoomCodeForMessage(value) {
   if (!trimmed) return null;
   const alnum = trimmed.replace(/[^0-9a-z]/gi, "");
   if (!alnum) return null;
-  if (alnum.length < 3 || alnum.length > 6) return null;
+  if (alnum.length !== 4) return null;
   const upper = alnum.toUpperCase();
-  if (upper === "GAMES" || upper === "BOMBPARTY") return null;
+  if (!/^[A-Z0-9]{4}$/.test(upper)) return null;
   return upper;
 }
 
-function gatherRoomCodeCandidates() {
+function gatherRoomCodeCandidates(extraCandidates = []) {
   const candidates = [];
   const push = (source, value) => {
     if (value == null) return;
@@ -79,6 +79,12 @@ function gatherRoomCodeCandidates() {
     if (!trimmed) return;
     candidates.push({ source, value: trimmed });
   };
+  if (Array.isArray(extraCandidates)) {
+    for (const entry of extraCandidates) {
+      if (!entry || typeof entry !== "object") continue;
+      push(entry.source || "override", entry.value);
+    }
+  }
   try { push("window.room.code", window?.room?.code); } catch (_) { /* ignore */ }
   try { push("window.room.roomCode", window?.room?.roomCode); } catch (_) { /* ignore */ }
   try { push("window.room.match.code", window?.room?.match?.code); } catch (_) { /* ignore */ }
@@ -86,6 +92,54 @@ function gatherRoomCodeCandidates() {
   try { push("window.gameClient.roomCode", window?.gameClient?.roomCode); } catch (_) { /* ignore */ }
   try { push("window.gameClient.state.roomCode", window?.gameClient?.state?.roomCode); } catch (_) { /* ignore */ }
   try { push("location.search.room", new URLSearchParams(window.location.search || "").get("room")); } catch (_) { /* ignore */ }
+  try {
+    const query = socket?.io?.opts?.query;
+    if (query) {
+      if (typeof query === "string") {
+        push("socket.io.opts.query", query);
+        try {
+          const params = new URLSearchParams(query);
+          push("socket.io.opts.query.roomCode", params.get("roomCode"));
+          push("socket.io.opts.query.room", params.get("room"));
+          push("socket.io.opts.query.code", params.get("code"));
+        } catch (_) { /* ignore */ }
+      } else if (Array.isArray(query)) {
+        query.forEach((value, idx) => push(`socket.io.opts.query[${idx}]`, value));
+      } else if (typeof query === "object") {
+        Object.entries(query).forEach(([key, value]) => push(`socket.io.opts.query.${key}`, value));
+      }
+    }
+  } catch (_) { /* ignore */ }
+  try {
+    const engineQuery = socket?.io?.engine?.transport?.opts?.query;
+    if (engineQuery) {
+      if (typeof engineQuery === "string") {
+        push("socket.io.engine.opts.query", engineQuery);
+        try {
+          const params = new URLSearchParams(engineQuery);
+          push("socket.io.engine.opts.query.roomCode", params.get("roomCode"));
+          push("socket.io.engine.opts.query.room", params.get("room"));
+          push("socket.io.engine.opts.query.code", params.get("code"));
+        } catch (_) { /* ignore */ }
+      } else if (Array.isArray(engineQuery)) {
+        engineQuery.forEach((value, idx) => push(`socket.io.engine.opts.query[${idx}]`, value));
+      } else if (typeof engineQuery === "object") {
+        Object.entries(engineQuery).forEach(([key, value]) => push(`socket.io.engine.opts.query.${key}`, value));
+      }
+    }
+  } catch (_) { /* ignore */ }
+  try {
+    const uri = socket?.io?.uri;
+    if (uri) {
+      push("socket.io.uri", uri);
+      try {
+        const parsed = new URL(uri, window.location.href);
+        push("socket.io.uri.roomCode", parsed.searchParams.get("roomCode"));
+        push("socket.io.uri.room", parsed.searchParams.get("room"));
+        push("socket.io.uri.code", parsed.searchParams.get("code"));
+      } catch (_) { /* ignore */ }
+    }
+  } catch (_) { /* ignore */ }
   try {
     const segments = (window.location.pathname || "").split("/").filter(Boolean);
     segments.forEach((segment, idx) => push(`location.path[${idx}]`, segment));
@@ -137,6 +191,153 @@ function pickBestRoomCode(candidates) {
   return null;
 }
 
+const presenceOverride = {
+  roomCode: null,
+  roomCodeCandidates: [],
+  username: null,
+  usernameSources: [],
+  authLabel: null,
+  authSources: [],
+  lang: null,
+  selfPeerId: null
+};
+
+const OVERRIDE_LIST_LIMIT = 10;
+
+function cloneOverrideEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const source = entry.source != null ? String(entry.source) : null;
+  const value = entry.value != null ? String(entry.value) : null;
+  const trimmedValue = value ? value.trim() : "";
+  if (!source && !trimmedValue) return null;
+  const clone = {};
+  if (source) clone.source = source;
+  if (trimmedValue) clone.value = trimmedValue;
+  return Object.keys(clone).length ? clone : null;
+}
+
+function appendOverrideEntry(target, entry) {
+  if (!Array.isArray(target)) return;
+  const clone = cloneOverrideEntry(entry);
+  if (!clone) return;
+  target.unshift(clone);
+  if (target.length > OVERRIDE_LIST_LIMIT) target.length = OVERRIDE_LIST_LIMIT;
+}
+
+function appendOverrideEntries(target, entries) {
+  if (!Array.isArray(target) || !Array.isArray(entries)) return;
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    appendOverrideEntry(target, entries[i]);
+  }
+}
+
+function registerPresenceOverride(partial) {
+  if (!partial || typeof partial !== "object") return;
+  if (Array.isArray(partial.roomCodeCandidates)) {
+    appendOverrideEntries(presenceOverride.roomCodeCandidates, partial.roomCodeCandidates);
+  }
+  if (Array.isArray(partial.usernameSources)) {
+    appendOverrideEntries(presenceOverride.usernameSources, partial.usernameSources);
+  }
+  if (Array.isArray(partial.authSources)) {
+    appendOverrideEntries(presenceOverride.authSources, partial.authSources);
+  }
+  if (partial.roomCode) {
+    const normalized = normalizeRoomCodeForMessage(partial.roomCode);
+    if (normalized) {
+      presenceOverride.roomCode = normalized;
+      if (partial.roomCodeSource) {
+        appendOverrideEntry(presenceOverride.roomCodeCandidates, {
+          source: partial.roomCodeSource,
+          value: normalized
+        });
+      }
+    }
+  }
+  if (typeof partial.username === "string") {
+    const trimmed = partial.username.trim();
+    if (trimmed) presenceOverride.username = trimmed;
+  }
+  if (typeof partial.authLabel === "string") {
+    const trimmed = partial.authLabel.trim();
+    if (trimmed) presenceOverride.authLabel = trimmed;
+  }
+  if (partial.selfPeerId != null) {
+    const normalizedPeer = normalizePlayerId(partial.selfPeerId);
+    if (normalizedPeer) presenceOverride.selfPeerId = normalizedPeer;
+  }
+  if (typeof partial.lang === "string") {
+    const trimmedLang = partial.lang.trim();
+    if (trimmedLang) presenceOverride.lang = trimmedLang;
+  }
+}
+
+function refreshSocketRoomOverrides() {
+  const extras = [];
+  const pushCandidate = (source, value) => {
+    if (value == null) return;
+    const str = typeof value === "string" ? value : String(value);
+    const trimmed = str.trim();
+    if (!trimmed) return;
+    extras.push({ source, value: trimmed });
+  };
+  const collectQuery = (base, query) => {
+    if (!query) return;
+    if (typeof query === "string") {
+      pushCandidate(base, query);
+      try {
+        const params = new URLSearchParams(query);
+        pushCandidate(`${base}.roomCode`, params.get("roomCode"));
+        pushCandidate(`${base}.room`, params.get("room"));
+        pushCandidate(`${base}.code`, params.get("code"));
+      } catch (_) { /* ignore */ }
+      return;
+    }
+    if (Array.isArray(query)) {
+      query.forEach((value, idx) => pushCandidate(`${base}[${idx}]`, value));
+      return;
+    }
+    if (typeof query === "object") {
+      Object.entries(query).forEach(([key, value]) => pushCandidate(`${base}.${key}`, value));
+    }
+  };
+
+  try { collectQuery("socket.io.opts.query", socket?.io?.opts?.query); } catch (_) { /* ignore */ }
+  try { collectQuery("socket.io.engine.opts.query", socket?.io?.engine?.transport?.opts?.query); } catch (_) { /* ignore */ }
+  try { collectQuery("socket.io.engine.transport.query", socket?.io?.engine?.transport?.query); } catch (_) { /* ignore */ }
+  try { collectQuery("socket.io.engine.transport.socket.query", socket?.io?.engine?.transport?.socket?.query); } catch (_) { /* ignore */ }
+  try {
+    const uri = socket?.io?.uri;
+    if (uri) {
+      pushCandidate("socket.io.uri", uri);
+      try {
+        const parsed = new URL(uri, window.location.href);
+        pushCandidate("socket.io.uri.roomCode", parsed.searchParams.get("roomCode"));
+        pushCandidate("socket.io.uri.room", parsed.searchParams.get("room"));
+        pushCandidate("socket.io.uri.code", parsed.searchParams.get("code"));
+      } catch (_) { /* ignore */ }
+    }
+  } catch (_) { /* ignore */ }
+
+  if (!extras.length) return;
+  let resolved = null;
+  let resolvedSource = null;
+  for (const entry of extras) {
+    const normalized = normalizeRoomCodeForMessage(entry.value);
+    if (normalized) {
+      resolved = normalized;
+      resolvedSource = entry.source;
+      break;
+    }
+  }
+  const payload = { roomCodeCandidates: extras };
+  if (resolved) {
+    payload.roomCode = resolved;
+    payload.roomCodeSource = resolvedSource;
+  }
+  registerPresenceOverride(payload);
+}
+
 function gatherSelfCandidates() {
   const out = [];
   const seen = new Set();
@@ -168,6 +369,21 @@ function gatherSelfCandidates() {
   try { push("window.game.player", window?.game?.player); } catch (_) { /* ignore */ }
   try { push("window.gameClient.self", window?.gameClient?.self); } catch (_) { /* ignore */ }
   try { push("window.gameClient.player", window?.gameClient?.player); } catch (_) { /* ignore */ }
+
+  try {
+    if (typeof playersByPeerId !== "undefined" && playersByPeerId && typeof playersByPeerId === "object") {
+      const mine = getSelfId();
+      if (mine && playersByPeerId[mine]) {
+        push("playersByPeerId[self]", playersByPeerId[mine]);
+      }
+      Object.values(playersByPeerId).forEach((entry) => push("playersByPeerId", entry));
+    }
+  } catch (_) { /* ignore */ }
+  try {
+    if (typeof players !== "undefined" && Array.isArray(players)) {
+      players.forEach((entry, idx) => push(`players[${idx}]`, entry));
+    }
+  } catch (_) { /* ignore */ }
 
   const collectFromMap = (source, collection) => {
     if (!collection) return;
@@ -299,6 +515,66 @@ function gatherSelfInfoForContext() {
   };
 }
 
+function findPlayerByPeerId(playersList, peerId) {
+  if (!Array.isArray(playersList)) return null;
+  const target = normalizePlayerId(peerId);
+  if (!target) return null;
+  for (const player of playersList) {
+    if (!player || typeof player !== "object") continue;
+    const candidate = normalizePlayerId(
+      player?.profile?.peerId ?? player?.peerId ?? player?.id ?? player?.profile?.id ?? player?.profile?.playerId
+    );
+    if (candidate && candidate === target) {
+      return player;
+    }
+  }
+  return null;
+}
+
+function updateOverrideFromPlayer(player, source) {
+  if (!player || typeof player !== "object") return;
+  const usernameSources = [];
+  const authSources = [];
+  const profile = player.profile && typeof player.profile === "object" ? player.profile : null;
+  let username = "";
+  if (profile) {
+    username = pickUsername(profile, `${source}.profile`, usernameSources) || username;
+  }
+  if (!username) {
+    username = pickUsername(player, source, usernameSources) || "";
+  }
+  let authLabel = "";
+  if (profile) {
+    const authCandidate = {
+      auth: profile.auth ?? player.auth,
+      authText: profile.authText ?? player.authText,
+      authBadge: profile.authBadge ?? player.authBadge,
+      badge: profile.badge ?? player.badge,
+      badgeText: profile.badgeText ?? player.badgeText,
+      linkedAccountLabel: profile.linkedAccountLabel ?? player.linkedAccountLabel,
+      accountLabel: profile.accountLabel ?? player.accountLabel,
+      discord: profile.discord ?? player.discord,
+      twitch: profile.twitch ?? player.twitch
+    };
+    authLabel = pickAuthLabel(authCandidate, `${source}.profile`, authSources) || authLabel;
+  }
+  if (!authLabel) {
+    authLabel = pickAuthLabel(player, source, authSources) || "";
+  }
+
+  const override = {
+    usernameSources,
+    authSources
+  };
+  if (username) override.username = username;
+  if (authLabel) override.authLabel = authLabel;
+  const normalizedPeer = normalizePlayerId(
+    profile?.peerId ?? player.peerId ?? player.id ?? player?.profile?.peerId ?? player?.profile?.id
+  );
+  if (normalizedPeer) override.selfPeerId = normalizedPeer;
+  registerPresenceOverride(override);
+}
+
 function gatherLanguageForContext() {
   const attempts = [];
   const push = (value) => {
@@ -307,6 +583,9 @@ function gatherLanguageForContext() {
     if (!trimmed) return;
     attempts.push(trimmed);
   };
+  if (typeof presenceOverride.lang === "string" && presenceOverride.lang) {
+    push(presenceOverride.lang);
+  }
   try { push(window?.room?.dictionary?.name); } catch (_) { /* ignore */ }
   try { push(window?.game?.dictionary?.name); } catch (_) { /* ignore */ }
   try { push(window?.gameClient?.dictionary?.name); } catch (_) { /* ignore */ }
@@ -316,21 +595,45 @@ function gatherLanguageForContext() {
 
 function emitPresenceContext(reason) {
   try {
-    const roomCandidates = gatherRoomCodeCandidates();
-    const roomCode = pickBestRoomCode(roomCandidates);
+    refreshSocketRoomOverrides();
+    const extraCandidates = Array.isArray(presenceOverride.roomCodeCandidates)
+      ? presenceOverride.roomCodeCandidates.slice(0, OVERRIDE_LIST_LIMIT)
+      : [];
+    const roomCandidates = gatherRoomCodeCandidates(extraCandidates);
+    const overrideRoom = presenceOverride.roomCode
+      ? normalizeRoomCodeForMessage(presenceOverride.roomCode)
+      : null;
+    const roomCode = overrideRoom || pickBestRoomCode(roomCandidates);
     const selfInfo = gatherSelfInfoForContext();
-    const lang = gatherLanguageForContext();
+    const combinedUsernameSources = [];
+    if (Array.isArray(presenceOverride.usernameSources)) {
+      combinedUsernameSources.push(...presenceOverride.usernameSources);
+    }
+    if (Array.isArray(selfInfo.usernameSources)) {
+      combinedUsernameSources.push(...selfInfo.usernameSources);
+    }
+    const combinedAuthSources = [];
+    if (Array.isArray(presenceOverride.authSources)) {
+      combinedAuthSources.push(...presenceOverride.authSources);
+    }
+    if (Array.isArray(selfInfo.authSources)) {
+      combinedAuthSources.push(...selfInfo.authSources);
+    }
+    const username = (presenceOverride.username || selfInfo.username || "").trim();
+    const authLabel = (presenceOverride.authLabel || selfInfo.authLabel || "").trim();
+    const peerId = presenceOverride.selfPeerId || selfInfo.peerId || null;
+    const lang = presenceOverride.lang || gatherLanguageForContext();
     const payload = {
       type: "presenceContext",
       reason,
       timestamp: Date.now(),
-      roomCode,
+      roomCode: roomCode || null,
       roomCodeCandidates: roomCandidates,
-      username: selfInfo.username || null,
-      usernameSources: selfInfo.usernameSources,
-      authLabel: selfInfo.authLabel || null,
-      authSources: selfInfo.authSources,
-      selfPeerId: selfInfo.peerId || null,
+      username: username || null,
+      usernameSources: combinedUsernameSources.slice(0, OVERRIDE_LIST_LIMIT),
+      authLabel: authLabel || null,
+      authSources: combinedAuthSources.slice(0, OVERRIDE_LIST_LIMIT),
+      selfPeerId: peerId || null,
       lang: lang || null
     };
     window.postMessage(payload, "*");
@@ -344,7 +647,26 @@ let actual_word = "";
 
 socket.on("setup", (data) => {
   if (!data?.milestone || data.milestone.name !== "round") return;
-  markSelfId(typeof selfPeerId !== "undefined" ? selfPeerId : null);
+  const setupSelf = coalescePlayerId(
+    data?.selfPeerId,
+    typeof selfPeerId !== "undefined" ? selfPeerId : null,
+    data?.playerPeerId,
+    data?.playerId
+  );
+  if (setupSelf) {
+    registerPresenceOverride({ selfPeerId: setupSelf });
+  }
+  markSelfId(setupSelf || (typeof selfPeerId !== "undefined" ? selfPeerId : null));
+  if (Array.isArray(data?.players)) {
+    const mine = findPlayerByPeerId(data.players, setupSelf || getSelfId());
+    if (mine) {
+      updateOverrideFromPlayer(mine, "setup.players");
+    }
+  }
+  const dictName = data?.milestone?.dictionaryManifest?.name;
+  if (typeof dictName === "string" && dictName.trim()) {
+    registerPresenceOverride({ lang: dictName });
+  }
   const playerId = coalescePlayerId(
     data.milestone.currentPlayerPeerId,
     data.milestone.currentPlayerId
@@ -363,6 +685,10 @@ socket.on("setup", (data) => {
 
 socket.on("setMilestone", (newMilestone) => {
   if (!newMilestone || newMilestone.name !== "round") return;
+  const dictName = newMilestone?.dictionaryManifest?.name;
+  if (typeof dictName === "string" && dictName.trim()) {
+    registerPresenceOverride({ lang: dictName });
+  }
   const playerId = coalescePlayerId(
     newMilestone.currentPlayerPeerId,
     newMilestone.currentPlayerId
@@ -430,10 +756,64 @@ socket.on("setPlayerWord", (playerId, word) => {
   if (isSelf(lastWordPlayerId)) markSelfId(lastWordPlayerId);
 });
 
-setTimeout(() => emitPresenceContext("init"), 800);
+socket.on("setDictionaryManifest", (manifest) => {
+  const dictName = manifest?.name;
+  if (typeof dictName === "string" && dictName.trim()) {
+    registerPresenceOverride({ lang: dictName });
+  }
+  emitPresenceContext("socket.setDictionaryManifest");
+});
+
+socket.on("addPlayer", (player) => {
+  try {
+    const mine = getSelfId();
+    const candidate = normalizePlayerId(player?.profile?.peerId ?? player?.peerId ?? player?.id);
+    if (mine && candidate && mine === candidate) {
+      updateOverrideFromPlayer(player, "socket.addPlayer");
+    }
+  } catch (err) {
+    console.warn("[BombPartyShark] Failed to process addPlayer for presence", err);
+  }
+  emitPresenceContext("socket.addPlayer");
+});
+
+socket.on("updatePlayer", (playerPeerId, profile) => {
+  try {
+    const mine = getSelfId();
+    const normalizedPeer = normalizePlayerId(playerPeerId);
+    if (mine && normalizedPeer && mine === normalizedPeer) {
+      updateOverrideFromPlayer({ profile: profile || {}, peerId: normalizedPeer }, "socket.updatePlayer");
+    }
+  } catch (err) {
+    console.warn("[BombPartyShark] Failed to process updatePlayer for presence", err);
+  }
+  emitPresenceContext("socket.updatePlayer");
+});
+
+socket.on("connect", () => {
+  refreshSocketRoomOverrides();
+  emitPresenceContext("socket.connect");
+});
+
+socket.on("reconnect", () => {
+  refreshSocketRoomOverrides();
+  emitPresenceContext("socket.reconnect");
+});
+
+socket.on("disconnect", () => {
+  emitPresenceContext("socket.disconnect");
+});
+
+setTimeout(() => {
+  refreshSocketRoomOverrides();
+  emitPresenceContext("init");
+}, 800);
 let presenceContextTimer = null;
 try {
-  presenceContextTimer = setInterval(() => emitPresenceContext("interval"), 5000);
+  presenceContextTimer = setInterval(() => {
+    refreshSocketRoomOverrides();
+    emitPresenceContext("interval");
+  }, 5000);
 } catch (_) { /* ignore */ }
 
 window.addEventListener("focus", () => emitPresenceContext("focus"));

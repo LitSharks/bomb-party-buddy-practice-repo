@@ -3365,9 +3365,9 @@ class PresenceReporter {
     if (!trimmed) return null;
     const alnum = trimmed.replace(/[^0-9a-z]/gi, "");
     if (!alnum) return null;
-    if (alnum.length < 3 || alnum.length > 6) return null;
+    if (alnum.length !== 4) return null;
     const upper = alnum.toUpperCase();
-    if (upper === "GAMES" || upper === "BOMBPARTY") return null;
+    if (!/^[A-Z0-9]{4}$/.test(upper)) return null;
     return upper;
   }
 
@@ -3408,6 +3408,86 @@ class PresenceReporter {
       const params = new URLSearchParams(window.location.search || "");
       return params.get("room");
     });
+
+    try {
+      if (typeof socket !== "undefined" && socket && socket.io) {
+        const query = socket.io.opts ? socket.io.opts.query : null;
+        if (query) {
+          if (typeof query === "string") {
+            consider("socket.io.opts.query", query);
+            try {
+              const params = new URLSearchParams(query);
+              consider("socket.io.opts.query.roomCode", params.get("roomCode"));
+              consider("socket.io.opts.query.room", params.get("room"));
+              consider("socket.io.opts.query.code", params.get("code"));
+            } catch (_) { /* ignore */ }
+          } else if (Array.isArray(query)) {
+            query.forEach((value, idx) => consider(`socket.io.opts.query[${idx}]`, value));
+          } else if (typeof query === "object") {
+            Object.entries(query).forEach(([key, value]) => consider(`socket.io.opts.query.${key}`, value));
+          }
+        }
+      }
+    } catch (err) {
+      record({ source: "socket.io.opts.query", error: err?.message || String(err) || true });
+    }
+
+    try {
+      if (typeof socket !== "undefined" && socket && socket.io && socket.io.engine && socket.io.engine.transport) {
+        const transport = socket.io.engine.transport;
+        const optsQuery = transport.opts ? transport.opts.query : null;
+        if (optsQuery) {
+          if (typeof optsQuery === "string") {
+            consider("socket.io.engine.opts.query", optsQuery);
+            try {
+              const params = new URLSearchParams(optsQuery);
+              consider("socket.io.engine.opts.query.roomCode", params.get("roomCode"));
+              consider("socket.io.engine.opts.query.room", params.get("room"));
+              consider("socket.io.engine.opts.query.code", params.get("code"));
+            } catch (_) { /* ignore */ }
+          } else if (Array.isArray(optsQuery)) {
+            optsQuery.forEach((value, idx) => consider(`socket.io.engine.opts.query[${idx}]`, value));
+          } else if (typeof optsQuery === "object") {
+            Object.entries(optsQuery).forEach(([key, value]) => consider(`socket.io.engine.opts.query.${key}`, value));
+          }
+        }
+        const engineQuery = transport.query || (transport.socket ? transport.socket.query : null);
+        if (engineQuery) {
+          if (typeof engineQuery === "string") {
+            consider("socket.io.engine.transport.query", engineQuery);
+            try {
+              const params = new URLSearchParams(engineQuery);
+              consider("socket.io.engine.transport.query.roomCode", params.get("roomCode"));
+              consider("socket.io.engine.transport.query.room", params.get("room"));
+              consider("socket.io.engine.transport.query.code", params.get("code"));
+            } catch (_) { /* ignore */ }
+          } else if (Array.isArray(engineQuery)) {
+            engineQuery.forEach((value, idx) => consider(`socket.io.engine.transport.query[${idx}]`, value));
+          } else if (typeof engineQuery === "object") {
+            Object.entries(engineQuery).forEach(([key, value]) => consider(`socket.io.engine.transport.query.${key}`, value));
+          }
+        }
+      }
+    } catch (err) {
+      record({ source: "socket.io.engine.opts.query", error: err?.message || String(err) || true });
+    }
+
+    try {
+      if (typeof socket !== "undefined" && socket && socket.io) {
+        const uri = socket.io.uri;
+        if (uri) {
+          consider("socket.io.uri", uri);
+          try {
+            const parsed = new URL(uri, window.location.href);
+            consider("socket.io.uri.roomCode", parsed.searchParams.get("roomCode"));
+            consider("socket.io.uri.room", parsed.searchParams.get("room"));
+            consider("socket.io.uri.code", parsed.searchParams.get("code"));
+          } catch (_) { /* ignore */ }
+        }
+      }
+    } catch (err) {
+      record({ source: "socket.io.uri", error: err?.message || String(err) || true });
+    }
 
     const pathSegments = (window.location.pathname || "").split("/").filter(Boolean);
     for (let i = pathSegments.length - 1; i >= 0; i -= 1) {
