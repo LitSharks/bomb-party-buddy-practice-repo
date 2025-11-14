@@ -3,7 +3,7 @@
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
   "description": "__MSG_extensionDescription__",
-  "version": "6.967",
+  "version": "6.968",
 
   "default_locale": "en",
 
@@ -40,7 +40,7 @@
     }
   ],
 
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs"],
 
   "host_permissions": [
     "https://extensions.litshark.ca/*"
