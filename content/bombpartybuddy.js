@@ -295,12 +295,47 @@ class PresenceManager {
     return !document.hidden;
   }
 
+  getCandidateDocuments() {
+    const docs = [];
+    const push = (doc) => {
+      if (!doc) return;
+      if (typeof doc.querySelector !== "function") return;
+      if (docs.includes(doc)) return;
+      docs.push(doc);
+    };
+    push(document);
+    try {
+      if (window.parent && window.parent !== window) {
+        push(window.parent.document);
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (window.top && window.top !== window) {
+        push(window.top.document);
+      }
+    } catch (_) { /* ignore */ }
+    return docs;
+  }
+
+  resolveObserverTarget() {
+    const docs = this.getCandidateDocuments();
+    for (const doc of docs) {
+      try {
+        const target = doc.body || doc.documentElement;
+        if (target) return target;
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    return null;
+  }
+
   attachPlayerObserver() {
     if (this.playerObserver) {
       try { this.playerObserver.disconnect(); } catch (_) { /* ignore */ }
       this.playerObserver = null;
     }
-    const target = document.body || document.documentElement;
+    const target = this.resolveObserverTarget();
     if (!target) {
       if (!this.domReadyListener) {
         this.domReadyListener = () => {
@@ -325,10 +360,21 @@ class PresenceManager {
     }
   }
 
-  extractRoomCode() {
+  extractRoomFromUrl(url) {
+    if (!url) return null;
     try {
-      const url = new URL(window.location.href);
-      const parts = url.pathname.split("/").filter(Boolean);
+      const params = new URLSearchParams(url.search || "");
+      for (const key of ["room", "code", "join"]) {
+        const value = sanitizeString(params.get(key));
+        if (value && /^[a-z0-9]{3,8}$/i.test(value)) {
+          return value.toUpperCase();
+        }
+      }
+      const hash = sanitizeString((url.hash || "").replace(/^#/, ""));
+      if (hash && /^[a-z0-9]{3,8}$/i.test(hash)) {
+        return hash.toUpperCase();
+      }
+      const parts = (url.pathname || "").split("/").filter(Boolean);
       for (let i = parts.length - 1; i >= 0; i -= 1) {
         const part = parts[i];
         if (!part) continue;
@@ -342,6 +388,38 @@ class PresenceManager {
       }
     } catch (_) {
       /* ignore */
+    }
+    return null;
+  }
+
+  extractRoomCode() {
+    const urls = [];
+    const pushUrl = (href) => {
+      if (!href) return;
+      try {
+        const parsed = href instanceof URL ? href : new URL(href);
+        urls.push(parsed);
+      } catch (_) {
+        /* ignore */
+      }
+    };
+    try { pushUrl(new URL(window.location.href)); } catch (_) { /* ignore */ }
+    try {
+      if (window.parent && window.parent !== window) {
+        pushUrl(new URL(window.parent.location.href));
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (window.top && window.top !== window) {
+        pushUrl(new URL(window.top.location.href));
+      }
+    } catch (_) { /* ignore */ }
+    if (document?.referrer) {
+      pushUrl(document.referrer);
+    }
+    for (const url of urls) {
+      const code = this.extractRoomFromUrl(url);
+      if (code) return code;
     }
     return null;
   }
@@ -372,7 +450,21 @@ class PresenceManager {
 
   refreshLocalPlayerInfo() {
     if (this.destroyed) return;
-    const nodes = Array.from(document.querySelectorAll('.chatter[data-peer-id]'));
+    const docs = this.getCandidateDocuments();
+    const nodes = [];
+    const seen = new Set();
+    for (const doc of docs) {
+      try {
+        const found = doc.querySelectorAll('.chatter[data-peer-id]');
+        for (const node of found) {
+          if (!node || seen.has(node)) continue;
+          seen.add(node);
+          nodes.push(node);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
     if (!nodes.length) return;
 
     const parseEntry = (node) => {
