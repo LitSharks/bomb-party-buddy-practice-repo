@@ -15,6 +15,62 @@ const WORD_CACHE = new Map();
 const WORD_CACHE_LOADING = new Map();
 const WORD_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const LANGS = Object.freeze({
+  "Brazilian Portuguese": "pt-br",
+  "Breton": "br",
+  "English": "en",
+  "French": "fr",
+  "German": "de",
+  "Nahuatl": "nah",
+  "Basque": "eu",
+  "Spanish": "es",
+  "Pokemon": "pok-en",
+  "Pokémon (French)": "pok-fr",
+  "Pokemon (German)": "pok-de"
+});
+
+const LANGUAGE_NAME_LOOKUP = (() => {
+  const out = Object.create(null);
+  for (const [label, code] of Object.entries(LANGS)) {
+    const lower = label.toLowerCase();
+    out[lower] = code;
+    if (typeof label.normalize === "function") {
+      const ascii = label
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+      out[ascii] = code;
+    }
+  }
+  return out;
+})();
+
+const LANGUAGE_NAME_ALIASES = Object.freeze({
+  "english": "en", "en": "en",
+  "german": "de", "de": "de",
+  "french": "fr", "fr": "fr",
+  "spanish": "es", "es": "es", "espanol": "es", "español": "es",
+  "brazilian portuguese": "pt-br",
+  "portuguese": "pt-br", "portugues": "pt-br", "português": "pt-br",
+  "portuguese (br)": "pt-br", "portuguese (brasil)": "pt-br",
+  "portuguese (brazil)": "pt-br", "portuguese brazil": "pt-br",
+  "portuguese brazilian": "pt-br", "português brazil": "pt-br",
+  "português (br)": "pt-br", "português (brasil)": "pt-br",
+  "português (brazil)": "pt-br", "português brazil": "pt-br",
+  "pt-br": "pt-br", "pt": "pt-br", "ptbr": "pt-br", "pt-brasil": "pt-br",
+  "pt-brazil": "pt-br", "ptbrasil": "pt-br", "brasil": "pt-br",
+  "brazil": "pt-br",
+  "nahuatl": "nah", "nah": "nah",
+  "breton": "br", "brezhoneg": "br", "br": "br",
+  "basque": "eu", "euskara": "eu", "euskaraz": "eu", "eu": "eu",
+  "pokemon": "pok-en", "pokémon": "pok-en", "pokemon (en)": "pok-en",
+  "pokémon (en)": "pok-en", "pok-en": "pok-en",
+  "pokemon (french)": "pok-fr", "pokémon (french)": "pok-fr",
+  "pok-fr": "pok-fr",
+  "pokemon (german)": "pok-de", "pokémon (german)": "pok-de",
+  "pok-de": "pok-de"
+});
+
 const LANGUAGE_LABELS = Object.freeze({
   "en": { short: "EN", name: "English" },
   "de": { short: "DE", name: "Deutsch" },
@@ -22,6 +78,8 @@ const LANGUAGE_LABELS = Object.freeze({
   "es": { short: "ES", name: "Español" },
   "pt-br": { short: "PT", name: "Português (Brasil)" },
   "nah": { short: "NAH", name: "Nahuatl" },
+  "br": { short: "BR", name: "Breton" },
+  "eu": { short: "EU", name: "Basque" },
   "pok-en": { short: "PokEN", name: "Pokémon (EN)" },
   "pok-fr": { short: "PokFR", name: "Pokémon (FR)" },
   "pok-de": { short: "PokDE", name: "Pokémon (DE)" }
@@ -227,35 +285,25 @@ class Game {
   apiBase() { return "https://extensions.litshark.ca/api"; }
 
   normalizeLang(name) {
-    const raw = (name || "").toString().trim().toLowerCase();
+    const raw = (name || "").toString().trim();
+    if (!raw) return "en";
+    const lower = raw.toLowerCase();
     const cleaned = raw.replace(/[<>]/g, "");
-    const s = cleaned.replace(/_/g, "-");
-    const map = {
-      "english": "en", "en": "en",
-      "german": "de", "de": "de",
-      "french": "fr", "fr": "fr",
-      "spanish": "es", "es": "es",
-      "espanol": "es", "español": "es",
-      "portuguese": "pt-br", "português": "pt-br",
-      "portuguese (br)": "pt-br", "portuguese (brasil)": "pt-br",
-      "portuguese (brazil)": "pt-br", "portuguese brazil": "pt-br",
-      "portuguese brazilian": "pt-br", "português brazil": "pt-br",
-      "português (br)": "pt-br", "português (brasil)": "pt-br",
-      "português (brazil)": "pt-br", "português brazil": "pt-br",
-      "pt-br": "pt-br", "pt": "pt-br", "ptbr": "pt-br", "pt-brasil": "pt-br",
-      "pt-brazil": "pt-br", "ptbrasil": "pt-br",
-      "br": "pt-br", "brasil": "pt-br", "brazil": "pt-br",
-      "nahuatl": "nah", "nah": "nah",
-      "pokemon (en)": "pok-en", "pok-en": "pok-en",
-      "pokemon (fr)": "pok-fr", "pok-fr": "pok-fr",
-      "pokemon (de)": "pok-de", "pok-de": "pok-de"
-    };
-    if (map[s]) return map[s];
-    if (map[raw]) return map[raw];
-    if (s.includes("portugu")) {
-      return "pt-br";
+    const ascii = typeof cleaned.normalize === "function"
+      ? cleaned.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      : cleaned;
+    const candidates = [
+      lower,
+      lower.replace(/_/g, "-"),
+      cleaned.toLowerCase(),
+      ascii.toLowerCase(),
+      ascii.replace(/_/g, "-").toLowerCase()
+    ];
+    for (const candidate of candidates) {
+      if (LANGUAGE_NAME_LOOKUP[candidate]) return LANGUAGE_NAME_LOOKUP[candidate];
+      if (LANGUAGE_NAME_ALIASES[candidate]) return LANGUAGE_NAME_ALIASES[candidate];
     }
-    if (raw.includes("portugu")) {
+    if (ascii.toLowerCase().includes("portugu")) {
       return "pt-br";
     }
     return "en";

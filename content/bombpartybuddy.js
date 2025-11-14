@@ -60,7 +60,653 @@ async function copyPlain(text) {
   } catch { return false; }
 }
 
-function createOverlay(game) {
+const PRESENCE_ENDPOINT = "https://extensions.litshark.ca/api/presence.php";
+const DEVICE_STORAGE_KEY = "litshark.device_id.v1";
+const ACCOUNT_TOKEN_STORAGE_KEY = "litshark.account_token.v1";
+const KNOWN_PRESENCE_LANGS = new Set([
+  "en", "fr", "de", "es", "pt-br", "nah", "br", "eu",
+  "pok-en", "pok-fr", "pok-de"
+]);
+const HEARTBEAT_BASE_INTERVAL_MS = 30000;
+const HEARTBEAT_JITTER_MS = 4000;
+const HEARTBEAT_MAX_BACKOFF_MS = 120000;
+const PLAYER_SCAN_INTERVAL_MS = 4000;
+const ROOM_CHECK_INTERVAL_MS = 1500;
+
+function randomUuid() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch (_) { /* ignore and fall back */ }
+  const arr = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < arr.length; i += 1) arr[i] = Math.floor(Math.random() * 256);
+  }
+  arr[6] = (arr[6] & 0x0f) | 0x40;
+  arr[8] = (arr[8] & 0x3f) | 0x80;
+  const hex = Array.from(arr, (b) => b.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+}
+
+function storageGet(area, keys) {
+  return new Promise((resolve) => {
+    const storageArea = chrome?.storage?.[area];
+    if (!storageArea) { resolve({}); return; }
+    try {
+      storageArea.get(keys, (items) => {
+        if (chrome?.runtime?.lastError) {
+          resolve({});
+          return;
+        }
+        resolve(items || {});
+      });
+    } catch (_) {
+      resolve({});
+    }
+  });
+}
+
+function storageSet(area, items) {
+  return new Promise((resolve) => {
+    const storageArea = chrome?.storage?.[area];
+    if (!storageArea) { resolve(false); return; }
+    try {
+      storageArea.set(items, () => {
+        if (chrome?.runtime?.lastError) {
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      });
+    } catch (_) {
+      resolve(false);
+    }
+  });
+}
+
+function sanitizeString(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+async function getOrCreateDeviceId() {
+  const existing = await storageGet("local", DEVICE_STORAGE_KEY);
+  const current = sanitizeString(existing?.[DEVICE_STORAGE_KEY]);
+  if (current) return current;
+  const generated = randomUuid();
+  await storageSet("local", { [DEVICE_STORAGE_KEY]: generated });
+  return generated;
+}
+
+async function getStoredAccountToken() {
+  const fromLocal = await storageGet("local", ACCOUNT_TOKEN_STORAGE_KEY);
+  const localToken = sanitizeString(fromLocal?.[ACCOUNT_TOKEN_STORAGE_KEY]);
+  if (localToken) return localToken;
+  const fromSync = await storageGet("sync", ACCOUNT_TOKEN_STORAGE_KEY);
+  const syncToken = sanitizeString(fromSync?.[ACCOUNT_TOKEN_STORAGE_KEY]);
+  return syncToken;
+}
+
+function safeRuntimeSend(message) {
+  return new Promise((resolve, reject) => {
+    if (!chrome?.runtime?.sendMessage) {
+      resolve(undefined);
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome?.runtime?.lastError) {
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        resolve(response);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+function fireAndForgetRuntimeSend(message) {
+  try {
+    safeRuntimeSend(message).catch(() => {});
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+class PresenceManager {
+  constructor(game) {
+    this.game = game;
+    this.sessionId = randomUuid();
+    this.deviceId = null;
+    this.accountToken = null;
+    this.version = (() => {
+      try {
+        return chrome?.runtime?.getManifest?.()?.version || "0";
+      } catch (_) {
+        return "0";
+      }
+    })();
+
+    this.lang = this.normalizeLangForPresence(game?.lang);
+    this.roomCode = this.extractRoomCode();
+    this.username = null;
+    this.authBadge = null;
+
+    this.heartbeatTimer = null;
+    this.heartbeatInFlight = false;
+    this.retryAttempt = 0;
+    this.pendingImmediateOnVisible = false;
+
+    this.playerObserver = null;
+    this.playerRefreshTimer = null;
+    this.playerScanTimer = null;
+    this.urlMonitorTimer = null;
+    this.domReadyListener = null;
+    this.storageListener = null;
+
+    this.visibilityListener = () => this.handleVisibilityChange();
+    this.pageHideHandler = () => this.handleLeaveEvent();
+    this.beforeUnloadHandler = () => this.handleLeaveEvent();
+
+    this.selfPeerId = null;
+    this.leaveSent = false;
+    this.destroyed = false;
+  }
+
+  normalizeLangForPresence(lang) {
+    if (!lang && this.game && typeof this.game.normalizeLang === "function") {
+      lang = this.game.normalizeLang(this.game.lang);
+    }
+    if (this.game && typeof this.game.normalizeLang === "function") {
+      lang = this.game.normalizeLang(lang);
+    }
+    const value = typeof lang === "string" ? lang.toLowerCase() : "";
+    return KNOWN_PRESENCE_LANGS.has(value) ? value : "en";
+  }
+
+  async init() {
+    this.deviceId = await getOrCreateDeviceId();
+    this.accountToken = await getStoredAccountToken();
+    this.lang = this.normalizeLangForPresence(this.game?.lang);
+    this.roomCode = this.extractRoomCode();
+    await this.registerSession();
+    this.installListeners();
+    this.queuePlayerRefresh();
+    if (this.isTabVisible()) {
+      this.scheduleHeartbeat({ immediate: true });
+    } else {
+      this.pendingImmediateOnVisible = true;
+    }
+  }
+
+  async registerSession() {
+    if (!this.sessionId || !this.deviceId) return;
+    try {
+      await safeRuntimeSend({
+        type: "presenceRegisterSession",
+        sessionId: this.sessionId,
+        deviceId: this.deviceId
+      });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  releaseSession() {
+    if (!this.sessionId) return;
+    fireAndForgetRuntimeSend({
+      type: "presenceReleaseSession",
+      sessionId: this.sessionId
+    });
+  }
+
+  installListeners() {
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", this.visibilityListener);
+    }
+    window.addEventListener("pagehide", this.pageHideHandler);
+    window.addEventListener("beforeunload", this.beforeUnloadHandler);
+    this.attachPlayerObserver();
+    this.playerScanTimer = window.setInterval(() => this.refreshLocalPlayerInfo(), PLAYER_SCAN_INTERVAL_MS);
+    this.urlMonitorTimer = window.setInterval(() => this.checkRoomCode(), ROOM_CHECK_INTERVAL_MS);
+    if (chrome?.storage?.onChanged) {
+      this.storageListener = (changes, area) => {
+        if (area !== "local" && area !== "sync") return;
+        if (Object.prototype.hasOwnProperty.call(changes, ACCOUNT_TOKEN_STORAGE_KEY)) {
+          this.updateAccountToken(changes[ACCOUNT_TOKEN_STORAGE_KEY]?.newValue);
+        }
+      };
+      try {
+        chrome.storage.onChanged.addListener(this.storageListener);
+      } catch (_) {
+        this.storageListener = null;
+      }
+    }
+  }
+
+  isTabVisible() {
+    if (typeof document === "undefined") return true;
+    return !document.hidden;
+  }
+
+  getCandidateDocuments() {
+    const docs = [];
+    const push = (doc) => {
+      if (!doc) return;
+      if (typeof doc.querySelector !== "function") return;
+      if (docs.includes(doc)) return;
+      docs.push(doc);
+    };
+    push(document);
+    try {
+      if (window.parent && window.parent !== window) {
+        push(window.parent.document);
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (window.top && window.top !== window) {
+        push(window.top.document);
+      }
+    } catch (_) { /* ignore */ }
+    return docs;
+  }
+
+  resolveObserverTarget() {
+    const docs = this.getCandidateDocuments();
+    for (const doc of docs) {
+      try {
+        const target = doc.body || doc.documentElement;
+        if (target) return target;
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    return null;
+  }
+
+  attachPlayerObserver() {
+    if (this.playerObserver) {
+      try { this.playerObserver.disconnect(); } catch (_) { /* ignore */ }
+      this.playerObserver = null;
+    }
+    const target = this.resolveObserverTarget();
+    if (!target) {
+      if (!this.domReadyListener) {
+        this.domReadyListener = () => {
+          this.domReadyListener = null;
+          this.attachPlayerObserver();
+          this.queuePlayerRefresh();
+        };
+        document.addEventListener("DOMContentLoaded", this.domReadyListener, { once: true });
+      }
+      return;
+    }
+    this.playerObserver = new MutationObserver(() => this.queuePlayerRefresh());
+    try {
+      this.playerObserver.observe(target, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-peer-id", "class"]
+      });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  extractRoomFromUrl(url) {
+    if (!url) return null;
+    try {
+      const params = new URLSearchParams(url.search || "");
+      for (const key of ["room", "code", "join"]) {
+        const value = sanitizeString(params.get(key));
+        if (value && /^[a-z0-9]{3,8}$/i.test(value)) {
+          return value.toUpperCase();
+        }
+      }
+      const hash = sanitizeString((url.hash || "").replace(/^#/, ""));
+      if (hash && /^[a-z0-9]{3,8}$/i.test(hash)) {
+        return hash.toUpperCase();
+      }
+      const parts = (url.pathname || "").split("/").filter(Boolean);
+      for (let i = parts.length - 1; i >= 0; i -= 1) {
+        const part = parts[i];
+        if (!part) continue;
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        const lower = trimmed.toLowerCase();
+        if (lower === "games" || lower === "bombparty") continue;
+        if (/^[a-z0-9]{3,8}$/i.test(trimmed)) {
+          return trimmed.toUpperCase();
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return null;
+  }
+
+  extractRoomCode() {
+    const urls = [];
+    const pushUrl = (href) => {
+      if (!href) return;
+      try {
+        const parsed = href instanceof URL ? href : new URL(href);
+        urls.push(parsed);
+      } catch (_) {
+        /* ignore */
+      }
+    };
+    try { pushUrl(new URL(window.location.href)); } catch (_) { /* ignore */ }
+    try {
+      if (window.parent && window.parent !== window) {
+        pushUrl(new URL(window.parent.location.href));
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (window.top && window.top !== window) {
+        pushUrl(new URL(window.top.location.href));
+      }
+    } catch (_) { /* ignore */ }
+    if (document?.referrer) {
+      pushUrl(document.referrer);
+    }
+    for (const url of urls) {
+      const code = this.extractRoomFromUrl(url);
+      if (code) return code;
+    }
+    return null;
+  }
+
+  checkRoomCode() {
+    if (this.destroyed) return;
+    const next = this.extractRoomCode();
+    if (next === this.roomCode) return;
+    this.roomCode = next;
+    this.selfPeerId = null;
+    this.username = null;
+    this.authBadge = null;
+    this.queuePlayerRefresh();
+    this.scheduleHeartbeat({ immediate: true });
+  }
+
+  queuePlayerRefresh() {
+    if (this.destroyed) return;
+    if (this.playerRefreshTimer) {
+      clearTimeout(this.playerRefreshTimer);
+      this.playerRefreshTimer = null;
+    }
+    this.playerRefreshTimer = window.setTimeout(() => {
+      this.playerRefreshTimer = null;
+      this.refreshLocalPlayerInfo();
+    }, 200);
+  }
+
+  refreshLocalPlayerInfo() {
+    if (this.destroyed) return;
+    const docs = this.getCandidateDocuments();
+    const nodes = [];
+    const seen = new Set();
+    for (const doc of docs) {
+      try {
+        const found = doc.querySelectorAll('.chatter[data-peer-id]');
+        for (const node of found) {
+          if (!node || seen.has(node)) continue;
+          seen.add(node);
+          nodes.push(node);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    if (!nodes.length) return;
+
+    const parseEntry = (node) => {
+      if (!node || node.classList.contains('banned')) return null;
+      const attr = node.getAttribute('data-peer-id');
+      if (!attr) return null;
+      const num = Number.parseInt(attr, 10);
+      if (!Number.isFinite(num)) return null;
+      return { node, id: attr, num };
+    };
+
+    let target = null;
+    if (this.selfPeerId != null) {
+      for (const node of nodes) {
+        if (node.getAttribute('data-peer-id') === this.selfPeerId) {
+          const entry = parseEntry(node);
+          if (entry) {
+            target = entry;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!target) {
+      for (const node of nodes) {
+        const entry = parseEntry(node);
+        if (!entry) continue;
+        if (!target || entry.num > target.num) {
+          target = entry;
+        }
+      }
+      if (target && !this.selfPeerId) {
+        this.selfPeerId = target.id;
+      }
+    }
+
+    if (!target) return;
+
+    const nickname = sanitizeString(target.node.querySelector('.nickname')?.textContent) || null;
+    let auth = sanitizeString(target.node.querySelector('.auth')?.textContent);
+    if (!auth && nickname) auth = "Guest";
+    const previousNickname = this.username || null;
+    const previousAuth = this.authBadge || null;
+    let changed = false;
+    if (nickname !== previousNickname) {
+      this.username = nickname;
+      changed = true;
+    }
+    if (auth !== previousAuth) {
+      this.authBadge = auth;
+      changed = true;
+    }
+    if (changed || !previousNickname) {
+      this.scheduleHeartbeat({ immediate: true });
+    }
+  }
+
+  setLanguage(lang) {
+    const next = this.normalizeLangForPresence(lang);
+    if (next !== this.lang) {
+      this.lang = next;
+      this.scheduleHeartbeat({ immediate: true });
+    }
+  }
+
+  updateAccountToken(token) {
+    const normalized = sanitizeString(token);
+    if (normalized === this.accountToken) return;
+    this.accountToken = normalized;
+    this.scheduleHeartbeat({ immediate: true });
+  }
+
+  buildHeartbeatPayload() {
+    const authBadge = this.authBadge || (this.username ? "Guest" : null);
+    return {
+      action: "heartbeat",
+      session_id: this.sessionId,
+      device_id: this.deviceId,
+      version: this.version,
+      lang: this.lang,
+      room_code: this.roomCode || null,
+      username: this.username || null,
+      auth_badge: authBadge,
+      account_token: this.accountToken || null
+    };
+  }
+
+  async postPresence(body) {
+    if (!this.game || typeof this.game.extPost !== "function") return;
+    await this.game.extPost(PRESENCE_ENDPOINT, body);
+  }
+
+  computeNextDelay(dueToRetry) {
+    if (dueToRetry && this.retryAttempt > 0) {
+      const delay = Math.min(HEARTBEAT_MAX_BACKOFF_MS, Math.pow(2, this.retryAttempt - 1) * 4000);
+      return delay + Math.floor(Math.random() * 1000);
+    }
+    const jitter = Math.round((Math.random() - 0.5) * HEARTBEAT_JITTER_MS);
+    return HEARTBEAT_BASE_INTERVAL_MS + jitter;
+  }
+
+  canSend() {
+    return !this.destroyed && !!this.sessionId && !!this.deviceId;
+  }
+
+  scheduleHeartbeat({ immediate = false, dueToRetry = false } = {}) {
+    if (!this.canSend()) return;
+    if (!this.isTabVisible()) {
+      if (immediate || dueToRetry) this.pendingImmediateOnVisible = true;
+      return;
+    }
+    if (this.heartbeatTimer) {
+      clearTimeout(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    const delay = immediate ? 0 : this.computeNextDelay(dueToRetry);
+    this.heartbeatTimer = window.setTimeout(() => {
+      this.heartbeatTimer = null;
+      this.sendHeartbeat();
+    }, Math.max(0, delay));
+    this.pendingImmediateOnVisible = false;
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearTimeout(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  async sendHeartbeat() {
+    if (!this.canSend() || this.heartbeatInFlight) return;
+    this.heartbeatInFlight = true;
+    const payload = this.buildHeartbeatPayload();
+    let success = false;
+    try {
+      await this.postPresence(payload);
+      this.retryAttempt = 0;
+      success = true;
+    } catch (err) {
+      this.retryAttempt = Math.min(this.retryAttempt + 1, 6);
+      console.warn('[BombPartyShark] Presence heartbeat failed', err);
+    } finally {
+      this.heartbeatInFlight = false;
+    }
+    if (!this.destroyed) {
+      this.scheduleHeartbeat({ immediate: false, dueToRetry: !success });
+    }
+  }
+
+  handleVisibilityChange() {
+    if (this.destroyed) return;
+    if (this.isTabVisible()) {
+      const dueToRetry = this.retryAttempt > 0;
+      this.scheduleHeartbeat({ immediate: true, dueToRetry });
+    } else {
+      this.stopHeartbeat();
+      this.pendingImmediateOnVisible = true;
+    }
+  }
+
+  trySendBeacon(payload) {
+    try {
+      if (typeof navigator?.sendBeacon === "function") {
+        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+        return navigator.sendBeacon(PRESENCE_ENDPOINT, blob);
+      }
+    } catch (err) {
+      console.warn('[BombPartyShark] Presence beacon failed', err);
+    }
+    return false;
+  }
+
+  async sendLeave() {
+    if (this.leaveSent) return;
+    this.leaveSent = true;
+    this.stopHeartbeat();
+    const payload = {
+      action: "leave",
+      session_id: this.sessionId,
+      device_id: this.deviceId
+    };
+    if (this.sessionId && this.deviceId) {
+      const sent = this.trySendBeacon(payload);
+      if (!sent) {
+        try {
+          await this.postPresence(payload);
+        } catch (err) {
+          console.warn('[BombPartyShark] Presence leave failed', err);
+        }
+      }
+      fireAndForgetRuntimeSend({
+        type: "presenceLeave",
+        sessionId: this.sessionId,
+        deviceId: this.deviceId
+      });
+    }
+    this.releaseSession();
+  }
+
+  handleLeaveEvent() {
+    this.sendLeave();
+  }
+
+  destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.stopHeartbeat();
+    if (this.urlMonitorTimer) {
+      clearInterval(this.urlMonitorTimer);
+      this.urlMonitorTimer = null;
+    }
+    if (this.playerScanTimer) {
+      clearInterval(this.playerScanTimer);
+      this.playerScanTimer = null;
+    }
+    if (this.playerRefreshTimer) {
+      clearTimeout(this.playerRefreshTimer);
+      this.playerRefreshTimer = null;
+    }
+    if (this.playerObserver) {
+      try { this.playerObserver.disconnect(); } catch (_) { /* ignore */ }
+      this.playerObserver = null;
+    }
+    if (this.domReadyListener) {
+      try { document.removeEventListener("DOMContentLoaded", this.domReadyListener); } catch (_) { /* ignore */ }
+      this.domReadyListener = null;
+    }
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.visibilityListener);
+    }
+    window.removeEventListener("pagehide", this.pageHideHandler);
+    window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    if (this.storageListener && chrome?.storage?.onChanged) {
+      try { chrome.storage.onChanged.removeListener(this.storageListener); } catch (_) { /* ignore */ }
+    }
+    this.sendLeave();
+  }
+}
+
+function createOverlay(game, presenceManager = null) {
   // Top-anchored wrapper
   const wrap = document.createElement("div");
   Object.assign(wrap.style, {
@@ -2275,6 +2921,9 @@ function createOverlay(game) {
     requestSave({ recompute: true });
     render();
     showToast("notificationGameReset", 2800);
+    if (presenceManager) {
+      try { presenceManager.queuePlayerRefresh(); } catch (_) { /* ignore */ }
+    }
   };
 
   const checkJoinButton = () => {
@@ -2346,7 +2995,11 @@ async function setupBuddy() {
   const game = new Game(getInput());
   setTimeout(() => (game.input = getInput()), 1000);
 
-  const { render } = createOverlay(game);
+  const presence = new PresenceManager(game);
+  await presence.init();
+  presence.setLanguage(game.lang);
+
+  const { render } = createOverlay(game, presence);
 
   const notifySettingsChanged = (opts = {}) => {
     if (typeof game._notifySettingsChanged === "function") {
@@ -2366,6 +3019,7 @@ async function setupBuddy() {
 
     if (data.type === "setup") {
       await game.setLang(data.language);
+      presence.setLanguage(game.lang);
       if (data.myTurn) {
         game.syllable = data.syllable;
         game.selfRound = (game.selfRound|0) + 1;     // new round for me
@@ -2375,12 +3029,15 @@ async function setupBuddy() {
         game.spectatorRound = (game.spectatorRound|0) + 1;
         game.generateSpectatorSuggestions(data.syllable, game.suggestionsLimit);
       }
+      presence.queuePlayerRefresh();
       render();
     } else if (data.type === "correctWord") {
       game.onCorrectWord(data.word, !!data.myTurn);
+      presence.queuePlayerRefresh();
       render();
     } else if (data.type === "failWord") {
       game.onFailedWord(!!data.myTurn, data.word, data.reason);
+      presence.queuePlayerRefresh();
       render();
     } else if (data.type === "nextTurn") {
       if (data.myTurn) {
@@ -2392,6 +3049,7 @@ async function setupBuddy() {
         game.spectatorRound = (game.spectatorRound|0) + 1;
         game.generateSpectatorSuggestions(data.syllable, game.suggestionsLimit);
       }
+      presence.queuePlayerRefresh();
       render();
     }
   });
@@ -2417,6 +3075,10 @@ async function setupBuddy() {
     render();
     ev.preventDefault();
   });
+
+  window.addEventListener("pagehide", () => {
+    try { presence.destroy(); } catch (_) { /* ignore */ }
+  }, { once: true });
 }
 
 if (isBombPartyFrame()) setupBuddy();
