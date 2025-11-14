@@ -60,7 +60,7 @@ async function copyPlain(text) {
   } catch { return false; }
 }
 
-function createOverlay(game) {
+function createOverlay(game, diagnostics) {
   // Top-anchored wrapper
   const wrap = document.createElement("div");
   Object.assign(wrap.style, {
@@ -107,6 +107,7 @@ function createOverlay(game) {
     tabMain: { en: "Main", de: "Haupt", es: "Principal", fr: "Principal", "pt-br": "Principal" },
     tabCoverage: { en: "Coverage", de: "Abdeckung", es: "Cobertura", fr: "Couverture", "pt-br": "Cobertura" },
     tabWords: { en: "Words", de: "Wörter", es: "Palabras", fr: "Mots", "pt-br": "Palavras" },
+    tabLogs: { en: "Logs", de: "Logs", es: "Registros", fr: "Journaux", "pt-br": "Logs" },
     toggleOn: { en: "On", de: "An", es: "Activado", fr: "Activé", "pt-br": "Ligado" },
     toggleOff: { en: "Off", de: "Aus", es: "Desactivado", fr: "Désactivé", "pt-br": "Desligado" },
     sectionAutomation: { en: "Automation", de: "Automatisierung", es: "Automatización", fr: "Automatisation", "pt-br": "Automação" },
@@ -156,6 +157,14 @@ function createOverlay(game) {
     labelSetAllGoals: { en: "Set all goals to:", de: "Alle Ziele setzen auf :", es: "Establecer todas las metas en:", fr: "Définir toutes les cibles sur :", "pt-br": "Definir todas as metas como:" },
     buttonApply: { en: "Apply", de: "Übernehmen", es: "Aplicar", fr: "Appliquer", "pt-br": "Aplicar" },
     buttonResetCoverage: { en: "Reset A-Z progress", de: "A-Z-Fortschritt zurücksetzen", es: "Restablecer progreso A-Z", fr: "Réinitialiser la progression A-Z", "pt-br": "Redefinir progresso A-Z" }
+  });
+
+  addText({
+    logsHeading: { en: "Diagnostics", de: "Diagnose", es: "Diagnóstico", fr: "Diagnostic", "pt-br": "Diagnóstico" },
+    logsCopy: { en: "Copy logs", de: "Protokolle kopieren", es: "Copiar registros", fr: "Copier les journaux", "pt-br": "Copiar logs" },
+    logsCopied: { en: "Copied!", de: "Kopiert!", es: "¡Copiado!", fr: "Copié !", "pt-br": "Copiado!" },
+    logsClear: { en: "Clear logs", de: "Protokolle löschen", es: "Borrar registros", fr: "Effacer les journaux", "pt-br": "Limpar logs" },
+    logsEmpty: { en: "No diagnostics yet.", de: "Noch keine Diagnose.", es: "Sin diagnósticos aún.", fr: "Pas encore de diagnostic.", "pt-br": "Sem diagnósticos ainda." }
   });
 
   addText({
@@ -850,31 +859,44 @@ function createOverlay(game) {
   const mainTabBtn = mkTab("tabMain");
   const covTabBtn  = mkTab("tabCoverage");
   const wordsTabBtn= mkTab("tabWords");
-  tabs.appendChild(mainTabBtn); tabs.appendChild(covTabBtn); tabs.appendChild(wordsTabBtn);
+  const logsTabBtn = mkTab("tabLogs");
+  tabs.appendChild(mainTabBtn);
+  tabs.appendChild(covTabBtn);
+  tabs.appendChild(wordsTabBtn);
+  tabs.appendChild(logsTabBtn);
   box.appendChild(tabs);
 
   // sections
   const mainSec = document.createElement("div");
   const covSec  = document.createElement("div");
   const wordsSec= document.createElement("div");
-  box.appendChild(mainSec); box.appendChild(covSec); box.appendChild(wordsSec);
+  const logsSec = document.createElement("div");
+  box.appendChild(mainSec);
+  box.appendChild(covSec);
+  box.appendChild(wordsSec);
+  box.appendChild(logsSec);
 
   // default to Words
   let active = "Words";
   let coverageEditMode = "off";
+  let renderLogs = null;
+  let logsUnsubscribe = null;
   const setActive = (name) => {
     active = name;
     mainSec.style.display  = name==="Main" ? "block" : "none";
     covSec.style.display   = name==="Coverage" ? "block" : "none";
     wordsSec.style.display = name==="Words" ? "block" : "none";
+    logsSec.style.display  = name==="Logs" ? "block" : "none";
     mainTabBtn._setActive(name==="Main");
     covTabBtn._setActive(name==="Coverage");
     wordsTabBtn._setActive(name==="Words");
+    logsTabBtn._setActive(name==="Logs");
     if (name !== "Coverage") coverageEditMode = "off";
   };
   mainTabBtn.onclick = () => setActive("Main");
   covTabBtn.onclick  = () => setActive("Coverage");
   wordsTabBtn.onclick= () => setActive("Words");
+  logsTabBtn.onclick = () => setActive("Logs");
   setActive("Words");
 
   // helpers
@@ -1241,6 +1263,7 @@ function createOverlay(game) {
     mainSec.style.display  = collapsed ? "none" : (active==="Main"?"block":"none");
     covSec.style.display   = collapsed ? "none" : (active==="Coverage"?"block":"none");
     wordsSec.style.display = collapsed ? "none" : (active==="Words"?"block":"none");
+    logsSec.style.display  = collapsed ? "none" : (active==="Logs"?"block":"none");
     tabs.style.display     = collapsed ? "none" : "flex";
   });
 
@@ -2107,6 +2130,7 @@ function createOverlay(game) {
     translator.refresh(game.lang);
     updateToastLanguage();
     if (typeof renderWordLog === "function") renderWordLog();
+    if (typeof renderLogs === "function") renderLogs();
     toggleRefs.forEach(row => applyToggleBtn(row._btn, row._get(), row._scheme, row._mode));
     dualToggleRows.forEach(row => {
       row._buttons.forEach(info => applyToggleBtn(info.btn, info.getOn(), info.scheme, info.mode));
@@ -2311,6 +2335,167 @@ function createOverlay(game) {
   }
   startJoinMonitoring();
 
+  // =============== LOGS TAB =================
+  const logsLayout = document.createElement("div");
+  Object.assign(logsLayout.style, { display: "grid", gap: "12px" });
+  logsSec.appendChild(logsLayout);
+
+  const logsHeader = document.createElement("div");
+  Object.assign(logsHeader.style, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px"
+  });
+  logsLayout.appendChild(logsHeader);
+
+  const logsTitle = document.createElement("span");
+  translator.bind(logsTitle, "logsHeading");
+  Object.assign(logsTitle.style, { fontWeight: "700", color: "#e2e8f0", fontSize: "15px" });
+  logsHeader.appendChild(logsTitle);
+
+  const logsActions = document.createElement("div");
+  Object.assign(logsActions.style, { display: "flex", alignItems: "center", gap: "8px" });
+  logsHeader.appendChild(logsActions);
+
+  const copyLogsBtn = document.createElement("button");
+  translator.bind(copyLogsBtn, "logsCopy");
+  Object.assign(copyLogsBtn.style, {
+    padding: "4px 10px",
+    borderRadius: "8px",
+    border: "1px solid rgba(59,130,246,0.55)",
+    background: "rgba(37,99,235,0.25)",
+    color: "#bfdbfe",
+    fontWeight: "700",
+    cursor: "pointer",
+    fontSize: "12px"
+  });
+  logsActions.appendChild(copyLogsBtn);
+
+  const clearLogsBtn = document.createElement("button");
+  translator.bind(clearLogsBtn, "logsClear");
+  Object.assign(clearLogsBtn.style, {
+    padding: "4px 10px",
+    borderRadius: "8px",
+    border: "1px solid rgba(148,163,184,0.45)",
+    background: "rgba(71,85,105,0.35)",
+    color: "#f8fafc",
+    fontWeight: "700",
+    cursor: "pointer",
+    fontSize: "12px"
+  });
+  logsActions.appendChild(clearLogsBtn);
+
+  const copyLogsStatus = document.createElement("span");
+  translator.bind(copyLogsStatus, "logsCopied");
+  Object.assign(copyLogsStatus.style, {
+    fontSize: "12px",
+    fontWeight: "700",
+    color: "#22c55e",
+    opacity: "0",
+    transition: "opacity 0.2s ease"
+  });
+  logsActions.appendChild(copyLogsStatus);
+
+  const logsBody = document.createElement("div");
+  Object.assign(logsBody.style, { display: "grid", gap: "8px" });
+  logsLayout.appendChild(logsBody);
+
+  const logsTextarea = document.createElement("textarea");
+  Object.assign(logsTextarea.style, {
+    width: "100%",
+    minHeight: "220px",
+    borderRadius: "10px",
+    border: "1px solid rgba(59,130,246,0.35)",
+    background: "rgba(15,23,42,0.65)",
+    color: "#e2e8f0",
+    fontFamily: "ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontSize: "12px",
+    lineHeight: "1.45",
+    padding: "10px",
+    resize: "vertical"
+  });
+  logsTextarea.readOnly = true;
+  logsTextarea.spellcheck = false;
+  logsTextarea.wrap = "off";
+  logsBody.appendChild(logsTextarea);
+
+  const logsEmpty = document.createElement("div");
+  translator.bind(logsEmpty, "logsEmpty");
+  Object.assign(logsEmpty.style, {
+    fontSize: "12px",
+    color: "#cbd5f5",
+    opacity: "0.85"
+  });
+  logsBody.appendChild(logsEmpty);
+
+  let logsStatusTimer = null;
+  const showCopyStatus = (visible) => {
+    if (visible) {
+      copyLogsStatus.style.opacity = "1";
+      if (logsStatusTimer) clearTimeout(logsStatusTimer);
+      logsStatusTimer = setTimeout(() => {
+        copyLogsStatus.style.opacity = "0";
+      }, 1600);
+    } else {
+      copyLogsStatus.style.opacity = "0";
+    }
+  };
+
+  if (diagnostics && typeof diagnostics.log === "function") {
+    copyLogsBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const text = typeof diagnostics.formatAll === "function" ? diagnostics.formatAll() : "";
+      try {
+        const ok = await copyPlain(text);
+        if (ok) {
+          showCopyStatus(true);
+        }
+      } catch (err) {
+        console.warn("[BombPartyShark] Failed to copy diagnostics", err);
+      }
+    });
+    clearLogsBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (typeof diagnostics.clear === "function") diagnostics.clear();
+    });
+  } else {
+    copyLogsBtn.disabled = true;
+    clearLogsBtn.disabled = true;
+    copyLogsBtn.style.opacity = "0.65";
+    clearLogsBtn.style.opacity = "0.65";
+  }
+
+  const updateLogsVisibility = (entries) => {
+    if (entries && entries.length) {
+      logsTextarea.style.display = "block";
+      logsEmpty.style.display = "none";
+    } else {
+      logsTextarea.style.display = "none";
+      logsEmpty.style.display = "block";
+    }
+  };
+
+  renderLogs = () => {
+    if (!diagnostics || typeof diagnostics.snapshot !== "function") {
+      updateLogsVisibility([]);
+      return;
+    }
+    const entries = diagnostics.snapshot();
+    const formatted = typeof diagnostics.formatAll === "function"
+      ? diagnostics.formatAll()
+      : entries.map((entry) => String(entry)).join("\n");
+    logsTextarea.value = formatted;
+    updateLogsVisibility(entries);
+    logsTextarea.scrollTop = logsTextarea.scrollHeight;
+  };
+
+  if (diagnostics && typeof diagnostics.subscribe === "function") {
+    logsUnsubscribe = diagnostics.subscribe(() => renderLogs());
+  }
+
+  renderLogs();
+
   const iv = setInterval(render, 160);
   window.addEventListener("beforeunload", () => {
     clearInterval(iv);
@@ -2324,6 +2509,10 @@ function createOverlay(game) {
       clearInterval(joinCheckTimer);
       joinCheckTimer = null;
     }
+    if (typeof logsUnsubscribe === "function") {
+      try { logsUnsubscribe(); } catch (_) { /* ignore */ }
+      logsUnsubscribe = null;
+    }
     if (toastTimer) {
       clearTimeout(toastTimer);
       toastTimer = null;
@@ -2334,6 +2523,89 @@ function createOverlay(game) {
   if (!toast.isConnected) document.body.appendChild(toast);
   autoJoinManager.update(game.autoJoinAlways);
   return { render };
+}
+
+class DiagnosticsLog {
+  constructor(limit = 400) {
+    this.limit = Math.max(50, Number.isFinite(limit) ? limit : 400);
+    this.entries = [];
+    this.listeners = new Set();
+    this.counter = 0;
+  }
+
+  snapshot() {
+    return this.entries.slice();
+  }
+
+  subscribe(fn) {
+    if (typeof fn !== "function") return () => {};
+    this.listeners.add(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
+  }
+
+  clear() {
+    if (!this.entries.length) return;
+    this.entries = [];
+    this._notify();
+  }
+
+  log(category, event, detail) {
+    const ts = Date.now();
+    const entry = {
+      id: ++this.counter,
+      timestamp: ts,
+      category: (category || "general").toString(),
+      event: (event || "").toString(),
+      detail: detail
+    };
+    this.entries.push(entry);
+    if (this.entries.length > this.limit) {
+      this.entries.splice(0, this.entries.length - this.limit);
+    }
+    this._notify();
+  }
+
+  formatEntry(entry) {
+    if (!entry) return "";
+    const iso = new Date(entry.timestamp || Date.now()).toISOString();
+    const category = entry.category || "general";
+    const event = entry.event || "";
+    const detailText = this._stringifyDetail(entry.detail);
+    return detailText
+      ? `[${iso}] [${category}] ${event} :: ${detailText}`
+      : `[${iso}] [${category}] ${event}`;
+  }
+
+  formatAll() {
+    return this.entries.map((entry) => this.formatEntry(entry)).join("\n");
+  }
+
+  _stringifyDetail(detail) {
+    if (detail == null) return "";
+    if (typeof detail === "string") return detail;
+    if (typeof detail === "number" || typeof detail === "boolean") return detail.toString();
+    try {
+      return JSON.stringify(detail, (key, value) => {
+        if (typeof value === "bigint") return value.toString();
+        return value;
+      }, 2);
+    } catch (err) {
+      try {
+        return String(detail);
+      } catch (_) {
+        return "[unserializable]";
+      }
+    }
+  }
+
+  _notify() {
+    this.listeners.forEach((fn) => {
+      try { fn(this.entries); }
+      catch (_) { /* ignore listener errors */ }
+    });
+  }
 }
 
 const DEVICE_ID_STORAGE_KEY = "litsharkDeviceId";
@@ -2420,13 +2692,15 @@ function sendPresenceCommand(message) {
 }
 
 class PresenceReporter {
-  constructor(game) {
+  constructor(game, diagnostics) {
     this.game = game || null;
+    this.diagnostics = diagnostics || null;
     const manifest = typeof chrome?.runtime?.getManifest === "function" ? chrome.runtime.getManifest() : null;
     this.version = manifest?.version || "0";
     this.sessionId = safeRandomUuid();
     this.lang = (this.game && typeof this.game.lang === "string" && this.game.lang) ? this.game.lang : "en";
-    this.roomCode = this.extractRoomCode();
+    const initialRoom = this.extractRoomCodeDetails();
+    this.roomCode = initialRoom.code;
     this.username = null;
     this.authLabel = null;
     this.selfPeerId = null;
@@ -2449,6 +2723,15 @@ class PresenceReporter {
     this.roomMonitorTimer = null;
     this.storageListener = null;
 
+    this.log("presence", "constructor", {
+      sessionId: this.sessionId,
+      version: this.version,
+      initialLang: this.lang,
+      initialRoomCode: this.roomCode || null,
+      roomAttempts: initialRoom.attempts,
+      initialSuspended: this.suspended
+    });
+
     this.visibilityHandler = () => this.handleVisibilityChange();
     this.pageHideHandler = () => this.handlePageHide();
     this.beforeUnloadHandler = () => this.handleBeforeUnload();
@@ -2469,10 +2752,13 @@ class PresenceReporter {
 
     this.deviceIdPromise.then((id) => {
       this.deviceId = id;
+      this.log("presence", "device_id_ready", { deviceId: id });
       return this.registerSession();
     }).then(() => {
+      this.log("presence", "initial_session_registered", { sessionId: this.sessionId });
       this.queueHeartbeat({ immediate: true });
     }).catch((err) => {
+      this.log("presence", "device_id_error", { error: err?.message || String(err) });
       console.warn("[BombPartyShark] Failed to initialize device id", err);
     });
 
@@ -2481,42 +2767,115 @@ class PresenceReporter {
     this.queueHeartbeat();
   }
 
+  log(category, event, detail) {
+    if (!this.diagnostics || typeof this.diagnostics.log !== "function") return;
+    try {
+      this.diagnostics.log(category, event, detail);
+    } catch (_) {
+      /* ignore logging failures */
+    }
+  }
+
+  maskToken(value) {
+    if (value == null) return value;
+    const str = String(value);
+    if (str.length <= 8) return str;
+    return `${str.slice(0, 4)}…${str.slice(-4)}`;
+  }
+
+  maskPayload(payload) {
+    if (!payload || typeof payload !== "object") return payload;
+    const clone = { ...payload };
+    if (Object.prototype.hasOwnProperty.call(clone, "account_token") && clone.account_token) {
+      clone.account_token = this.maskToken(clone.account_token);
+    }
+    return clone;
+  }
+
   async ensureDeviceId() {
-    if (this.deviceId) return this.deviceId;
+    if (this.deviceId) {
+      this.log("presence", "device_id_cached", { deviceId: this.deviceId });
+      return this.deviceId;
+    }
+    this.log("presence", "device_id_lookup_start", {});
     const data = await storageGet("local", [DEVICE_ID_STORAGE_KEY]);
     let id = data?.[DEVICE_ID_STORAGE_KEY];
     if (typeof id !== "string" || !id) {
+      this.log("presence", "device_id_generate", {});
       id = safeRandomUuid();
       await storageSet("local", { [DEVICE_ID_STORAGE_KEY]: id });
+    } else {
+      this.log("presence", "device_id_loaded", { deviceId: id });
     }
     this.deviceId = id;
     return id;
   }
 
   async registerSession() {
-    if (this.registered || this.disposed) return;
+    if (this.registered || this.disposed) {
+      this.log("presence", "session_register_skip", {
+        registered: this.registered,
+        disposed: this.disposed
+      });
+      return;
+    }
     const deviceId = await this.ensureDeviceId().catch(() => null);
-    if (!deviceId) return;
+    if (!deviceId) {
+      this.log("presence", "session_register_no_device", {});
+      return;
+    }
     try {
+      this.log("presence", "session_register_attempt", {
+        sessionId: this.sessionId,
+        deviceId
+      });
       await sendPresenceCommand({ type: "presenceRegister", sessionId: this.sessionId, deviceId });
       this.registered = true;
+      this.log("presence", "session_register_success", {
+        sessionId: this.sessionId,
+        deviceId
+      });
     } catch (err) {
+      this.log("presence", "session_register_error", {
+        sessionId: this.sessionId,
+        error: err?.message || String(err)
+      });
       console.warn("[BombPartyShark] Failed to register presence session", err);
     }
   }
 
   async unregisterSession() {
-    if (!this.registered) return;
+    if (!this.registered) {
+      this.log("presence", "session_unregister_skip", {});
+      return;
+    }
     this.registered = false;
     try {
+      this.log("presence", "session_unregister_attempt", { sessionId: this.sessionId });
       await sendPresenceCommand({ type: "presenceUnregister", sessionId: this.sessionId });
+      this.log("presence", "session_unregister_success", { sessionId: this.sessionId });
     } catch (err) {
+      this.log("presence", "session_unregister_error", {
+        sessionId: this.sessionId,
+        error: err?.message || String(err)
+      });
       console.warn("[BombPartyShark] Failed to unregister presence session", err);
     }
   }
 
   async postPresencePayload(payload) {
-    await sendPresenceCommand({ type: "presenceSend", payload });
+    const safe = this.maskPayload(payload);
+    this.log("presence", "presence_post_attempt", { payload: safe });
+    try {
+      await sendPresenceCommand({ type: "presenceSend", payload });
+      this.log("presence", "presence_post_success", { payload: safe });
+    } catch (err) {
+      this.log("presence", "presence_post_error", {
+        payload: safe,
+        error: err?.message || String(err)
+      });
+      throw err;
+    }
   }
 
   computeHeartbeatDelay() {
@@ -2559,7 +2918,17 @@ class PresenceReporter {
   queueHeartbeat(opts = {}) {
     if (this.disposed) return;
     const immediate = !!opts.immediate;
-    if (this.suspended && !immediate) return;
+    this.log("presence", "heartbeat_queue", {
+      immediate,
+      suspended: this.suspended,
+      disposed: this.disposed,
+      hasNextTimer: this.nextHeartbeatTimer != null,
+      hasRetryTimer: this.retryTimer != null
+    });
+    if (this.suspended && !immediate) {
+      this.log("presence", "heartbeat_queue_suspended", {});
+      return;
+    }
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
@@ -2569,11 +2938,16 @@ class PresenceReporter {
         clearTimeout(this.nextHeartbeatTimer);
         this.nextHeartbeatTimer = null;
       }
+      this.log("presence", "heartbeat_queue_immediate", {});
       this.sendHeartbeat();
       return;
     }
-    if (this.nextHeartbeatTimer != null) return;
+    if (this.nextHeartbeatTimer != null) {
+      this.log("presence", "heartbeat_queue_skip", { reason: "existing_timer" });
+      return;
+    }
     const delay = this.computeHeartbeatDelay();
+    this.log("presence", "heartbeat_scheduled", { delay });
     this.nextHeartbeatTimer = window.setTimeout(() => {
       this.nextHeartbeatTimer = null;
       this.sendHeartbeat();
@@ -2583,18 +2957,23 @@ class PresenceReporter {
   async sendHeartbeat() {
     if (this.disposed) return;
     if (this.sending) {
+      this.log("presence", "heartbeat_send_deferred", { reason: "already_sending" });
       this.pendingImmediate = true;
       return;
     }
     if (this.suspended) {
+      this.log("presence", "heartbeat_send_deferred", { reason: "tab_suspended" });
       this.queueHeartbeat();
       return;
     }
+    this.log("presence", "heartbeat_send_start", { retryAttempt: this.retryAttempt });
     const deviceReady = await this.ensureDeviceId().then(() => true).catch((err) => {
       console.warn("[BombPartyShark] Failed to ensure device id", err);
+      this.log("presence", "heartbeat_device_error", { error: err?.message || String(err) });
       return false;
     });
     if (!deviceReady) {
+      this.log("presence", "heartbeat_device_unavailable", {});
       this.queueHeartbeat();
       return;
     }
@@ -2603,12 +2982,16 @@ class PresenceReporter {
     try {
       await this.registerSession();
       const payload = await this.buildHeartbeatPayload();
+      this.log("presence", "heartbeat_payload_ready", { payload: this.maskPayload(payload) });
       await this.postPresencePayload(payload);
       this.retryAttempt = 0;
+      this.log("presence", "heartbeat_send_success", { payload: this.maskPayload(payload) });
     } catch (err) {
       console.warn("[BombPartyShark] Failed to send presence heartbeat", err);
+      this.log("presence", "heartbeat_send_error", { error: err?.message || String(err) });
       this.retryAttempt += 1;
       const delay = this.computeRetryDelay();
+      this.log("presence", "heartbeat_retry_scheduled", { delay, attempt: this.retryAttempt });
       this.retryTimer = window.setTimeout(() => {
         this.retryTimer = null;
         this.queueHeartbeat({ immediate: true });
@@ -2620,6 +3003,7 @@ class PresenceReporter {
 
     if (this.pendingImmediate) {
       this.pendingImmediate = false;
+      this.log("presence", "heartbeat_pending_immediate", {});
       this.queueHeartbeat({ immediate: true });
       return;
     }
@@ -2650,21 +3034,26 @@ class PresenceReporter {
 
   handleVisibilityChange() {
     const hidden = document.visibilityState === "hidden";
+    this.log("presence", "visibility_change", { state: document.visibilityState });
     if (hidden) {
       this.suspended = true;
       this.clearHeartbeatTimers();
+      this.log("presence", "visibility_hidden", {});
     } else {
       const wasSuspended = this.suspended;
       this.suspended = false;
+      this.log("presence", "visibility_visible", { wasSuspended });
       this.queueHeartbeat({ immediate: wasSuspended });
     }
   }
 
   handlePageHide() {
+    this.log("presence", "pagehide", {});
     this.trySendLeave();
   }
 
   handleBeforeUnload() {
+    this.log("presence", "beforeunload", {});
     this.trySendLeave();
     this.dispose();
   }
@@ -2672,8 +3061,10 @@ class PresenceReporter {
   async trySendLeave() {
     if (this.leaveSent || !this.sessionId) return;
     this.leaveSent = true;
+    this.log("presence", "leave_attempt", { sessionId: this.sessionId });
     const deviceId = await this.ensureDeviceId().catch(() => null);
     if (!deviceId) {
+      this.log("presence", "leave_no_device", {});
       await this.unregisterSession();
       return;
     }
@@ -2684,8 +3075,10 @@ class PresenceReporter {
     };
     try {
       await this.postPresencePayload(payload);
+      this.log("presence", "leave_success", { payload: this.maskPayload(payload) });
     } catch (err) {
       console.warn("[BombPartyShark] Failed to send presence leave", err);
+      this.log("presence", "leave_error", { error: err?.message || String(err) });
     } finally {
       await this.unregisterSession();
     }
@@ -2694,6 +3087,7 @@ class PresenceReporter {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.log("presence", "dispose", {});
     this.clearTimers();
     if (this.chattersObserver) {
       try { this.chattersObserver.disconnect(); } catch (_) { /* ignore */ }
@@ -2710,10 +3104,84 @@ class PresenceReporter {
     this.trySendLeave();
   }
 
+  handlePresenceContext(message) {
+    if (this.disposed || !message || typeof message !== "object") return;
+    const reason = message.reason || null;
+    const candidates = Array.isArray(message.roomCodeCandidates)
+      ? message.roomCodeCandidates.slice(0, 10)
+      : null;
+    const normalizedRoom = this.normalizeRoomCode(message.roomCode || message.room_code || null);
+    const candidateRoom = normalizedRoom || null;
+
+    let contextChanged = false;
+    if (candidateRoom && candidateRoom !== this.roomCode) {
+      const previous = this.roomCode || null;
+      this.roomCode = candidateRoom;
+      this.selfPeerId = null;
+      this.maxPeerSeen = null;
+      this.username = null;
+      this.authLabel = null;
+      this.updateSelfFromRoster();
+      contextChanged = true;
+      this.log("presence", "context_room_code", { from: previous, to: candidateRoom, reason, candidates });
+    }
+
+    const peerId = message.selfPeerId || message.peerId || null;
+    if (peerId && peerId !== this.selfPeerId) {
+      this.selfPeerId = peerId;
+      contextChanged = true;
+    }
+
+    const username = typeof message.username === "string" ? message.username.trim() : "";
+    if (username && username !== this.username) {
+      this.username = username;
+      contextChanged = true;
+    }
+
+    const auth = typeof message.authLabel === "string" ? message.authLabel.trim() : "";
+    if (auth && auth !== this.authLabel) {
+      this.authLabel = auth;
+      contextChanged = true;
+    }
+
+    if (!this.username && username) {
+      this.username = username;
+      contextChanged = true;
+    }
+    if (!this.authLabel && auth) {
+      this.authLabel = auth;
+      contextChanged = true;
+    }
+
+    if (message.lang) {
+      this.updateLanguage(message.lang);
+    }
+
+    if (!this.username) this.username = "Unknown Player";
+    if (!this.authLabel) this.authLabel = "Guest";
+
+    this.log("presence", "context_message", {
+      reason,
+      roomCode: candidateRoom,
+      username: this.username || null,
+      authLabel: this.authLabel || null,
+      selfPeerId: this.selfPeerId || null,
+      candidates,
+      lang: message.lang || null,
+      authSources: Array.isArray(message.authSources) ? message.authSources.slice(0, 10) : null,
+      usernameSources: Array.isArray(message.usernameSources) ? message.usernameSources.slice(0, 10) : null
+    });
+
+    if (contextChanged) {
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
   handleStorageChange(changes, area) {
     if (!changes) return;
     if (area !== "sync" && area !== "local") return;
     if (!Object.prototype.hasOwnProperty.call(changes, ACCOUNT_TOKEN_STORAGE_KEY)) return;
+    this.log("presence", "storage_change", { area });
     this.refreshAccountToken();
   }
 
@@ -2728,8 +3196,15 @@ class PresenceReporter {
     let token = await readKey("sync");
     if (!token) token = await readKey("local");
     if (token !== this.accountToken) {
+      this.log("presence", "account_token_update", {
+        token: token ? this.maskToken(token) : null
+      });
       this.accountToken = token;
       this.queueHeartbeat({ immediate: true });
+    } else {
+      this.log("presence", "account_token_unchanged", {
+        token: token ? this.maskToken(token) : null
+      });
     }
   }
 
@@ -2750,6 +3225,7 @@ class PresenceReporter {
           attributeFilter: ["data-peer-id", "class"]
         });
       } catch (_) { /* ignore */ }
+      this.log("presence", "roster_observer_attached", {});
       this.updateSelfFromRoster();
     } else if (!container && this.chattersContainer) {
       if (this.chattersObserver) {
@@ -2757,17 +3233,22 @@ class PresenceReporter {
       }
       this.chattersContainer = null;
       this.chattersObserver = null;
+      this.log("presence", "roster_observer_detached", {});
     }
   }
 
   handleRosterMutated() {
+    this.log("presence", "roster_mutation", {});
     this.updateSelfFromRoster();
   }
 
   updateSelfFromRoster() {
     if (this.disposed) return;
     const nodes = Array.from(document.querySelectorAll(".chatters .chatter[data-peer-id]"));
-    if (!nodes.length) return;
+    if (!nodes.length) {
+      this.log("presence", "roster_empty", {});
+      return;
+    }
 
     let storedNode = null;
     let maxNode = null;
@@ -2801,10 +3282,14 @@ class PresenceReporter {
       this.username = null;
       this.authLabel = null;
       storedNode = null;
+      this.log("presence", "roster_reset_detected", { nodes: nodes.length });
     }
 
     const targetNode = storedNode || maxNode;
-    if (!targetNode) return;
+    if (!targetNode) {
+      this.log("presence", "roster_no_target", { nodes: nodes.length });
+      return;
+    }
 
     const peerAttr = targetNode.getAttribute("data-peer-id") || null;
     let contextChanged = false;
@@ -2836,14 +3321,28 @@ class PresenceReporter {
     if (!this.authLabel) this.authLabel = "Guest";
 
     if (contextChanged) {
+      this.log("presence", "roster_context_update", {
+        selfPeerId: this.selfPeerId,
+        username: this.username,
+        authLabel: this.authLabel,
+        nodes: nodes.length,
+        rosterReset
+      });
       this.queueHeartbeat({ immediate: true });
     }
   }
 
   checkRoomCode(initial) {
     if (this.disposed) return;
-    const newCode = this.extractRoomCode();
+    const details = this.extractRoomCodeDetails();
+    const newCode = details.code;
     if (newCode === this.roomCode) return;
+    this.log("presence", "room_code_update", {
+      from: this.roomCode || null,
+      to: newCode || null,
+      attempts: details.attempts,
+      initial: !!initial
+    });
     this.roomCode = newCode;
     this.selfPeerId = null;
     this.maxPeerSeen = null;
@@ -2856,40 +3355,70 @@ class PresenceReporter {
   }
 
   extractRoomCode() {
-    const normalize = (value) => {
-      if (value == null) return null;
-      const trimmed = value.toString().trim();
-      if (!trimmed) return null;
-      const alnum = trimmed.replace(/[^0-9a-z]/gi, "");
-      if (!alnum) return null;
-      if (alnum.length < 3 || alnum.length > 6) return null;
-      return alnum.toUpperCase();
+    const details = this.extractRoomCodeDetails();
+    return details.code;
+  }
+
+  normalizeRoomCode(value) {
+    if (value == null) return null;
+    const trimmed = value.toString().trim();
+    if (!trimmed) return null;
+    const alnum = trimmed.replace(/[^0-9a-z]/gi, "");
+    if (!alnum) return null;
+    if (alnum.length < 3 || alnum.length > 6) return null;
+    const upper = alnum.toUpperCase();
+    if (upper === "GAMES" || upper === "BOMBPARTY") return null;
+    return upper;
+  }
+
+  extractRoomCodeDetails() {
+    const attempts = [];
+    let resolved = null;
+    const limit = 32;
+
+    const record = (entry) => {
+      if (attempts.length < limit) attempts.push(entry);
     };
 
-    try {
-      if (window.room && typeof window.room.code === "string") {
-        const code = normalize(window.room.code);
-        if (code) return code;
+    const consider = (source, getter) => {
+      try {
+        const raw = typeof getter === "function" ? getter() : getter;
+        const normalized = this.normalizeRoomCode(raw);
+        const entry = { source, raw: raw ?? null, normalized: normalized || null };
+        if (resolved) entry.skipped = true;
+        record(entry);
+        if (!resolved && normalized) {
+          resolved = normalized;
+        }
+        return normalized;
+      } catch (err) {
+        record({ source, error: err?.message || String(err) || true });
+        return null;
       }
-    } catch (_) { /* ignore */ }
+    };
 
-    try {
+    consider("window.room.code", () => window?.room?.code);
+    consider("window.room.roomCode", () => window?.room?.roomCode);
+    consider("window.game.roomCode", () => window?.game?.roomCode);
+    consider("window.gameClient.roomCode", () => window?.gameClient?.roomCode);
+    consider("window.gameClient.state.roomCode", () => window?.gameClient?.state?.roomCode);
+    consider("window.room.match?.code", () => window?.room?.match?.code);
+
+    consider("location.search.room", () => {
       const params = new URLSearchParams(window.location.search || "");
-      const code = normalize(params.get("room"));
-      if (code) return code;
-    } catch (_) { /* ignore */ }
+      return params.get("room");
+    });
 
-    const segments = (window.location.pathname || "").split("/").filter(Boolean);
-    for (let i = segments.length - 1; i >= 0; i -= 1) {
-      const code = normalize(segments[i]);
-      if (code) return code;
+    const pathSegments = (window.location.pathname || "").split("/").filter(Boolean);
+    for (let i = pathSegments.length - 1; i >= 0; i -= 1) {
+      consider(`location.path[${i}]`, pathSegments[i]);
     }
+
+    consider("location.hash", () => (window.location.hash || "").replace(/^#/, ""));
 
     const host = window.location.hostname || "";
     if (host.includes(".")) {
-      const first = host.split(".")[0];
-      const code = normalize(first);
-      if (code) return code;
+      consider("location.host-prefix", host.split(".")[0]);
     }
 
     if (document.referrer) {
@@ -2897,10 +3426,11 @@ class PresenceReporter {
         const ref = new URL(document.referrer);
         const refSegments = ref.pathname.split("/").filter(Boolean);
         for (let i = refSegments.length - 1; i >= 0; i -= 1) {
-          const code = normalize(refSegments[i]);
-          if (code) return code;
+          consider(`referrer.path[${i}]`, refSegments[i]);
         }
-      } catch (_) { /* ignore */ }
+      } catch (err) {
+        record({ source: "referrer", error: err?.message || String(err) || true });
+      }
     }
 
     try {
@@ -2909,14 +3439,44 @@ class PresenceReporter {
           const topPath = window.top.location?.pathname || "";
           const topSegments = topPath.split("/").filter(Boolean);
           for (let i = topSegments.length - 1; i >= 0; i -= 1) {
-            const code = normalize(topSegments[i]);
-            if (code) return code;
+            consider(`top.path[${i}]`, topSegments[i]);
           }
-        } catch (_) { /* ignore cross-origin */ }
+        } catch (err) {
+          record({ source: "top.path", error: err?.message || "cross_origin" });
+        }
+        try {
+          const topSearch = window.top.location?.search || "";
+          if (topSearch) {
+            const params = new URLSearchParams(topSearch);
+            consider("top.search.room", params.get("room"));
+          }
+        } catch (err) {
+          record({ source: "top.search", error: err?.message || "cross_origin" });
+        }
       }
-    } catch (_) { /* ignore */ }
+    } catch (err) {
+      record({ source: "top", error: err?.message || String(err) || true });
+    }
 
-    return null;
+    try {
+      const domRoomCode = document.querySelector("[data-room-code]");
+      if (domRoomCode) {
+        consider("dom[data-room-code]", () => domRoomCode.getAttribute("data-room-code") || domRoomCode.textContent);
+      }
+    } catch (err) {
+      record({ source: "dom[data-room-code]", error: err?.message || String(err) || true });
+    }
+
+    try {
+      const roomLabel = document.querySelector(".roomCode, .room-name, .roomName");
+      if (roomLabel) {
+        consider("dom.roomCode", () => roomLabel.textContent);
+      }
+    } catch (err) {
+      record({ source: "dom.roomCode", error: err?.message || String(err) || true });
+    }
+
+    return { code: resolved, attempts };
   }
 
   updateLanguage(newLang) {
@@ -2928,6 +3488,7 @@ class PresenceReporter {
     }
     if (!next) next = "en";
     if (next !== this.lang) {
+      this.log("presence", "lang_update", { from: this.lang, to: next });
       this.lang = next;
       this.queueHeartbeat({ immediate: true });
     }
@@ -2941,13 +3502,25 @@ async function setupBuddy() {
   s.onload = function () { this.remove(); };
   document.body.appendChild(s);
 
+  const diagnostics = new DiagnosticsLog();
+  try {
+    diagnostics.log("ui", "setup_start", {
+      href: window.location?.href || null,
+      frame: window.top === window ? "top" : "nested"
+    });
+  } catch (_) { /* ignore logging errors */ }
+  if (typeof window !== "undefined") {
+    try { window.__litsharkDiagnostics = diagnostics; }
+    catch (_) { /* ignore */ }
+  }
+
   const game = new Game(getInput());
   setTimeout(() => (game.input = getInput()), 1000);
 
-  const presence = new PresenceReporter(game);
+  const presence = new PresenceReporter(game, diagnostics);
   presence.updateLanguage(game.lang);
 
-  const { render } = createOverlay(game);
+  const { render } = createOverlay(game, diagnostics);
 
   const notifySettingsChanged = (opts = {}) => {
     if (typeof game._notifySettingsChanged === "function") {
@@ -2965,7 +3538,11 @@ async function setupBuddy() {
 
     if ("myTurn" in data) game.setMyTurn(data.myTurn);
 
-    if (data.type === "setup") {
+    if (data.type === "presenceContext") {
+      if (presence && typeof presence.handlePresenceContext === "function") {
+        presence.handlePresenceContext(data);
+      }
+    } else if (data.type === "setup") {
       await game.setLang(data.language);
       presence.updateLanguage(game.lang);
       if (data.myTurn) {
