@@ -60,7 +60,7 @@ async function copyPlain(text) {
   } catch { return false; }
 }
 
-function createOverlay(game, diagnostics) {
+function createOverlay(game) {
   // Top-anchored wrapper
   const wrap = document.createElement("div");
   Object.assign(wrap.style, {
@@ -107,9 +107,10 @@ function createOverlay(game, diagnostics) {
     tabMain: { en: "Main", de: "Haupt", es: "Principal", fr: "Principal", "pt-br": "Principal" },
     tabCoverage: { en: "Coverage", de: "Abdeckung", es: "Cobertura", fr: "Couverture", "pt-br": "Cobertura" },
     tabWords: { en: "Words", de: "Wörter", es: "Palabras", fr: "Mots", "pt-br": "Palavras" },
-    tabLogs: { en: "Logs", de: "Logs", es: "Registros", fr: "Journaux", "pt-br": "Logs" },
     toggleOn: { en: "On", de: "An", es: "Activado", fr: "Activé", "pt-br": "Ligado" },
     toggleOff: { en: "Off", de: "Aus", es: "Desactivado", fr: "Désactivé", "pt-br": "Desligado" },
+    hideHud: { en: "Hide HUD", de: "HUD ausblenden", es: "Ocultar HUD", fr: "Masquer le HUD", "pt-br": "Ocultar HUD" },
+    showHud: { en: "Show HUD", de: "HUD einblenden", es: "Mostrar HUD", fr: "Afficher le HUD", "pt-br": "Mostrar HUD" },
     sectionAutomation: { en: "Automation", de: "Automatisierung", es: "Automatización", fr: "Automatisation", "pt-br": "Automação" },
     toggleAutoType: { en: "AutoType", de: "Auto-Tippen", es: "Escritura automática", fr: "Saisie automatique", "pt-br": "Digitação automática" },
     toggleInstantMode: { en: "Instant mode", de: "Sofortmodus", es: "Modo instantáneo", fr: "Mode instantané", "pt-br": "Modo instantâneo" },
@@ -157,14 +158,6 @@ function createOverlay(game, diagnostics) {
     labelSetAllGoals: { en: "Set all goals to:", de: "Alle Ziele setzen auf :", es: "Establecer todas las metas en:", fr: "Définir toutes les cibles sur :", "pt-br": "Definir todas as metas como:" },
     buttonApply: { en: "Apply", de: "Übernehmen", es: "Aplicar", fr: "Appliquer", "pt-br": "Aplicar" },
     buttonResetCoverage: { en: "Reset A-Z progress", de: "A-Z-Fortschritt zurücksetzen", es: "Restablecer progreso A-Z", fr: "Réinitialiser la progression A-Z", "pt-br": "Redefinir progresso A-Z" }
-  });
-
-  addText({
-    logsHeading: { en: "Diagnostics", de: "Diagnose", es: "Diagnóstico", fr: "Diagnostic", "pt-br": "Diagnóstico" },
-    logsCopy: { en: "Copy logs", de: "Protokolle kopieren", es: "Copiar registros", fr: "Copier les journaux", "pt-br": "Copiar logs" },
-    logsCopied: { en: "Copied!", de: "Kopiert!", es: "¡Copiado!", fr: "Copié !", "pt-br": "Copiado!" },
-    logsClear: { en: "Clear logs", de: "Protokolle löschen", es: "Borrar registros", fr: "Effacer les journaux", "pt-br": "Limpar logs" },
-    logsEmpty: { en: "No diagnostics yet.", de: "Noch keine Diagnose.", es: "Sin diagnósticos aún.", fr: "Pas encore de diagnostic.", "pt-br": "Sem diagnósticos ainda." }
   });
 
   addText({
@@ -319,6 +312,22 @@ function createOverlay(game, diagnostics) {
     };
   })();
 
+  let hudHidden = !!savedSettings?.hudHidden;
+  let hideHudBtn = null;
+
+  const updateHideHudButton = () => {
+    if (!hideHudBtn) return;
+    hideHudBtn.textContent = translator.t(hudHidden ? "showHud" : "hideHud");
+    hideHudBtn.setAttribute("aria-pressed", hudHidden ? "true" : "false");
+  };
+
+  const applyHudHidden = () => {
+    wrap.style.display = hudHidden ? "none" : "block";
+    updateHideHudButton();
+  };
+
+  applyHudHidden();
+
   const clampNumber = (value, min, max, fallback) => {
     const n = Number(value);
     if (!Number.isFinite(n)) return fallback;
@@ -409,6 +418,7 @@ function createOverlay(game, diagnostics) {
 
   const collectSettings = () => ({
     hudSizePercent,
+    hudHidden: !!hudHidden,
     autoTypeEnabled: !game.paused,
     instantMode: !!game.instantMode,
     mistakesEnabled: !!game.mistakesEnabled,
@@ -456,6 +466,20 @@ function createOverlay(game, diagnostics) {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { saveSettingsNow(collectSettings()); }, 120);
   };
+
+  const setHudHidden = (next, options = {}) => {
+    const value = !!next;
+    if (hudHidden === value) return;
+    hudHidden = value;
+    applyHudHidden();
+    if (!options.silent) scheduleSave();
+  };
+
+  const toggleHudHidden = (options = {}) => {
+    setHudHidden(!hudHidden, options);
+  };
+
+  const isHudHidden = () => hudHidden;
 
   let talliesTimer = null;
   const scheduleTalliesSave = () => {
@@ -840,6 +864,32 @@ function createOverlay(game, diagnostics) {
   forceSaveStatus.addEventListener("click", (ev) => ev.stopPropagation());
   headerActions.appendChild(forceSaveStatus);
 
+  hideHudBtn = document.createElement("button");
+  hideHudBtn.type = "button";
+  translator.bind(hideHudBtn, "hideHud", {
+    transform: () => {
+      updateHideHudButton();
+    }
+  });
+  Object.assign(hideHudBtn.style, {
+    padding: "4px 10px",
+    borderRadius: "999px",
+    border: "1px solid rgba(148,163,184,0.65)",
+    background: "rgba(30,41,59,0.45)",
+    color: "#e2e8f0",
+    fontWeight: "700",
+    cursor: "pointer",
+    fontSize: "12px",
+    letterSpacing: "0.2px"
+  });
+  hideHudBtn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  hideHudBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    toggleHudHidden();
+  });
+  headerActions.appendChild(hideHudBtn);
+  updateHideHudButton();
+
   box.appendChild(header);
 
   // Tabs
@@ -859,44 +909,35 @@ function createOverlay(game, diagnostics) {
   const mainTabBtn = mkTab("tabMain");
   const covTabBtn  = mkTab("tabCoverage");
   const wordsTabBtn= mkTab("tabWords");
-  const logsTabBtn = mkTab("tabLogs");
   tabs.appendChild(mainTabBtn);
   tabs.appendChild(covTabBtn);
   tabs.appendChild(wordsTabBtn);
-  tabs.appendChild(logsTabBtn);
   box.appendChild(tabs);
 
   // sections
   const mainSec = document.createElement("div");
   const covSec  = document.createElement("div");
   const wordsSec= document.createElement("div");
-  const logsSec = document.createElement("div");
   box.appendChild(mainSec);
   box.appendChild(covSec);
   box.appendChild(wordsSec);
-  box.appendChild(logsSec);
 
   // default to Words
   let active = "Words";
   let coverageEditMode = "off";
-  let renderLogs = null;
-  let logsUnsubscribe = null;
   const setActive = (name) => {
     active = name;
     mainSec.style.display  = name==="Main" ? "block" : "none";
     covSec.style.display   = name==="Coverage" ? "block" : "none";
     wordsSec.style.display = name==="Words" ? "block" : "none";
-    logsSec.style.display  = name==="Logs" ? "block" : "none";
     mainTabBtn._setActive(name==="Main");
     covTabBtn._setActive(name==="Coverage");
     wordsTabBtn._setActive(name==="Words");
-    logsTabBtn._setActive(name==="Logs");
     if (name !== "Coverage") coverageEditMode = "off";
   };
   mainTabBtn.onclick = () => setActive("Main");
   covTabBtn.onclick  = () => setActive("Coverage");
   wordsTabBtn.onclick= () => setActive("Words");
-  logsTabBtn.onclick = () => setActive("Logs");
   setActive("Words");
 
   // helpers
@@ -1263,7 +1304,6 @@ function createOverlay(game, diagnostics) {
     mainSec.style.display  = collapsed ? "none" : (active==="Main"?"block":"none");
     covSec.style.display   = collapsed ? "none" : (active==="Coverage"?"block":"none");
     wordsSec.style.display = collapsed ? "none" : (active==="Words"?"block":"none");
-    logsSec.style.display  = collapsed ? "none" : (active==="Logs"?"block":"none");
     tabs.style.display     = collapsed ? "none" : "flex";
   });
 
@@ -2130,7 +2170,6 @@ function createOverlay(game, diagnostics) {
     translator.refresh(game.lang);
     updateToastLanguage();
     if (typeof renderWordLog === "function") renderWordLog();
-    if (typeof renderLogs === "function") renderLogs();
     toggleRefs.forEach(row => applyToggleBtn(row._btn, row._get(), row._scheme, row._mode));
     dualToggleRows.forEach(row => {
       row._buttons.forEach(info => applyToggleBtn(info.btn, info.getOn(), info.scheme, info.mode));
@@ -2335,167 +2374,6 @@ function createOverlay(game, diagnostics) {
   }
   startJoinMonitoring();
 
-  // =============== LOGS TAB =================
-  const logsLayout = document.createElement("div");
-  Object.assign(logsLayout.style, { display: "grid", gap: "12px" });
-  logsSec.appendChild(logsLayout);
-
-  const logsHeader = document.createElement("div");
-  Object.assign(logsHeader.style, {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "10px"
-  });
-  logsLayout.appendChild(logsHeader);
-
-  const logsTitle = document.createElement("span");
-  translator.bind(logsTitle, "logsHeading");
-  Object.assign(logsTitle.style, { fontWeight: "700", color: "#e2e8f0", fontSize: "15px" });
-  logsHeader.appendChild(logsTitle);
-
-  const logsActions = document.createElement("div");
-  Object.assign(logsActions.style, { display: "flex", alignItems: "center", gap: "8px" });
-  logsHeader.appendChild(logsActions);
-
-  const copyLogsBtn = document.createElement("button");
-  translator.bind(copyLogsBtn, "logsCopy");
-  Object.assign(copyLogsBtn.style, {
-    padding: "4px 10px",
-    borderRadius: "8px",
-    border: "1px solid rgba(59,130,246,0.55)",
-    background: "rgba(37,99,235,0.25)",
-    color: "#bfdbfe",
-    fontWeight: "700",
-    cursor: "pointer",
-    fontSize: "12px"
-  });
-  logsActions.appendChild(copyLogsBtn);
-
-  const clearLogsBtn = document.createElement("button");
-  translator.bind(clearLogsBtn, "logsClear");
-  Object.assign(clearLogsBtn.style, {
-    padding: "4px 10px",
-    borderRadius: "8px",
-    border: "1px solid rgba(148,163,184,0.45)",
-    background: "rgba(71,85,105,0.35)",
-    color: "#f8fafc",
-    fontWeight: "700",
-    cursor: "pointer",
-    fontSize: "12px"
-  });
-  logsActions.appendChild(clearLogsBtn);
-
-  const copyLogsStatus = document.createElement("span");
-  translator.bind(copyLogsStatus, "logsCopied");
-  Object.assign(copyLogsStatus.style, {
-    fontSize: "12px",
-    fontWeight: "700",
-    color: "#22c55e",
-    opacity: "0",
-    transition: "opacity 0.2s ease"
-  });
-  logsActions.appendChild(copyLogsStatus);
-
-  const logsBody = document.createElement("div");
-  Object.assign(logsBody.style, { display: "grid", gap: "8px" });
-  logsLayout.appendChild(logsBody);
-
-  const logsTextarea = document.createElement("textarea");
-  Object.assign(logsTextarea.style, {
-    width: "100%",
-    minHeight: "220px",
-    borderRadius: "10px",
-    border: "1px solid rgba(59,130,246,0.35)",
-    background: "rgba(15,23,42,0.65)",
-    color: "#e2e8f0",
-    fontFamily: "ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-    fontSize: "12px",
-    lineHeight: "1.45",
-    padding: "10px",
-    resize: "vertical"
-  });
-  logsTextarea.readOnly = true;
-  logsTextarea.spellcheck = false;
-  logsTextarea.wrap = "off";
-  logsBody.appendChild(logsTextarea);
-
-  const logsEmpty = document.createElement("div");
-  translator.bind(logsEmpty, "logsEmpty");
-  Object.assign(logsEmpty.style, {
-    fontSize: "12px",
-    color: "#cbd5f5",
-    opacity: "0.85"
-  });
-  logsBody.appendChild(logsEmpty);
-
-  let logsStatusTimer = null;
-  const showCopyStatus = (visible) => {
-    if (visible) {
-      copyLogsStatus.style.opacity = "1";
-      if (logsStatusTimer) clearTimeout(logsStatusTimer);
-      logsStatusTimer = setTimeout(() => {
-        copyLogsStatus.style.opacity = "0";
-      }, 1600);
-    } else {
-      copyLogsStatus.style.opacity = "0";
-    }
-  };
-
-  if (diagnostics && typeof diagnostics.log === "function") {
-    copyLogsBtn.addEventListener("click", async (ev) => {
-      ev.stopPropagation();
-      const text = typeof diagnostics.formatAll === "function" ? diagnostics.formatAll() : "";
-      try {
-        const ok = await copyPlain(text);
-        if (ok) {
-          showCopyStatus(true);
-        }
-      } catch (err) {
-        console.warn("[BombPartyShark] Failed to copy diagnostics", err);
-      }
-    });
-    clearLogsBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      if (typeof diagnostics.clear === "function") diagnostics.clear();
-    });
-  } else {
-    copyLogsBtn.disabled = true;
-    clearLogsBtn.disabled = true;
-    copyLogsBtn.style.opacity = "0.65";
-    clearLogsBtn.style.opacity = "0.65";
-  }
-
-  const updateLogsVisibility = (entries) => {
-    if (entries && entries.length) {
-      logsTextarea.style.display = "block";
-      logsEmpty.style.display = "none";
-    } else {
-      logsTextarea.style.display = "none";
-      logsEmpty.style.display = "block";
-    }
-  };
-
-  renderLogs = () => {
-    if (!diagnostics || typeof diagnostics.snapshot !== "function") {
-      updateLogsVisibility([]);
-      return;
-    }
-    const entries = diagnostics.snapshot();
-    const formatted = typeof diagnostics.formatAll === "function"
-      ? diagnostics.formatAll()
-      : entries.map((entry) => String(entry)).join("\n");
-    logsTextarea.value = formatted;
-    updateLogsVisibility(entries);
-    logsTextarea.scrollTop = logsTextarea.scrollHeight;
-  };
-
-  if (diagnostics && typeof diagnostics.subscribe === "function") {
-    logsUnsubscribe = diagnostics.subscribe(() => renderLogs());
-  }
-
-  renderLogs();
-
   const iv = setInterval(render, 160);
   window.addEventListener("beforeunload", () => {
     clearInterval(iv);
@@ -2509,10 +2387,6 @@ function createOverlay(game, diagnostics) {
       clearInterval(joinCheckTimer);
       joinCheckTimer = null;
     }
-    if (typeof logsUnsubscribe === "function") {
-      try { logsUnsubscribe(); } catch (_) { /* ignore */ }
-      logsUnsubscribe = null;
-    }
     if (toastTimer) {
       clearTimeout(toastTimer);
       toastTimer = null;
@@ -2522,91 +2396,10 @@ function createOverlay(game, diagnostics) {
   document.body.appendChild(wrap);
   if (!toast.isConnected) document.body.appendChild(toast);
   autoJoinManager.update(game.autoJoinAlways);
-  return { render };
+  return { render, setHudHidden, toggleHudHidden, isHudHidden };
 }
 
-class DiagnosticsLog {
-  constructor(limit = 400) {
-    this.limit = Math.max(50, Number.isFinite(limit) ? limit : 400);
-    this.entries = [];
-    this.listeners = new Set();
-    this.counter = 0;
-  }
 
-  snapshot() {
-    return this.entries.slice();
-  }
-
-  subscribe(fn) {
-    if (typeof fn !== "function") return () => {};
-    this.listeners.add(fn);
-    return () => {
-      this.listeners.delete(fn);
-    };
-  }
-
-  clear() {
-    if (!this.entries.length) return;
-    this.entries = [];
-    this._notify();
-  }
-
-  log(category, event, detail) {
-    const ts = Date.now();
-    const entry = {
-      id: ++this.counter,
-      timestamp: ts,
-      category: (category || "general").toString(),
-      event: (event || "").toString(),
-      detail: detail
-    };
-    this.entries.push(entry);
-    if (this.entries.length > this.limit) {
-      this.entries.splice(0, this.entries.length - this.limit);
-    }
-    this._notify();
-  }
-
-  formatEntry(entry) {
-    if (!entry) return "";
-    const iso = new Date(entry.timestamp || Date.now()).toISOString();
-    const category = entry.category || "general";
-    const event = entry.event || "";
-    const detailText = this._stringifyDetail(entry.detail);
-    return detailText
-      ? `[${iso}] [${category}] ${event} :: ${detailText}`
-      : `[${iso}] [${category}] ${event}`;
-  }
-
-  formatAll() {
-    return this.entries.map((entry) => this.formatEntry(entry)).join("\n");
-  }
-
-  _stringifyDetail(detail) {
-    if (detail == null) return "";
-    if (typeof detail === "string") return detail;
-    if (typeof detail === "number" || typeof detail === "boolean") return detail.toString();
-    try {
-      return JSON.stringify(detail, (key, value) => {
-        if (typeof value === "bigint") return value.toString();
-        return value;
-      }, 2);
-    } catch (err) {
-      try {
-        return String(detail);
-      } catch (_) {
-        return "[unserializable]";
-      }
-    }
-  }
-
-  _notify() {
-    this.listeners.forEach((fn) => {
-      try { fn(this.entries); }
-      catch (_) { /* ignore listener errors */ }
-    });
-  }
-}
 
 const DEVICE_ID_STORAGE_KEY = "litsharkDeviceId";
 const ACCOUNT_TOKEN_STORAGE_KEY = "litsharkAccountToken";
@@ -3084,7 +2877,7 @@ function sendPresenceCommand(message) {
 }
 
 class PresenceReporter {
-  constructor(game, diagnostics) {
+  constructor(game, diagnostics = null) {
     this.game = game || null;
     this.diagnostics = diagnostics || null;
     const manifest = typeof chrome?.runtime?.getManifest === "function" ? chrome.runtime.getManifest() : null;
@@ -4369,25 +4162,14 @@ async function setupBuddy() {
   s.onload = function () { this.remove(); };
   document.body.appendChild(s);
 
-  const diagnostics = new DiagnosticsLog();
-  try {
-    diagnostics.log("ui", "setup_start", {
-      href: window.location?.href || null,
-      frame: window.top === window ? "top" : "nested"
-    });
-  } catch (_) { /* ignore logging errors */ }
-  if (typeof window !== "undefined") {
-    try { window.__litsharkDiagnostics = diagnostics; }
-    catch (_) { /* ignore */ }
-  }
-
   const game = new Game(getInput());
   setTimeout(() => (game.input = getInput()), 1000);
 
-  const presence = new PresenceReporter(game, diagnostics);
+  const presence = new PresenceReporter(game);
   presence.updateLanguage(game.lang);
 
-  const { render } = createOverlay(game, diagnostics);
+  const overlay = createOverlay(game);
+  const { render } = overlay;
 
   const notifySettingsChanged = (opts = {}) => {
     if (typeof game._notifySettingsChanged === "function") {
@@ -4463,6 +4245,12 @@ async function setupBuddy() {
     else if (k === "b") { game.toggleMistakes(); handled = true; }
     else if (k === "r") { game.resetCoverage(); handled = true; recompute = true; }
     else if (k === "t") { game.toggleLengthMode(); handled = true; recompute = true; }
+    else if (k === "h") {
+      if (overlay && typeof overlay.toggleHudHidden === "function") {
+        overlay.toggleHudHidden();
+        handled = true;
+      }
+    }
 
     if (!handled) return;
     notifySettingsChanged({ recompute });
