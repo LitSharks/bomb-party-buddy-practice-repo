@@ -60,7 +60,7 @@ async function copyPlain(text) {
   } catch { return false; }
 }
 
-function createOverlay(game) {
+function createOverlay(game, diagnostics) {
   // Top-anchored wrapper
   const wrap = document.createElement("div");
   Object.assign(wrap.style, {
@@ -107,6 +107,7 @@ function createOverlay(game) {
     tabMain: { en: "Main", de: "Haupt", es: "Principal", fr: "Principal", "pt-br": "Principal" },
     tabCoverage: { en: "Coverage", de: "Abdeckung", es: "Cobertura", fr: "Couverture", "pt-br": "Cobertura" },
     tabWords: { en: "Words", de: "Wörter", es: "Palabras", fr: "Mots", "pt-br": "Palavras" },
+    tabLogs: { en: "Logs", de: "Logs", es: "Registros", fr: "Journaux", "pt-br": "Logs" },
     toggleOn: { en: "On", de: "An", es: "Activado", fr: "Activé", "pt-br": "Ligado" },
     toggleOff: { en: "Off", de: "Aus", es: "Desactivado", fr: "Désactivé", "pt-br": "Desligado" },
     sectionAutomation: { en: "Automation", de: "Automatisierung", es: "Automatización", fr: "Automatisation", "pt-br": "Automação" },
@@ -156,6 +157,14 @@ function createOverlay(game) {
     labelSetAllGoals: { en: "Set all goals to:", de: "Alle Ziele setzen auf :", es: "Establecer todas las metas en:", fr: "Définir toutes les cibles sur :", "pt-br": "Definir todas as metas como:" },
     buttonApply: { en: "Apply", de: "Übernehmen", es: "Aplicar", fr: "Appliquer", "pt-br": "Aplicar" },
     buttonResetCoverage: { en: "Reset A-Z progress", de: "A-Z-Fortschritt zurücksetzen", es: "Restablecer progreso A-Z", fr: "Réinitialiser la progression A-Z", "pt-br": "Redefinir progresso A-Z" }
+  });
+
+  addText({
+    logsHeading: { en: "Diagnostics", de: "Diagnose", es: "Diagnóstico", fr: "Diagnostic", "pt-br": "Diagnóstico" },
+    logsCopy: { en: "Copy logs", de: "Protokolle kopieren", es: "Copiar registros", fr: "Copier les journaux", "pt-br": "Copiar logs" },
+    logsCopied: { en: "Copied!", de: "Kopiert!", es: "¡Copiado!", fr: "Copié !", "pt-br": "Copiado!" },
+    logsClear: { en: "Clear logs", de: "Protokolle löschen", es: "Borrar registros", fr: "Effacer les journaux", "pt-br": "Limpar logs" },
+    logsEmpty: { en: "No diagnostics yet.", de: "Noch keine Diagnose.", es: "Sin diagnósticos aún.", fr: "Pas encore de diagnostic.", "pt-br": "Sem diagnósticos ainda." }
   });
 
   addText({
@@ -850,31 +859,44 @@ function createOverlay(game) {
   const mainTabBtn = mkTab("tabMain");
   const covTabBtn  = mkTab("tabCoverage");
   const wordsTabBtn= mkTab("tabWords");
-  tabs.appendChild(mainTabBtn); tabs.appendChild(covTabBtn); tabs.appendChild(wordsTabBtn);
+  const logsTabBtn = mkTab("tabLogs");
+  tabs.appendChild(mainTabBtn);
+  tabs.appendChild(covTabBtn);
+  tabs.appendChild(wordsTabBtn);
+  tabs.appendChild(logsTabBtn);
   box.appendChild(tabs);
 
   // sections
   const mainSec = document.createElement("div");
   const covSec  = document.createElement("div");
   const wordsSec= document.createElement("div");
-  box.appendChild(mainSec); box.appendChild(covSec); box.appendChild(wordsSec);
+  const logsSec = document.createElement("div");
+  box.appendChild(mainSec);
+  box.appendChild(covSec);
+  box.appendChild(wordsSec);
+  box.appendChild(logsSec);
 
   // default to Words
   let active = "Words";
   let coverageEditMode = "off";
+  let renderLogs = null;
+  let logsUnsubscribe = null;
   const setActive = (name) => {
     active = name;
     mainSec.style.display  = name==="Main" ? "block" : "none";
     covSec.style.display   = name==="Coverage" ? "block" : "none";
     wordsSec.style.display = name==="Words" ? "block" : "none";
+    logsSec.style.display  = name==="Logs" ? "block" : "none";
     mainTabBtn._setActive(name==="Main");
     covTabBtn._setActive(name==="Coverage");
     wordsTabBtn._setActive(name==="Words");
+    logsTabBtn._setActive(name==="Logs");
     if (name !== "Coverage") coverageEditMode = "off";
   };
   mainTabBtn.onclick = () => setActive("Main");
   covTabBtn.onclick  = () => setActive("Coverage");
   wordsTabBtn.onclick= () => setActive("Words");
+  logsTabBtn.onclick = () => setActive("Logs");
   setActive("Words");
 
   // helpers
@@ -1241,6 +1263,7 @@ function createOverlay(game) {
     mainSec.style.display  = collapsed ? "none" : (active==="Main"?"block":"none");
     covSec.style.display   = collapsed ? "none" : (active==="Coverage"?"block":"none");
     wordsSec.style.display = collapsed ? "none" : (active==="Words"?"block":"none");
+    logsSec.style.display  = collapsed ? "none" : (active==="Logs"?"block":"none");
     tabs.style.display     = collapsed ? "none" : "flex";
   });
 
@@ -2107,6 +2130,7 @@ function createOverlay(game) {
     translator.refresh(game.lang);
     updateToastLanguage();
     if (typeof renderWordLog === "function") renderWordLog();
+    if (typeof renderLogs === "function") renderLogs();
     toggleRefs.forEach(row => applyToggleBtn(row._btn, row._get(), row._scheme, row._mode));
     dualToggleRows.forEach(row => {
       row._buttons.forEach(info => applyToggleBtn(info.btn, info.getOn(), info.scheme, info.mode));
@@ -2311,6 +2335,167 @@ function createOverlay(game) {
   }
   startJoinMonitoring();
 
+  // =============== LOGS TAB =================
+  const logsLayout = document.createElement("div");
+  Object.assign(logsLayout.style, { display: "grid", gap: "12px" });
+  logsSec.appendChild(logsLayout);
+
+  const logsHeader = document.createElement("div");
+  Object.assign(logsHeader.style, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px"
+  });
+  logsLayout.appendChild(logsHeader);
+
+  const logsTitle = document.createElement("span");
+  translator.bind(logsTitle, "logsHeading");
+  Object.assign(logsTitle.style, { fontWeight: "700", color: "#e2e8f0", fontSize: "15px" });
+  logsHeader.appendChild(logsTitle);
+
+  const logsActions = document.createElement("div");
+  Object.assign(logsActions.style, { display: "flex", alignItems: "center", gap: "8px" });
+  logsHeader.appendChild(logsActions);
+
+  const copyLogsBtn = document.createElement("button");
+  translator.bind(copyLogsBtn, "logsCopy");
+  Object.assign(copyLogsBtn.style, {
+    padding: "4px 10px",
+    borderRadius: "8px",
+    border: "1px solid rgba(59,130,246,0.55)",
+    background: "rgba(37,99,235,0.25)",
+    color: "#bfdbfe",
+    fontWeight: "700",
+    cursor: "pointer",
+    fontSize: "12px"
+  });
+  logsActions.appendChild(copyLogsBtn);
+
+  const clearLogsBtn = document.createElement("button");
+  translator.bind(clearLogsBtn, "logsClear");
+  Object.assign(clearLogsBtn.style, {
+    padding: "4px 10px",
+    borderRadius: "8px",
+    border: "1px solid rgba(148,163,184,0.45)",
+    background: "rgba(71,85,105,0.35)",
+    color: "#f8fafc",
+    fontWeight: "700",
+    cursor: "pointer",
+    fontSize: "12px"
+  });
+  logsActions.appendChild(clearLogsBtn);
+
+  const copyLogsStatus = document.createElement("span");
+  translator.bind(copyLogsStatus, "logsCopied");
+  Object.assign(copyLogsStatus.style, {
+    fontSize: "12px",
+    fontWeight: "700",
+    color: "#22c55e",
+    opacity: "0",
+    transition: "opacity 0.2s ease"
+  });
+  logsActions.appendChild(copyLogsStatus);
+
+  const logsBody = document.createElement("div");
+  Object.assign(logsBody.style, { display: "grid", gap: "8px" });
+  logsLayout.appendChild(logsBody);
+
+  const logsTextarea = document.createElement("textarea");
+  Object.assign(logsTextarea.style, {
+    width: "100%",
+    minHeight: "220px",
+    borderRadius: "10px",
+    border: "1px solid rgba(59,130,246,0.35)",
+    background: "rgba(15,23,42,0.65)",
+    color: "#e2e8f0",
+    fontFamily: "ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontSize: "12px",
+    lineHeight: "1.45",
+    padding: "10px",
+    resize: "vertical"
+  });
+  logsTextarea.readOnly = true;
+  logsTextarea.spellcheck = false;
+  logsTextarea.wrap = "off";
+  logsBody.appendChild(logsTextarea);
+
+  const logsEmpty = document.createElement("div");
+  translator.bind(logsEmpty, "logsEmpty");
+  Object.assign(logsEmpty.style, {
+    fontSize: "12px",
+    color: "#cbd5f5",
+    opacity: "0.85"
+  });
+  logsBody.appendChild(logsEmpty);
+
+  let logsStatusTimer = null;
+  const showCopyStatus = (visible) => {
+    if (visible) {
+      copyLogsStatus.style.opacity = "1";
+      if (logsStatusTimer) clearTimeout(logsStatusTimer);
+      logsStatusTimer = setTimeout(() => {
+        copyLogsStatus.style.opacity = "0";
+      }, 1600);
+    } else {
+      copyLogsStatus.style.opacity = "0";
+    }
+  };
+
+  if (diagnostics && typeof diagnostics.log === "function") {
+    copyLogsBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const text = typeof diagnostics.formatAll === "function" ? diagnostics.formatAll() : "";
+      try {
+        const ok = await copyPlain(text);
+        if (ok) {
+          showCopyStatus(true);
+        }
+      } catch (err) {
+        console.warn("[BombPartyShark] Failed to copy diagnostics", err);
+      }
+    });
+    clearLogsBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (typeof diagnostics.clear === "function") diagnostics.clear();
+    });
+  } else {
+    copyLogsBtn.disabled = true;
+    clearLogsBtn.disabled = true;
+    copyLogsBtn.style.opacity = "0.65";
+    clearLogsBtn.style.opacity = "0.65";
+  }
+
+  const updateLogsVisibility = (entries) => {
+    if (entries && entries.length) {
+      logsTextarea.style.display = "block";
+      logsEmpty.style.display = "none";
+    } else {
+      logsTextarea.style.display = "none";
+      logsEmpty.style.display = "block";
+    }
+  };
+
+  renderLogs = () => {
+    if (!diagnostics || typeof diagnostics.snapshot !== "function") {
+      updateLogsVisibility([]);
+      return;
+    }
+    const entries = diagnostics.snapshot();
+    const formatted = typeof diagnostics.formatAll === "function"
+      ? diagnostics.formatAll()
+      : entries.map((entry) => String(entry)).join("\n");
+    logsTextarea.value = formatted;
+    updateLogsVisibility(entries);
+    logsTextarea.scrollTop = logsTextarea.scrollHeight;
+  };
+
+  if (diagnostics && typeof diagnostics.subscribe === "function") {
+    logsUnsubscribe = diagnostics.subscribe(() => renderLogs());
+  }
+
+  renderLogs();
+
   const iv = setInterval(render, 160);
   window.addEventListener("beforeunload", () => {
     clearInterval(iv);
@@ -2324,6 +2509,10 @@ function createOverlay(game) {
       clearInterval(joinCheckTimer);
       joinCheckTimer = null;
     }
+    if (typeof logsUnsubscribe === "function") {
+      try { logsUnsubscribe(); } catch (_) { /* ignore */ }
+      logsUnsubscribe = null;
+    }
     if (toastTimer) {
       clearTimeout(toastTimer);
       toastTimer = null;
@@ -2336,6 +2525,1843 @@ function createOverlay(game) {
   return { render };
 }
 
+class DiagnosticsLog {
+  constructor(limit = 400) {
+    this.limit = Math.max(50, Number.isFinite(limit) ? limit : 400);
+    this.entries = [];
+    this.listeners = new Set();
+    this.counter = 0;
+  }
+
+  snapshot() {
+    return this.entries.slice();
+  }
+
+  subscribe(fn) {
+    if (typeof fn !== "function") return () => {};
+    this.listeners.add(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
+  }
+
+  clear() {
+    if (!this.entries.length) return;
+    this.entries = [];
+    this._notify();
+  }
+
+  log(category, event, detail) {
+    const ts = Date.now();
+    const entry = {
+      id: ++this.counter,
+      timestamp: ts,
+      category: (category || "general").toString(),
+      event: (event || "").toString(),
+      detail: detail
+    };
+    this.entries.push(entry);
+    if (this.entries.length > this.limit) {
+      this.entries.splice(0, this.entries.length - this.limit);
+    }
+    this._notify();
+  }
+
+  formatEntry(entry) {
+    if (!entry) return "";
+    const iso = new Date(entry.timestamp || Date.now()).toISOString();
+    const category = entry.category || "general";
+    const event = entry.event || "";
+    const detailText = this._stringifyDetail(entry.detail);
+    return detailText
+      ? `[${iso}] [${category}] ${event} :: ${detailText}`
+      : `[${iso}] [${category}] ${event}`;
+  }
+
+  formatAll() {
+    return this.entries.map((entry) => this.formatEntry(entry)).join("\n");
+  }
+
+  _stringifyDetail(detail) {
+    if (detail == null) return "";
+    if (typeof detail === "string") return detail;
+    if (typeof detail === "number" || typeof detail === "boolean") return detail.toString();
+    try {
+      return JSON.stringify(detail, (key, value) => {
+        if (typeof value === "bigint") return value.toString();
+        return value;
+      }, 2);
+    } catch (err) {
+      try {
+        return String(detail);
+      } catch (_) {
+        return "[unserializable]";
+      }
+    }
+  }
+
+  _notify() {
+    this.listeners.forEach((fn) => {
+      try { fn(this.entries); }
+      catch (_) { /* ignore listener errors */ }
+    });
+  }
+}
+
+const DEVICE_ID_STORAGE_KEY = "litsharkDeviceId";
+const ACCOUNT_TOKEN_STORAGE_KEY = "litsharkAccountToken";
+const LOBBY_PROFILE_STORAGE_KEY = "litsharkLobbyProfile";
+const TOP_CONTEXT_REQUEST_TYPE = "litsharkTopContextRequest";
+const TOP_CONTEXT_RESPONSE_TYPE = "litsharkTopContext";
+
+function safeRandomUuid() {
+  try {
+    if (typeof crypto?.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch (_) { /* ignore */ }
+  const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).slice(-4);
+  return `${s4()}${s4()}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
+}
+
+function storageGet(area, keys) {
+  return new Promise((resolve) => {
+    try {
+      const api = chrome?.storage?.[area];
+      if (!api || typeof api.get !== "function") {
+        resolve({});
+        return;
+      }
+      api.get(keys, (result) => {
+        if (chrome.runtime?.lastError) {
+          console.warn(`[BombPartyShark] Failed to read ${area} storage`, chrome.runtime.lastError);
+          resolve({});
+          return;
+        }
+        resolve(result || {});
+      });
+    } catch (err) {
+      console.warn(`[BombPartyShark] Failed to access ${area} storage`, err);
+      resolve({});
+    }
+  });
+}
+
+function storageSet(area, data) {
+  return new Promise((resolve) => {
+    try {
+      const api = chrome?.storage?.[area];
+      if (!api || typeof api.set !== "function") {
+        resolve(false);
+        return;
+      }
+      api.set(data, () => {
+        if (chrome.runtime?.lastError) {
+          console.warn(`[BombPartyShark] Failed to write ${area} storage`, chrome.runtime.lastError);
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      });
+    } catch (err) {
+      console.warn(`[BombPartyShark] Failed to write ${area} storage`, err);
+      resolve(false);
+    }
+  });
+}
+
+const TOP_CONTEXT_POLL_INTERVAL = 2500;
+
+function isJklmOrigin(origin) {
+  if (!origin || origin === "null") return false;
+  try {
+    const url = new URL(origin);
+    return !!url.hostname && url.hostname.endsWith("jklm.fun");
+  } catch (_) {
+    return false;
+  }
+}
+
+function safeTrim(value) {
+  if (value == null) return "";
+  try { return String(value).trim(); }
+  catch (_) { return ""; }
+}
+
+function normalizeNicknameCandidate(raw) {
+  const trimmed = safeTrim(raw);
+  if (!trimmed) return "";
+
+  const tryFromJson = (value) => {
+    if (!value) return "";
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const candidate = normalizeNicknameCandidate(entry);
+        if (candidate) return candidate;
+      }
+      return "";
+    }
+    if (typeof value === "object") {
+      const keys = [
+        "nickname",
+        "name",
+        "displayName",
+        "username",
+        "label",
+        "text",
+        "value"
+      ];
+      for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const candidate = normalizeNicknameCandidate(value[key]);
+          if (candidate) return candidate;
+        }
+      }
+      return "";
+    }
+    return normalizeNicknameCandidate(String(value || ""));
+  };
+
+  if (trimmed[0] === "{" || trimmed[0] === "[") {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const fromJson = tryFromJson(parsed);
+      if (fromJson) return fromJson;
+    } catch (_) {
+      /* ignore JSON parse errors */
+    }
+  }
+
+  const parts = trimmed
+    .split(/[\n;,]/)
+    .map((part) => safeTrim(part))
+    .filter(Boolean);
+  if (parts.length) return parts[0];
+  return trimmed;
+}
+
+function gatherTopContextSnapshot() {
+  const snapshot = {
+    roomCode: null,
+    roomCodeSource: null,
+    roomUrl: null,
+    nickname: null,
+    nicknameSource: null,
+    authLabel: null,
+    authSource: null,
+    authProvider: null
+  };
+
+  try {
+    snapshot.roomUrl = window?.location?.href || null;
+  } catch (_) {
+    snapshot.roomUrl = null;
+  }
+
+  const roomCandidates = [
+    { selector: "[data-room-code]", extractor: (el) => el.getAttribute("data-room-code") || el.textContent },
+    { selector: "[data-roomcode]", extractor: (el) => el.getAttribute("data-roomcode") || el.textContent },
+    { selector: "[data-room]", extractor: (el) => el.getAttribute("data-room") || el.textContent },
+    { selector: ".top .info .roomCode", extractor: (el) => el.textContent },
+    { selector: ".roomCode", extractor: (el) => el.textContent },
+    { selector: ".room-code", extractor: (el) => el.textContent }
+  ];
+  for (const candidate of roomCandidates) {
+    try {
+      const node = document.querySelector(candidate.selector);
+      if (!node) continue;
+      const raw = candidate.extractor ? candidate.extractor(node) : (node.textContent || "");
+      const value = safeTrim(raw);
+      if (!value) continue;
+      snapshot.roomCode = value;
+      snapshot.roomCodeSource = candidate.selector;
+      break;
+    } catch (_) {
+      /* ignore selector errors */
+    }
+  }
+
+  const nicknameAttempts = [];
+  const recordNicknameAttempt = (selector, detail) => {
+    if (nicknameAttempts.length >= 12) return;
+    const entry = { selector };
+    if (detail) {
+      if (typeof detail.found === "boolean") entry.found = detail.found;
+      if (typeof detail.raw === "string" && detail.raw) {
+        entry.raw = detail.raw.length > 100 ? `${detail.raw.slice(0, 97)}...` : detail.raw;
+      }
+      if (typeof detail.value === "string" && detail.value) entry.value = detail.value;
+      if (detail.note) entry.note = detail.note;
+    }
+    nicknameAttempts.push(entry);
+  };
+
+  const nicknameSelectors = [
+    "#mentionTriggers",
+    ".settings #mentionTriggers",
+    ".sidebar #mentionTriggers",
+    ".setup .auth .nickname",
+    ".setup .nickname",
+    "[data-nickname]",
+    ".profile .nickname",
+    ".account .nickname"
+  ];
+  for (const selector of nicknameSelectors) {
+    try {
+      const node = document.querySelector(selector);
+      if (!node) {
+        recordNicknameAttempt(selector, { found: false, note: "missing" });
+        continue;
+      }
+      let raw = "";
+      if (typeof node.value === "string") raw = node.value;
+      if (!raw && typeof node.defaultValue === "string") raw = node.defaultValue;
+      if (!raw && typeof node.getAttribute === "function") {
+        raw = node.getAttribute("data-nickname")
+          || node.getAttribute("data-name")
+          || node.getAttribute("data-value")
+          || node.getAttribute("value")
+          || "";
+      }
+      if (!raw) raw = node.textContent || "";
+      const value = normalizeNicknameCandidate(raw);
+      recordNicknameAttempt(selector, {
+        found: true,
+        raw: safeTrim(raw),
+        value,
+        note: value ? "candidate" : "empty"
+      });
+      if (!value) continue;
+      snapshot.nickname = value;
+      snapshot.nicknameSource = selector;
+      break;
+    } catch (err) {
+      recordNicknameAttempt(selector, { found: false, note: err?.message ? `error:${err.message}` : "error" });
+    }
+  }
+
+  if (!snapshot.nickname) {
+    const storageSources = [
+      { storage: window?.localStorage, label: "localStorage" },
+      { storage: window?.sessionStorage, label: "sessionStorage" }
+    ];
+    const storageKeys = [
+      "nickname",
+      "mentionTriggers",
+      "settings.nickname",
+      "settings.mentionTriggers",
+      "profile.nickname"
+    ];
+    for (const source of storageSources) {
+      const store = source.storage;
+      if (!store || typeof store.getItem !== "function") continue;
+      for (const key of storageKeys) {
+        try {
+          const raw = store.getItem(key);
+          if (!raw) {
+            recordNicknameAttempt(`${source.label}:${key}`, { found: false, note: "empty" });
+            continue;
+          }
+          const value = normalizeNicknameCandidate(raw);
+          recordNicknameAttempt(`${source.label}:${key}`, {
+            found: true,
+            raw: safeTrim(raw),
+            value,
+            note: value ? "candidate" : "empty"
+          });
+          if (value) {
+            snapshot.nickname = value;
+            snapshot.nicknameSource = `${source.label}:${key}`;
+            break;
+          }
+        } catch (err) {
+          recordNicknameAttempt(`${source.label}:${key}`, { found: false, note: err?.message ? `error:${err.message}` : "error" });
+        }
+      }
+      if (snapshot.nickname) break;
+    }
+  }
+
+  if (nicknameAttempts.length) {
+    snapshot.nicknameAttempts = nicknameAttempts;
+  }
+
+  const authLabelSelectors = [
+    "[data-auth-label]",
+    ".setup .auth [data-label]",
+    ".setup .auth .authLabel",
+    ".setup .auth .label",
+    ".setup .auth .auth"
+  ];
+  for (const selector of authLabelSelectors) {
+    try {
+      const node = document.querySelector(selector);
+      if (!node) continue;
+      const attr = node.getAttribute ? (node.getAttribute("data-auth-label") || node.getAttribute("data-label")) : "";
+      const raw = attr || node.textContent || "";
+      const value = safeTrim(raw);
+      if (!value) continue;
+      if (value.length <= 2) continue;
+      snapshot.authLabel = value;
+      snapshot.authSource = selector;
+      break;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  try {
+    const authButton = document.querySelector(".setup .auth");
+    if (authButton) {
+      if (!snapshot.authLabel) {
+        const title = safeTrim(authButton.getAttribute("data-auth") || authButton.getAttribute("title") || "");
+        if (title && title.length > 2 && title.toLowerCase() !== "you are") {
+          snapshot.authLabel = title;
+          snapshot.authSource = ".setup .auth";
+        }
+      }
+      const providerAttr = authButton.getAttribute("data-service")
+        || authButton.getAttribute("data-provider")
+        || (authButton.dataset ? (authButton.dataset.service || authButton.dataset.provider) : "");
+      const provider = safeTrim(providerAttr);
+      if (provider) snapshot.authProvider = provider;
+      const serviceImg = authButton.querySelector(".service");
+      if (serviceImg) {
+        const alt = safeTrim(serviceImg.getAttribute("alt"));
+        if (alt) snapshot.authProvider = alt;
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+
+  if (!snapshot.authLabel) {
+    try {
+      const badge = document.querySelector(".mainBadge");
+      if (badge) {
+        const title = safeTrim(badge.getAttribute("title") || badge.textContent || "");
+        if (title && title.length > 2 && title.toLowerCase() !== "you are") {
+          snapshot.authLabel = title;
+          snapshot.authSource = ".mainBadge";
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  return snapshot;
+}
+
+function buildTopContextPayload(context, reason) {
+  return {
+    type: TOP_CONTEXT_RESPONSE_TYPE,
+    reason: reason || null,
+    timestamp: Date.now(),
+    context: { ...context }
+  };
+}
+
+function setupTopContextBridge() {
+  if (typeof window === "undefined" || typeof document === "undefined") return;
+  if (window.__litsharkTopBridgeReady) return;
+  try { window.__litsharkTopBridgeReady = true; }
+  catch (_) { /* ignore */ }
+
+  let disposed = false;
+  let currentSnapshot = gatherTopContextSnapshot();
+  let currentSnapshotJson = JSON.stringify(currentSnapshot);
+  let lastStoredProfileJson = "";
+
+  const broadcast = (context, reason) => {
+    const payload = buildTopContextPayload(context, reason);
+    for (let i = 0; i < window.frames.length; i += 1) {
+      const frame = window.frames[i];
+      try { frame.postMessage(payload, "*"); }
+      catch (_) { /* ignore cross-origin failures */ }
+    }
+  };
+
+  const storeProfile = (context) => {
+    const profile = {
+      nickname: context.nickname || null,
+      authLabel: context.authLabel || null,
+      authProvider: context.authProvider || null
+    };
+    const json = JSON.stringify(profile);
+    if (json === lastStoredProfileJson) return;
+    lastStoredProfileJson = json;
+    storageSet("local", { [LOBBY_PROFILE_STORAGE_KEY]: { ...profile, updatedAt: Date.now() } }).catch(() => {});
+  };
+
+  const refresh = (reason) => {
+    if (disposed) return;
+    const snapshot = gatherTopContextSnapshot();
+    const json = JSON.stringify(snapshot);
+    if (json === currentSnapshotJson) return;
+    currentSnapshot = snapshot;
+    currentSnapshotJson = json;
+    try { window.__litsharkTopContext = { ...snapshot }; }
+    catch (_) { /* ignore */ }
+    broadcast(snapshot, reason);
+    storeProfile(snapshot);
+  };
+
+  const handleMessage = (event) => {
+    if (disposed) return;
+    const data = event?.data;
+    if (!data || data.type !== TOP_CONTEXT_REQUEST_TYPE) return;
+    if (!event.source || typeof event.source.postMessage !== "function") return;
+    if (!isJklmOrigin(event.origin)) return;
+    refresh("request");
+    try {
+      const payload = buildTopContextPayload(currentSnapshot, data.reason || "response");
+      const origin = event.origin && event.origin !== "null" ? event.origin : "*";
+      event.source.postMessage(payload, origin);
+    } catch (_) {
+      /* ignore */
+    }
+  };
+
+  window.addEventListener("message", handleMessage);
+
+  let observer = null;
+  try {
+    observer = new MutationObserver(() => refresh("mutation"));
+    observer.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true
+    });
+  } catch (_) {
+    observer = null;
+  }
+
+  const interval = window.setInterval(() => refresh("interval"), TOP_CONTEXT_POLL_INTERVAL);
+
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    try { window.removeEventListener("message", handleMessage); } catch (_) { /* ignore */ }
+    if (observer) {
+      try { observer.disconnect(); } catch (_) { /* ignore */ }
+      observer = null;
+    }
+    window.clearInterval(interval);
+    try { delete window.__litsharkTopBridgeReady; } catch (_) { /* ignore */ }
+  };
+
+  window.addEventListener("pagehide", dispose, true);
+  window.addEventListener("beforeunload", dispose, true);
+
+  storeProfile(currentSnapshot);
+  broadcast(currentSnapshot, "init");
+}
+
+function sendPresenceCommand(message) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage(message, (resp) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        if (!resp) {
+          resolve(null);
+          return;
+        }
+        if (resp.error) {
+          reject(new Error(resp.error));
+          return;
+        }
+        resolve(resp);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+class PresenceReporter {
+  constructor(game, diagnostics) {
+    this.game = game || null;
+    this.diagnostics = diagnostics || null;
+    const manifest = typeof chrome?.runtime?.getManifest === "function" ? chrome.runtime.getManifest() : null;
+    this.version = manifest?.version || "0";
+    this.sessionId = safeRandomUuid();
+    this.lang = (this.game && typeof this.game.lang === "string" && this.game.lang) ? this.game.lang : "en";
+    const initialRoom = this.extractRoomCodeDetails();
+    this.roomCode = initialRoom.code;
+    this.roomUrl = this.extractRoomUrl();
+    this.username = null;
+    this.authLabel = null;
+    this.selfPeerId = null;
+    this.maxPeerSeen = null;
+    this.deviceId = null;
+    this.deviceIdPromise = this.ensureDeviceId();
+    this.accountToken = null;
+    this.lobbyNickname = null;
+    this.lobbyAuthLabel = null;
+    this.lobbyAuthProvider = null;
+    this.lastLobbyProfileJson = null;
+    this.registered = false;
+    this.leaveSent = false;
+    this.disposed = false;
+    this.roomCodeLockUntil = 0;
+    this.suspended = document.visibilityState === "hidden";
+    this.nextHeartbeatTimer = null;
+    this.retryTimer = null;
+    this.retryAttempt = 0;
+    this.sending = false;
+    this.pendingImmediate = false;
+    this.chattersObserver = null;
+    this.chattersContainer = null;
+    this.rosterCheckTimer = null;
+    this.roomMonitorTimer = null;
+    this.storageListener = null;
+    this.topContextInterval = null;
+
+    this.log("presence", "constructor", {
+      sessionId: this.sessionId,
+      version: this.version,
+      initialLang: this.lang,
+      initialRoomCode: this.roomCode || null,
+      roomAttempts: initialRoom.attempts,
+      initialSuspended: this.suspended
+    });
+
+    this.visibilityHandler = () => this.handleVisibilityChange();
+    this.pageHideHandler = () => this.handlePageHide();
+    this.beforeUnloadHandler = () => this.handleBeforeUnload();
+
+    document.addEventListener("visibilitychange", this.visibilityHandler, true);
+    window.addEventListener("pagehide", this.pageHideHandler);
+    window.addEventListener("beforeunload", this.beforeUnloadHandler);
+
+    this.ensureRosterObserver();
+    this.rosterCheckTimer = window.setInterval(() => this.ensureRosterObserver(), 2000);
+    this.roomMonitorTimer = window.setInterval(() => this.checkRoomCode(false), 2000);
+    this.checkRoomCode(true);
+
+    if (chrome?.storage?.onChanged && typeof chrome.storage.onChanged.addListener === "function") {
+      this.storageListener = (changes, area) => this.handleStorageChange(changes, area);
+      chrome.storage.onChanged.addListener(this.storageListener);
+    }
+
+    this.deviceIdPromise.then((id) => {
+      this.deviceId = id;
+      this.log("presence", "device_id_ready", { deviceId: id });
+      return this.registerSession();
+    }).then(() => {
+      this.log("presence", "initial_session_registered", { sessionId: this.sessionId });
+      this.queueHeartbeat({ immediate: true });
+    }).catch((err) => {
+      this.log("presence", "device_id_error", { error: err?.message || String(err) });
+      console.warn("[BombPartyShark] Failed to initialize device id", err);
+    });
+
+    this.refreshAccountToken();
+    this.refreshLobbyProfile();
+    this.updateSelfFromRoster();
+    this.queueHeartbeat();
+    this.requestTopContext("constructor");
+    this.startTopContextPolling();
+  }
+
+  log(category, event, detail) {
+    if (!this.diagnostics || typeof this.diagnostics.log !== "function") return;
+    try {
+      this.diagnostics.log(category, event, detail);
+    } catch (_) {
+      /* ignore logging failures */
+    }
+  }
+
+  maskToken(value) {
+    if (value == null) return value;
+    const str = String(value);
+    if (str.length <= 8) return str;
+    return `${str.slice(0, 4)}…${str.slice(-4)}`;
+  }
+
+  maskPayload(payload) {
+    if (!payload || typeof payload !== "object") return payload;
+    const clone = { ...payload };
+    if (Object.prototype.hasOwnProperty.call(clone, "account_token") && clone.account_token) {
+      clone.account_token = this.maskToken(clone.account_token);
+    }
+    return clone;
+  }
+
+  applyIdentityFallbacks(reason, options = {}) {
+    if (this.disposed) return false;
+    const { log = true } = options;
+    let changed = false;
+
+    const priorUsername = this.username;
+    const priorAuthLabel = this.authLabel;
+
+    if ((!this.username || this.username === "Unknown Player") && this.lobbyNickname) {
+      if (this.username !== this.lobbyNickname) {
+        this.username = this.lobbyNickname;
+        changed = true;
+      }
+    }
+    if (!this.username || !this.username.trim()) {
+      if (this.username !== "Unknown Player") {
+        this.username = "Unknown Player";
+        changed = true;
+      }
+    }
+
+    const lobbyAuth = this.lobbyAuthLabel && this.lobbyAuthLabel.trim() ? this.lobbyAuthLabel.trim() : null;
+    if ((!this.authLabel || this.authLabel === "Guest") && lobbyAuth) {
+      if (this.authLabel !== lobbyAuth) {
+        this.authLabel = lobbyAuth;
+        changed = true;
+      }
+    }
+
+    if ((!this.authLabel || this.authLabel === "Guest") && this.lobbyAuthProvider && this.username && this.username !== "Unknown Player") {
+      const provider = this.lobbyAuthProvider.trim();
+      if (provider && provider.toLowerCase() !== "guest") {
+        const fallback = `${this.username} on ${provider}`;
+        if (this.authLabel !== fallback) {
+          this.authLabel = fallback;
+          changed = true;
+        }
+      }
+    }
+
+    if (!this.authLabel || !this.authLabel.trim()) {
+      if (this.authLabel !== "Guest") {
+        this.authLabel = "Guest";
+        changed = true;
+      }
+    }
+
+    if (changed && log) {
+      this.log("presence", "identity_fallback", {
+        reason: reason || null,
+        usernameBefore: priorUsername || null,
+        usernameAfter: this.username || null,
+        authBefore: priorAuthLabel || null,
+        authAfter: this.authLabel || null,
+        lobbyNickname: this.lobbyNickname || null,
+        lobbyAuthLabel: this.lobbyAuthLabel || null,
+        lobbyAuthProvider: this.lobbyAuthProvider || null
+      });
+    }
+
+    return changed;
+  }
+
+  async refreshLobbyProfile() {
+    try {
+      const data = await storageGet("local", [LOBBY_PROFILE_STORAGE_KEY]);
+      const profile = data?.[LOBBY_PROFILE_STORAGE_KEY];
+      this.applyLobbyProfile(profile, "storage");
+    } catch (err) {
+      this.log("presence", "lobby_profile_error", { error: err?.message || String(err) });
+    }
+  }
+
+  applyLobbyProfile(profile, source) {
+    if (this.disposed) return;
+    const nickname = typeof profile?.nickname === "string" ? profile.nickname.trim() : "";
+    const authLabel = typeof profile?.authLabel === "string" ? profile.authLabel.trim() : "";
+    const authProvider = typeof profile?.authProvider === "string" ? profile.authProvider.trim() : "";
+
+    this.log("presence", "lobby_profile_update", {
+      source: source || null,
+      nickname: nickname || null,
+      authLabel: authLabel || null,
+      authProvider: authProvider || null
+    });
+
+    let changed = false;
+    if (nickname !== (this.lobbyNickname || "")) {
+      this.lobbyNickname = nickname || null;
+      changed = true;
+    }
+    if (authLabel !== (this.lobbyAuthLabel || "")) {
+      this.lobbyAuthLabel = authLabel || null;
+      changed = true;
+    }
+    if (authProvider !== (this.lobbyAuthProvider || "")) {
+      this.lobbyAuthProvider = authProvider || null;
+      changed = true;
+    }
+
+    this.lastLobbyProfileJson = JSON.stringify({
+      nickname: this.lobbyNickname || null,
+      authLabel: this.lobbyAuthLabel || null,
+      authProvider: this.lobbyAuthProvider || null
+    });
+
+    const identityChanged = this.applyIdentityFallbacks("lobby_profile", { log: true });
+    if ((changed || identityChanged) && !this.disposed) {
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
+  persistLobbyProfile(reason) {
+    if (this.disposed) return;
+    const profile = {
+      nickname: this.lobbyNickname || null,
+      authLabel: this.lobbyAuthLabel || null,
+      authProvider: this.lobbyAuthProvider || null
+    };
+    const json = JSON.stringify(profile);
+    if (json === this.lastLobbyProfileJson) return;
+    this.lastLobbyProfileJson = json;
+    this.log("presence", "lobby_profile_persist", {
+      reason: reason || null,
+      nickname: profile.nickname,
+      authLabel: profile.authLabel,
+      authProvider: profile.authProvider
+    });
+    storageSet("local", { [LOBBY_PROFILE_STORAGE_KEY]: { ...profile, updatedAt: Date.now() } })
+      .catch((err) => {
+        this.log("presence", "lobby_profile_persist_error", { error: err?.message || String(err) });
+      });
+  }
+
+  requestTopContext(reason) {
+    if (this.disposed) return;
+    if (!window?.parent || window.parent === window) return;
+    try {
+      const payload = {
+        type: TOP_CONTEXT_REQUEST_TYPE,
+        reason: reason || null,
+        href: window.location?.href || null,
+        timestamp: Date.now()
+      };
+      window.parent.postMessage(payload, "*");
+      this.log("presence", "top_context_request", { reason: reason || null });
+    } catch (err) {
+      this.log("presence", "top_context_request_error", { error: err?.message || String(err) });
+    }
+  }
+
+  startTopContextPolling() {
+    if (this.topContextInterval || this.disposed) return;
+    this.topContextInterval = window.setInterval(() => this.requestTopContext("poll"), TOP_CONTEXT_POLL_INTERVAL * 2);
+  }
+
+  stopTopContextPolling() {
+    if (!this.topContextInterval) return;
+    window.clearInterval(this.topContextInterval);
+    this.topContextInterval = null;
+  }
+
+  handleTopContext(message) {
+    if (this.disposed || !message || typeof message !== "object") return;
+    const context = message.context;
+    if (!context || typeof context !== "object") return;
+
+    this.log("presence", "top_context_message", {
+      reason: message.reason || null,
+      context
+    });
+
+    let contextChanged = false;
+
+    const rawRoomCode = context.roomCode || context.code || null;
+    const normalizedRoom = this.normalizeRoomCode(rawRoomCode);
+    if (normalizedRoom && normalizedRoom !== this.roomCode) {
+      const previous = this.roomCode || null;
+      this.roomCode = normalizedRoom;
+      this.roomCodeLockUntil = Date.now() + 8000;
+      this.selfPeerId = null;
+      this.maxPeerSeen = null;
+      this.username = null;
+      this.authLabel = null;
+      contextChanged = true;
+      this.log("presence", "top_context_room_code", { from: previous, to: normalizedRoom, source: context.roomCodeSource || null });
+      this.updateSelfFromRoster();
+    } else if (!normalizedRoom && !rawRoomCode && this.roomCode) {
+      const previous = this.roomCode;
+      this.roomCode = null;
+      this.roomCodeLockUntil = Date.now() + 4000;
+      this.selfPeerId = null;
+      this.maxPeerSeen = null;
+      this.username = null;
+      this.authLabel = null;
+      contextChanged = true;
+      this.log("presence", "top_context_room_clear", { from: previous });
+      this.updateSelfFromRoster();
+    }
+
+    if (typeof context.roomUrl === "string" && context.roomUrl.trim()) {
+      const trimmed = context.roomUrl.trim();
+      if (trimmed !== (this.roomUrl || "")) {
+        this.roomUrl = trimmed;
+        contextChanged = true;
+      }
+    }
+
+    let lobbyChanged = false;
+    const nickname = typeof context.nickname === "string" ? context.nickname.trim() : "";
+    if (nickname && nickname !== (this.lobbyNickname || "")) {
+      this.lobbyNickname = nickname;
+      contextChanged = true;
+      lobbyChanged = true;
+    }
+
+    const authLabel = typeof context.authLabel === "string" ? context.authLabel.trim() : "";
+    if (authLabel !== (this.lobbyAuthLabel || "")) {
+      this.lobbyAuthLabel = authLabel || null;
+      contextChanged = true;
+      lobbyChanged = true;
+    }
+
+    const authProvider = typeof context.authProvider === "string" ? context.authProvider.trim() : "";
+    if (authProvider !== (this.lobbyAuthProvider || "")) {
+      this.lobbyAuthProvider = authProvider || null;
+      contextChanged = true;
+      lobbyChanged = true;
+    }
+
+    const identityChanged = this.applyIdentityFallbacks("top_context", { log: true });
+    if (lobbyChanged) {
+      this.log("presence", "lobby_profile_top_context", {
+        reason: message.reason || null,
+        nickname: this.lobbyNickname || null,
+        authLabel: this.lobbyAuthLabel || null,
+        authProvider: this.lobbyAuthProvider || null,
+        nicknameSource: context.nicknameSource || null,
+        authSource: context.authSource || null
+      });
+      this.persistLobbyProfile("top_context");
+    }
+    if ((contextChanged || identityChanged) && !this.disposed) {
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
+  async ensureDeviceId() {
+    if (this.deviceId) {
+      this.log("presence", "device_id_cached", { deviceId: this.deviceId });
+      return this.deviceId;
+    }
+    this.log("presence", "device_id_lookup_start", {});
+    const data = await storageGet("local", [DEVICE_ID_STORAGE_KEY]);
+    let id = data?.[DEVICE_ID_STORAGE_KEY];
+    if (typeof id !== "string" || !id) {
+      this.log("presence", "device_id_generate", {});
+      id = safeRandomUuid();
+      await storageSet("local", { [DEVICE_ID_STORAGE_KEY]: id });
+    } else {
+      this.log("presence", "device_id_loaded", { deviceId: id });
+    }
+    this.deviceId = id;
+    return id;
+  }
+
+  async registerSession() {
+    if (this.registered || this.disposed) {
+      this.log("presence", "session_register_skip", {
+        registered: this.registered,
+        disposed: this.disposed
+      });
+      return;
+    }
+    const deviceId = await this.ensureDeviceId().catch(() => null);
+    if (!deviceId) {
+      this.log("presence", "session_register_no_device", {});
+      return;
+    }
+    try {
+      this.log("presence", "session_register_attempt", {
+        sessionId: this.sessionId,
+        deviceId
+      });
+      await sendPresenceCommand({ type: "presenceRegister", sessionId: this.sessionId, deviceId });
+      this.registered = true;
+      this.log("presence", "session_register_success", {
+        sessionId: this.sessionId,
+        deviceId
+      });
+    } catch (err) {
+      this.log("presence", "session_register_error", {
+        sessionId: this.sessionId,
+        error: err?.message || String(err)
+      });
+      console.warn("[BombPartyShark] Failed to register presence session", err);
+    }
+  }
+
+  async unregisterSession() {
+    if (!this.registered) {
+      this.log("presence", "session_unregister_skip", {});
+      return;
+    }
+    this.registered = false;
+    try {
+      this.log("presence", "session_unregister_attempt", { sessionId: this.sessionId });
+      await sendPresenceCommand({ type: "presenceUnregister", sessionId: this.sessionId });
+      this.log("presence", "session_unregister_success", { sessionId: this.sessionId });
+    } catch (err) {
+      this.log("presence", "session_unregister_error", {
+        sessionId: this.sessionId,
+        error: err?.message || String(err)
+      });
+      console.warn("[BombPartyShark] Failed to unregister presence session", err);
+    }
+  }
+
+  async postPresencePayload(payload) {
+    const safe = this.maskPayload(payload);
+    this.log("presence", "presence_post_attempt", { payload: safe });
+    try {
+      await sendPresenceCommand({ type: "presenceSend", payload });
+      this.log("presence", "presence_post_success", { payload: safe });
+    } catch (err) {
+      this.log("presence", "presence_post_error", {
+        payload: safe,
+        error: err?.message || String(err)
+      });
+      throw err;
+    }
+  }
+
+  computeHeartbeatDelay() {
+    const base = 30000;
+    const jitter = (Math.random() * 6000) - 3000;
+    return Math.max(12000, Math.round(base + jitter));
+  }
+
+  computeRetryDelay() {
+    const base = 5000;
+    const attempt = Math.max(0, this.retryAttempt - 1);
+    const capped = Math.min(120000, base * Math.pow(2, attempt));
+    const jitter = Math.random() * 4000;
+    return Math.round(capped + jitter);
+  }
+
+  clearHeartbeatTimers() {
+    if (this.nextHeartbeatTimer != null) {
+      clearTimeout(this.nextHeartbeatTimer);
+      this.nextHeartbeatTimer = null;
+    }
+    if (this.retryTimer != null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+  }
+
+  clearTimers() {
+    this.clearHeartbeatTimers();
+    if (this.rosterCheckTimer) {
+      clearInterval(this.rosterCheckTimer);
+      this.rosterCheckTimer = null;
+    }
+    if (this.roomMonitorTimer) {
+      clearInterval(this.roomMonitorTimer);
+      this.roomMonitorTimer = null;
+    }
+  }
+
+  queueHeartbeat(opts = {}) {
+    if (this.disposed) return;
+    const immediate = !!opts.immediate;
+    this.log("presence", "heartbeat_queue", {
+      immediate,
+      suspended: this.suspended,
+      disposed: this.disposed,
+      hasNextTimer: this.nextHeartbeatTimer != null,
+      hasRetryTimer: this.retryTimer != null
+    });
+    if (this.suspended && !immediate) {
+      this.log("presence", "heartbeat_queue_suspended", {});
+      return;
+    }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    if (immediate) {
+      if (this.nextHeartbeatTimer != null) {
+        clearTimeout(this.nextHeartbeatTimer);
+        this.nextHeartbeatTimer = null;
+      }
+      this.log("presence", "heartbeat_queue_immediate", {});
+      this.sendHeartbeat();
+      return;
+    }
+    if (this.nextHeartbeatTimer != null) {
+      this.log("presence", "heartbeat_queue_skip", { reason: "existing_timer" });
+      return;
+    }
+    const delay = this.computeHeartbeatDelay();
+    this.log("presence", "heartbeat_scheduled", { delay });
+    this.nextHeartbeatTimer = window.setTimeout(() => {
+      this.nextHeartbeatTimer = null;
+      this.sendHeartbeat();
+    }, delay);
+  }
+
+  async sendHeartbeat() {
+    if (this.disposed) return;
+    if (this.sending) {
+      this.log("presence", "heartbeat_send_deferred", { reason: "already_sending" });
+      this.pendingImmediate = true;
+      return;
+    }
+    if (this.suspended) {
+      this.log("presence", "heartbeat_send_deferred", { reason: "tab_suspended" });
+      this.queueHeartbeat();
+      return;
+    }
+    this.log("presence", "heartbeat_send_start", { retryAttempt: this.retryAttempt });
+    const deviceReady = await this.ensureDeviceId().then(() => true).catch((err) => {
+      console.warn("[BombPartyShark] Failed to ensure device id", err);
+      this.log("presence", "heartbeat_device_error", { error: err?.message || String(err) });
+      return false;
+    });
+    if (!deviceReady) {
+      this.log("presence", "heartbeat_device_unavailable", {});
+      this.queueHeartbeat();
+      return;
+    }
+
+    this.sending = true;
+    try {
+      await this.registerSession();
+      const payload = await this.buildHeartbeatPayload();
+      this.log("presence", "heartbeat_payload_ready", { payload: this.maskPayload(payload) });
+      await this.postPresencePayload(payload);
+      this.retryAttempt = 0;
+      this.log("presence", "heartbeat_send_success", { payload: this.maskPayload(payload) });
+    } catch (err) {
+      console.warn("[BombPartyShark] Failed to send presence heartbeat", err);
+      this.log("presence", "heartbeat_send_error", { error: err?.message || String(err) });
+      this.retryAttempt += 1;
+      const delay = this.computeRetryDelay();
+      this.log("presence", "heartbeat_retry_scheduled", { delay, attempt: this.retryAttempt });
+      this.retryTimer = window.setTimeout(() => {
+        this.retryTimer = null;
+        this.queueHeartbeat({ immediate: true });
+      }, delay);
+      return;
+    } finally {
+      this.sending = false;
+    }
+
+    if (this.pendingImmediate) {
+      this.pendingImmediate = false;
+      this.log("presence", "heartbeat_pending_immediate", {});
+      this.queueHeartbeat({ immediate: true });
+      return;
+    }
+    this.queueHeartbeat();
+  }
+
+  async buildHeartbeatPayload() {
+    const deviceId = await this.ensureDeviceId();
+    const lang = (typeof this.lang === "string" && this.lang) ? this.lang : "en";
+    this.applyIdentityFallbacks("build_payload", { log: false });
+    const username = (this.username && this.username.trim()) ? this.username : "Unknown Player";
+    const authLabel = (this.authLabel && this.authLabel.trim()) ? this.authLabel.trim() : null;
+    const payload = {
+      action: "heartbeat",
+      session_id: this.sessionId,
+      device_id: deviceId,
+      version: this.version,
+      lang,
+      room_code: this.roomCode || null,
+      username
+    };
+    if (authLabel) payload.auth_label = authLabel;
+    if (this.roomUrl) payload.room_url = this.roomUrl;
+    if (this.accountToken) payload.account_token = this.accountToken;
+    return payload;
+  }
+
+  handleVisibilityChange() {
+    const hidden = document.visibilityState === "hidden";
+    this.log("presence", "visibility_change", { state: document.visibilityState });
+    if (hidden) {
+      this.suspended = true;
+      this.clearHeartbeatTimers();
+      this.log("presence", "visibility_hidden", {});
+    } else {
+      const wasSuspended = this.suspended;
+      this.suspended = false;
+      this.log("presence", "visibility_visible", { wasSuspended });
+      this.queueHeartbeat({ immediate: wasSuspended });
+      this.requestTopContext("visibility");
+    }
+  }
+
+  handlePageHide() {
+    this.log("presence", "pagehide", {});
+    this.trySendLeave();
+  }
+
+  handleBeforeUnload() {
+    this.log("presence", "beforeunload", {});
+    this.trySendLeave();
+    this.dispose();
+  }
+
+  async trySendLeave() {
+    if (this.leaveSent || !this.sessionId) return;
+    this.leaveSent = true;
+    this.log("presence", "leave_attempt", { sessionId: this.sessionId });
+    const deviceId = await this.ensureDeviceId().catch(() => null);
+    if (!deviceId) {
+      this.log("presence", "leave_no_device", {});
+      await this.unregisterSession();
+      return;
+    }
+    const payload = {
+      action: "leave",
+      session_id: this.sessionId,
+      device_id: deviceId
+    };
+    try {
+      await this.postPresencePayload(payload);
+      this.log("presence", "leave_success", { payload: this.maskPayload(payload) });
+    } catch (err) {
+      console.warn("[BombPartyShark] Failed to send presence leave", err);
+      this.log("presence", "leave_error", { error: err?.message || String(err) });
+    } finally {
+      await this.unregisterSession();
+    }
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.log("presence", "dispose", {});
+    this.clearTimers();
+    this.stopTopContextPolling();
+    if (this.chattersObserver) {
+      try { this.chattersObserver.disconnect(); } catch (_) { /* ignore */ }
+      this.chattersObserver = null;
+    }
+    this.chattersContainer = null;
+    if (this.storageListener && chrome?.storage?.onChanged && typeof chrome.storage.onChanged.removeListener === "function") {
+      try { chrome.storage.onChanged.removeListener(this.storageListener); } catch (_) { /* ignore */ }
+      this.storageListener = null;
+    }
+    document.removeEventListener("visibilitychange", this.visibilityHandler, true);
+    window.removeEventListener("pagehide", this.pageHideHandler);
+    window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    this.trySendLeave();
+  }
+
+  handlePresenceContext(message) {
+    if (this.disposed || !message || typeof message !== "object") return;
+    const reason = message.reason || null;
+    const candidates = Array.isArray(message.roomCodeCandidates)
+      ? message.roomCodeCandidates.slice(0, 10)
+      : null;
+    if (Array.isArray(message.lobbyNicknameAttempts) && message.lobbyNicknameAttempts.length) {
+      this.log("presence", "lobby_nickname_attempts", {
+        reason,
+        attempts: message.lobbyNicknameAttempts.slice(0, 10)
+      });
+    }
+    const normalizedRoom = this.normalizeRoomCode(message.roomCode || message.room_code || null);
+    const candidateRoom = normalizedRoom || null;
+
+    let contextChanged = false;
+    if (candidateRoom && candidateRoom !== this.roomCode) {
+      const previous = this.roomCode || null;
+      this.roomCode = candidateRoom;
+      this.selfPeerId = null;
+      this.maxPeerSeen = null;
+      this.username = null;
+      this.authLabel = null;
+      this.updateSelfFromRoster();
+      contextChanged = true;
+      this.log("presence", "context_room_code", { from: previous, to: candidateRoom, reason, candidates });
+    }
+
+    const peerId = message.selfPeerId || message.peerId || null;
+    if (peerId && peerId !== this.selfPeerId) {
+      this.selfPeerId = peerId;
+      contextChanged = true;
+    }
+
+    const username = typeof message.username === "string" ? message.username.trim() : "";
+    if (username && username !== this.username) {
+      this.username = username;
+      contextChanged = true;
+      if (!this.lobbyNickname || this.lobbyNickname !== username) {
+        this.lobbyNickname = username;
+      }
+    }
+
+    const auth = typeof message.authLabel === "string" ? message.authLabel.trim() : "";
+    if (auth && auth !== this.authLabel) {
+      this.authLabel = auth;
+      contextChanged = true;
+      if (!this.lobbyAuthLabel || this.lobbyAuthLabel !== auth) {
+        this.lobbyAuthLabel = auth;
+      }
+    }
+
+    if (!this.username && username) {
+      this.username = username;
+      contextChanged = true;
+    }
+    if (!this.authLabel && auth) {
+      this.authLabel = auth;
+      contextChanged = true;
+    }
+
+    if (typeof message.roomUrl === "string" && message.roomUrl.trim()) {
+      const trimmedUrl = message.roomUrl.trim();
+      const currentUrl = this.roomUrl || "";
+      const nextIsTop = /jklm\.fun\//i.test(trimmedUrl);
+      const currentIsTop = /jklm\.fun\//i.test(currentUrl);
+      const shouldUpdate = !trimmedUrl
+        ? false
+        : (!currentUrl)
+          || (nextIsTop && !currentIsTop)
+          || (!currentIsTop && !nextIsTop && trimmedUrl !== currentUrl)
+          || (nextIsTop && currentIsTop && trimmedUrl !== currentUrl);
+      if (shouldUpdate) {
+        this.roomUrl = trimmedUrl;
+        contextChanged = true;
+      }
+    }
+
+    let lobbyChanged = false;
+    const lobbyNickname = typeof message.lobbyNickname === "string" ? message.lobbyNickname.trim() : "";
+    if (lobbyNickname && lobbyNickname !== (this.lobbyNickname || "")) {
+      this.lobbyNickname = lobbyNickname;
+      lobbyChanged = true;
+    }
+    const lobbyAuthLabel = typeof message.lobbyAuthLabel === "string" ? message.lobbyAuthLabel.trim() : "";
+    if (lobbyAuthLabel && lobbyAuthLabel !== (this.lobbyAuthLabel || "")) {
+      this.lobbyAuthLabel = lobbyAuthLabel;
+      lobbyChanged = true;
+    }
+    const lobbyAuthProvider = typeof message.lobbyAuthProvider === "string" ? message.lobbyAuthProvider.trim() : "";
+    if (lobbyAuthProvider && lobbyAuthProvider !== (this.lobbyAuthProvider || "")) {
+      this.lobbyAuthProvider = lobbyAuthProvider;
+      lobbyChanged = true;
+    }
+
+    if (message.lang) {
+      this.updateLanguage(message.lang);
+    }
+
+    const identityChanged = this.applyIdentityFallbacks("presence_context", { log: true });
+
+    if (lobbyChanged) {
+      contextChanged = true;
+      this.log("presence", "lobby_profile_context", {
+        reason,
+        nickname: this.lobbyNickname || null,
+        authLabel: this.lobbyAuthLabel || null,
+        authProvider: this.lobbyAuthProvider || null,
+        nicknameSource: message.lobbyNicknameSource || null,
+        authSource: message.lobbyAuthSource || null
+      });
+      this.persistLobbyProfile("context");
+    }
+
+    this.log("presence", "context_message", {
+      reason,
+      roomCode: candidateRoom,
+      roomUrl: this.roomUrl || null,
+      username: this.username || null,
+      authLabel: this.authLabel || null,
+      selfPeerId: this.selfPeerId || null,
+      candidates,
+      lang: message.lang || null,
+      lobbyNickname: this.lobbyNickname || null,
+      lobbyAuthLabel: this.lobbyAuthLabel || null,
+      lobbyAuthProvider: this.lobbyAuthProvider || null,
+      authSources: Array.isArray(message.authSources) ? message.authSources.slice(0, 10) : null,
+      usernameSources: Array.isArray(message.usernameSources) ? message.usernameSources.slice(0, 10) : null
+    });
+
+    if (contextChanged || identityChanged) {
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
+  handleStorageChange(changes, area) {
+    if (!changes) return;
+    if (area !== "sync" && area !== "local") return;
+    let handled = false;
+    if (Object.prototype.hasOwnProperty.call(changes, ACCOUNT_TOKEN_STORAGE_KEY)) {
+      this.log("presence", "storage_change_account_token", { area });
+      this.refreshAccountToken();
+      handled = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, LOBBY_PROFILE_STORAGE_KEY)) {
+      this.log("presence", "storage_change_lobby_profile", { area });
+      this.refreshLobbyProfile();
+      handled = true;
+    }
+    if (!handled) return;
+  }
+
+  async refreshAccountToken() {
+    const readKey = async (area) => {
+      const data = await storageGet(area, [ACCOUNT_TOKEN_STORAGE_KEY]);
+      const raw = data?.[ACCOUNT_TOKEN_STORAGE_KEY];
+      if (typeof raw !== "string") return null;
+      const trimmed = raw.trim();
+      return trimmed ? trimmed : null;
+    };
+    let token = await readKey("sync");
+    if (!token) token = await readKey("local");
+    if (token !== this.accountToken) {
+      this.log("presence", "account_token_update", {
+        token: token ? this.maskToken(token) : null
+      });
+      this.accountToken = token;
+      this.queueHeartbeat({ immediate: true });
+    } else {
+      this.log("presence", "account_token_unchanged", {
+        token: token ? this.maskToken(token) : null
+      });
+    }
+  }
+
+  ensureRosterObserver() {
+    if (this.disposed) return;
+    const container = document.querySelector(".chatters");
+    if (container && container !== this.chattersContainer) {
+      if (this.chattersObserver) {
+        try { this.chattersObserver.disconnect(); } catch (_) { /* ignore */ }
+      }
+      this.chattersContainer = container;
+      this.chattersObserver = new MutationObserver(() => this.handleRosterMutated());
+      try {
+        this.chattersObserver.observe(container, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["data-peer-id", "class"]
+        });
+      } catch (_) { /* ignore */ }
+      this.log("presence", "roster_observer_attached", {});
+      this.updateSelfFromRoster();
+    } else if (!container && this.chattersContainer) {
+      if (this.chattersObserver) {
+        try { this.chattersObserver.disconnect(); } catch (_) { /* ignore */ }
+      }
+      this.chattersContainer = null;
+      this.chattersObserver = null;
+      this.log("presence", "roster_observer_detached", {});
+    }
+  }
+
+  handleRosterMutated() {
+    this.log("presence", "roster_mutation", {});
+    this.updateSelfFromRoster();
+  }
+
+  updateSelfFromRoster() {
+    if (this.disposed) return;
+    const nodes = Array.from(document.querySelectorAll("[data-peer-id]")).filter((node) => {
+      if (!node || typeof node.getAttribute !== "function") return false;
+      if (!node.querySelector) return false;
+      return !!node.querySelector(".nickname");
+    });
+    if (!nodes.length) {
+      this.log("presence", "roster_empty", {});
+      if (this.applyIdentityFallbacks("roster_empty", { log: true })) {
+        this.queueHeartbeat({ immediate: true });
+      }
+      return;
+    }
+
+    let storedNode = null;
+    let explicitSelfNode = null;
+    let nicknameNode = null;
+    let maxNode = null;
+    let maxPeerId = -Infinity;
+    const normalizedNickname = (this.lobbyNickname || "").trim().toLowerCase();
+
+    for (const node of nodes) {
+      const attr = node.getAttribute("data-peer-id") || "";
+      const trimmedAttr = attr.trim();
+      if (!storedNode && this.selfPeerId != null && trimmedAttr === this.selfPeerId) {
+        storedNode = node;
+      }
+      if (!explicitSelfNode && node.classList?.contains("self")) {
+        explicitSelfNode = node;
+      }
+      if (!nicknameNode && normalizedNickname) {
+        const nickText = (node.querySelector(".nickname")?.textContent || "").trim().toLowerCase();
+        if (nickText && nickText === normalizedNickname) {
+          nicknameNode = node;
+        }
+      }
+      const numeric = Number(trimmedAttr);
+      if (Number.isFinite(numeric) && numeric > maxPeerId) {
+        maxPeerId = numeric;
+        maxNode = node;
+      } else if (!Number.isFinite(numeric) && !maxNode) {
+        maxNode = node;
+      }
+    }
+
+    let rosterReset = false;
+    if (Number.isFinite(maxPeerId)) {
+      if (this.maxPeerSeen != null && maxPeerId < this.maxPeerSeen) {
+        rosterReset = true;
+      }
+      this.maxPeerSeen = maxPeerId;
+    }
+
+    if (rosterReset) {
+      this.selfPeerId = null;
+      this.username = null;
+      this.authLabel = null;
+      storedNode = null;
+      this.log("presence", "roster_reset_detected", { nodes: nodes.length });
+    }
+
+    const targetNode = storedNode || explicitSelfNode || nicknameNode || maxNode;
+    if (!targetNode) {
+      this.log("presence", "roster_no_target", { nodes: nodes.length });
+      if (this.applyIdentityFallbacks("roster_no_target", { log: true })) {
+        this.queueHeartbeat({ immediate: true });
+      }
+      return;
+    }
+
+    const peerAttr = targetNode.getAttribute("data-peer-id") || null;
+    let contextChanged = false;
+
+    if (peerAttr && peerAttr !== this.selfPeerId) {
+      this.selfPeerId = peerAttr;
+      contextChanged = true;
+    }
+
+    const nicknameEl = targetNode.querySelector(".nickname");
+    const nickname = nicknameEl ? (nicknameEl.textContent || "").trim() : "";
+    let lobbyUpdated = false;
+    if (nickname && nickname !== this.username) {
+      this.username = nickname;
+      contextChanged = true;
+    } else if (!this.username && nickname) {
+      this.username = nickname;
+      contextChanged = true;
+    }
+    if (nickname && nickname !== (this.lobbyNickname || "")) {
+      this.lobbyNickname = nickname;
+      lobbyUpdated = true;
+    }
+
+    const authEl = targetNode.querySelector(".auth");
+    const auth = authEl ? (authEl.textContent || "").trim() : "";
+    const authLabel = auth || "Guest";
+    if (authLabel !== this.authLabel) {
+      this.authLabel = authLabel;
+      contextChanged = true;
+    }
+    if (authLabel !== (this.lobbyAuthLabel || "")) {
+      this.lobbyAuthLabel = authLabel;
+      lobbyUpdated = true;
+    }
+
+    const identityChanged = this.applyIdentityFallbacks("roster_update", { log: true });
+
+    if (lobbyUpdated) {
+      this.persistLobbyProfile("roster");
+    }
+
+    if (contextChanged || identityChanged) {
+      this.log("presence", "roster_context_update", {
+        selfPeerId: this.selfPeerId,
+        username: this.username,
+        authLabel: this.authLabel,
+        nodes: nodes.length,
+        rosterReset
+      });
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+
+  checkRoomCode(initial) {
+    if (this.disposed) return;
+    const href = this.extractRoomUrl();
+    if (href && href !== (this.roomUrl || "")) {
+      this.roomUrl = href;
+    }
+    const details = this.extractRoomCodeDetails();
+    const newCode = details.code;
+    const now = Date.now();
+    if (!newCode && this.roomCode && this.roomCodeLockUntil && now < this.roomCodeLockUntil) {
+      return;
+    }
+    if (newCode === this.roomCode) return;
+    this.log("presence", "room_code_update", {
+      from: this.roomCode || null,
+      to: newCode || null,
+      attempts: details.attempts,
+      initial: !!initial
+    });
+    this.roomCode = newCode;
+    this.selfPeerId = null;
+    this.maxPeerSeen = null;
+    this.username = null;
+    this.authLabel = null;
+    this.updateSelfFromRoster();
+    if (!initial) {
+      this.queueHeartbeat({ immediate: true });
+      this.requestTopContext("room_change");
+    }
+  }
+
+  extractRoomUrl() {
+    try {
+      const href = window?.location?.href;
+      if (typeof href === "string" && href.trim()) return href.trim();
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  extractRoomCode() {
+    const details = this.extractRoomCodeDetails();
+    return details.code;
+  }
+
+  normalizeRoomCode(value) {
+    if (value == null) return null;
+    const trimmed = value.toString().trim();
+    if (!trimmed) return null;
+    const alnum = trimmed.replace(/[^0-9a-z]/gi, "");
+    if (!alnum) return null;
+    if (alnum.length < 4 || alnum.length > 6) return null;
+    const upper = alnum.toUpperCase();
+    if (!/^[A-Z0-9]{4,6}$/.test(upper)) return null;
+    return upper;
+  }
+
+  extractRoomCodeDetails() {
+    const attempts = [];
+    let resolved = null;
+    const limit = 32;
+    const reservedPathCodes = new Set(["GAMES"]);
+
+    const record = (entry) => {
+      if (attempts.length < limit) attempts.push(entry);
+    };
+
+    const shouldIgnore = (source, normalized) => {
+      if (!normalized) return false;
+      if (!source) return false;
+      if (source.startsWith("location.path")) {
+        return reservedPathCodes.has(normalized);
+      }
+      return false;
+    };
+
+    const consider = (source, getter) => {
+      try {
+        const raw = typeof getter === "function" ? getter() : getter;
+        const normalized = this.normalizeRoomCode(raw);
+        const entry = { source, raw: raw ?? null, normalized: normalized || null };
+        if (normalized && shouldIgnore(source, normalized)) {
+          entry.ignored = true;
+          record(entry);
+          return null;
+        }
+        if (resolved) entry.skipped = true;
+        record(entry);
+        if (!resolved && normalized) {
+          resolved = normalized;
+        }
+        return normalized;
+      } catch (err) {
+        record({ source, error: err?.message || String(err) || true });
+        return null;
+      }
+    };
+
+    consider("window.room.code", () => window?.room?.code);
+    consider("window.room.roomCode", () => window?.room?.roomCode);
+    consider("window.game.roomCode", () => window?.game?.roomCode);
+    consider("window.gameClient.roomCode", () => window?.gameClient?.roomCode);
+    consider("window.gameClient.state.roomCode", () => window?.gameClient?.state?.roomCode);
+    consider("window.room.match?.code", () => window?.room?.match?.code);
+
+    consider("location.search.room", () => {
+      const params = new URLSearchParams(window.location.search || "");
+      return params.get("room");
+    });
+
+    try {
+      if (typeof socket !== "undefined" && socket && socket.io) {
+        const query = socket.io.opts ? socket.io.opts.query : null;
+        if (query) {
+          if (typeof query === "string") {
+            consider("socket.io.opts.query", query);
+            try {
+              const params = new URLSearchParams(query);
+              consider("socket.io.opts.query.roomCode", params.get("roomCode"));
+              consider("socket.io.opts.query.room", params.get("room"));
+              consider("socket.io.opts.query.code", params.get("code"));
+            } catch (_) { /* ignore */ }
+          } else if (Array.isArray(query)) {
+            query.forEach((value, idx) => consider(`socket.io.opts.query[${idx}]`, value));
+          } else if (typeof query === "object") {
+            Object.entries(query).forEach(([key, value]) => consider(`socket.io.opts.query.${key}`, value));
+          }
+        }
+      }
+    } catch (err) {
+      record({ source: "socket.io.opts.query", error: err?.message || String(err) || true });
+    }
+
+    try {
+      if (typeof socket !== "undefined" && socket && socket.io && socket.io.engine && socket.io.engine.transport) {
+        const transport = socket.io.engine.transport;
+        const optsQuery = transport.opts ? transport.opts.query : null;
+        if (optsQuery) {
+          if (typeof optsQuery === "string") {
+            consider("socket.io.engine.opts.query", optsQuery);
+            try {
+              const params = new URLSearchParams(optsQuery);
+              consider("socket.io.engine.opts.query.roomCode", params.get("roomCode"));
+              consider("socket.io.engine.opts.query.room", params.get("room"));
+              consider("socket.io.engine.opts.query.code", params.get("code"));
+            } catch (_) { /* ignore */ }
+          } else if (Array.isArray(optsQuery)) {
+            optsQuery.forEach((value, idx) => consider(`socket.io.engine.opts.query[${idx}]`, value));
+          } else if (typeof optsQuery === "object") {
+            Object.entries(optsQuery).forEach(([key, value]) => consider(`socket.io.engine.opts.query.${key}`, value));
+          }
+        }
+        const engineQuery = transport.query || (transport.socket ? transport.socket.query : null);
+        if (engineQuery) {
+          if (typeof engineQuery === "string") {
+            consider("socket.io.engine.transport.query", engineQuery);
+            try {
+              const params = new URLSearchParams(engineQuery);
+              consider("socket.io.engine.transport.query.roomCode", params.get("roomCode"));
+              consider("socket.io.engine.transport.query.room", params.get("room"));
+              consider("socket.io.engine.transport.query.code", params.get("code"));
+            } catch (_) { /* ignore */ }
+          } else if (Array.isArray(engineQuery)) {
+            engineQuery.forEach((value, idx) => consider(`socket.io.engine.transport.query[${idx}]`, value));
+          } else if (typeof engineQuery === "object") {
+            Object.entries(engineQuery).forEach(([key, value]) => consider(`socket.io.engine.transport.query.${key}`, value));
+          }
+        }
+      }
+    } catch (err) {
+      record({ source: "socket.io.engine.opts.query", error: err?.message || String(err) || true });
+    }
+
+    try {
+      if (typeof socket !== "undefined" && socket && socket.io) {
+        const uri = socket.io.uri;
+        if (uri) {
+          consider("socket.io.uri", uri);
+          try {
+            const parsed = new URL(uri, window.location.href);
+            consider("socket.io.uri.roomCode", parsed.searchParams.get("roomCode"));
+            consider("socket.io.uri.room", parsed.searchParams.get("room"));
+            consider("socket.io.uri.code", parsed.searchParams.get("code"));
+          } catch (_) { /* ignore */ }
+        }
+      }
+    } catch (err) {
+      record({ source: "socket.io.uri", error: err?.message || String(err) || true });
+    }
+
+    const pathSegments = (window.location.pathname || "").split("/").filter(Boolean);
+    for (let i = pathSegments.length - 1; i >= 0; i -= 1) {
+      consider(`location.path[${i}]`, pathSegments[i]);
+    }
+
+    consider("location.hash", () => (window.location.hash || "").replace(/^#/, ""));
+
+    const host = window.location.hostname || "";
+    if (host.includes(".")) {
+      consider("location.host-prefix", host.split(".")[0]);
+    }
+
+    if (document.referrer) {
+      try {
+        const ref = new URL(document.referrer);
+        const refSegments = ref.pathname.split("/").filter(Boolean);
+        for (let i = refSegments.length - 1; i >= 0; i -= 1) {
+          consider(`referrer.path[${i}]`, refSegments[i]);
+        }
+      } catch (err) {
+        record({ source: "referrer", error: err?.message || String(err) || true });
+      }
+    }
+
+    try {
+      if (window.top && window.top !== window) {
+        try {
+          const topPath = window.top.location?.pathname || "";
+          const topSegments = topPath.split("/").filter(Boolean);
+          for (let i = topSegments.length - 1; i >= 0; i -= 1) {
+            consider(`top.path[${i}]`, topSegments[i]);
+          }
+        } catch (err) {
+          record({ source: "top.path", error: err?.message || "cross_origin" });
+        }
+        try {
+          const topSearch = window.top.location?.search || "";
+          if (topSearch) {
+            const params = new URLSearchParams(topSearch);
+            consider("top.search.room", params.get("room"));
+          }
+        } catch (err) {
+          record({ source: "top.search", error: err?.message || "cross_origin" });
+        }
+      }
+    } catch (err) {
+      record({ source: "top", error: err?.message || String(err) || true });
+    }
+
+    try {
+      const domRoomCode = document.querySelector("[data-room-code]");
+      if (domRoomCode) {
+        consider("dom[data-room-code]", () => domRoomCode.getAttribute("data-room-code") || domRoomCode.textContent);
+      }
+    } catch (err) {
+      record({ source: "dom[data-room-code]", error: err?.message || String(err) || true });
+    }
+
+    try {
+      const roomLabel = document.querySelector(".roomCode, .room-name, .roomName");
+      if (roomLabel) {
+        consider("dom.roomCode", () => roomLabel.textContent);
+      }
+    } catch (err) {
+      record({ source: "dom.roomCode", error: err?.message || String(err) || true });
+    }
+
+    return { code: resolved, attempts };
+  }
+
+  updateLanguage(newLang) {
+    if (this.disposed) return;
+    let next = typeof newLang === "string" ? newLang : "";
+    if (this.game && typeof this.game.normalizeLang === "function") {
+      try { next = this.game.normalizeLang(newLang); }
+      catch (_) { /* ignore */ }
+    }
+    if (!next) next = "en";
+    if (next !== this.lang) {
+      this.log("presence", "lang_update", { from: this.lang, to: next });
+      this.lang = next;
+      this.queueHeartbeat({ immediate: true });
+    }
+  }
+}
+
 async function setupBuddy() {
   // Inject page-side listener (emits myTurn/correct/fail events)
   const s = document.createElement("script");
@@ -2343,10 +4369,25 @@ async function setupBuddy() {
   s.onload = function () { this.remove(); };
   document.body.appendChild(s);
 
+  const diagnostics = new DiagnosticsLog();
+  try {
+    diagnostics.log("ui", "setup_start", {
+      href: window.location?.href || null,
+      frame: window.top === window ? "top" : "nested"
+    });
+  } catch (_) { /* ignore logging errors */ }
+  if (typeof window !== "undefined") {
+    try { window.__litsharkDiagnostics = diagnostics; }
+    catch (_) { /* ignore */ }
+  }
+
   const game = new Game(getInput());
   setTimeout(() => (game.input = getInput()), 1000);
 
-  const { render } = createOverlay(game);
+  const presence = new PresenceReporter(game, diagnostics);
+  presence.updateLanguage(game.lang);
+
+  const { render } = createOverlay(game, diagnostics);
 
   const notifySettingsChanged = (opts = {}) => {
     if (typeof game._notifySettingsChanged === "function") {
@@ -2364,8 +4405,17 @@ async function setupBuddy() {
 
     if ("myTurn" in data) game.setMyTurn(data.myTurn);
 
-    if (data.type === "setup") {
+    if (data.type === "presenceContext") {
+      if (presence && typeof presence.handlePresenceContext === "function") {
+        presence.handlePresenceContext(data);
+      }
+    } else if (data.type === TOP_CONTEXT_RESPONSE_TYPE) {
+      if (presence && typeof presence.handleTopContext === "function") {
+        presence.handleTopContext(data);
+      }
+    } else if (data.type === "setup") {
       await game.setLang(data.language);
+      presence.updateLanguage(game.lang);
       if (data.myTurn) {
         game.syllable = data.syllable;
         game.selfRound = (game.selfRound|0) + 1;     // new round for me
@@ -2396,6 +4446,8 @@ async function setupBuddy() {
     }
   });
 
+  presence.requestTopContext("listener_ready");
+
   // hotkeys
   window.addEventListener("keydown", function (ev) {
     if (!ev.altKey) return;
@@ -2417,6 +4469,14 @@ async function setupBuddy() {
     render();
     ev.preventDefault();
   });
+}
+
+try {
+  if (window.top === window) {
+    setupTopContextBridge();
+  }
+} catch (err) {
+  console.warn("[BombPartyShark] Failed to setup top context bridge", err);
 }
 
 if (isBombPartyFrame()) setupBuddy();
