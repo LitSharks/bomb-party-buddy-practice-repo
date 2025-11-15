@@ -38,6 +38,86 @@ function canUseAsyncClipboard() {
   return true;
 }
 
+const runtimeMessagingHelpers = (() => {
+  const KEY = "__litsharkRuntimeMessaging";
+  if (typeof window !== "undefined" && window[KEY]) {
+    return window[KEY];
+  }
+  const patterns = [
+    "Extension context invalidated",
+    "The message port closed before a response was received"
+  ];
+  const toMessage = (error) => {
+    if (!error) return "";
+    if (error instanceof Error && typeof error.message === "string") return error.message;
+    if (typeof error === "object" && typeof error.message === "string") return error.message;
+    return String(error);
+  };
+  const isTransient = (error) => {
+    const message = toMessage(error);
+    if (!message) return false;
+    return patterns.some((fragment) => message.includes(fragment));
+  };
+  const isUnavailable = (error) => {
+    const message = toMessage(error);
+    if (!message) return false;
+    if (message === "extension_unavailable") return true;
+    return isTransient(error);
+  };
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sendOnce = (payload) => new Promise((resolve, reject) => {
+    try {
+      if (!chrome?.runtime?.id) {
+        reject(new Error("extension_unavailable"));
+        return;
+      }
+      chrome.runtime.sendMessage(payload, (resp) => {
+        const lastError = chrome.runtime.lastError;
+        if (lastError) {
+          reject(new Error(lastError.message || String(lastError)));
+          return;
+        }
+        if (!resp) {
+          resolve(null);
+          return;
+        }
+        if (resp.error) {
+          reject(new Error(resp.error));
+          return;
+        }
+        resolve(resp);
+      });
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+  const sendMessage = (payload, options = {}) => {
+    const attempts = Math.max(1, options.attempts || 3);
+    const baseDelay = Math.max(0, options.baseDelay || 150);
+    const execute = (attempt = 0) => sendOnce(payload).catch((err) => {
+      if (attempt + 1 >= attempts || !isTransient(err)) {
+        throw err instanceof Error ? err : new Error(toMessage(err));
+      }
+      const delayMs = baseDelay * Math.pow(2, attempt);
+      return delay(delayMs).then(() => execute(attempt + 1));
+    });
+    return execute(0);
+  };
+  const helpers = {
+    sendMessage,
+    runtimeErrorMessage: toMessage,
+    isRuntimeUnavailableError: isUnavailable
+  };
+  if (typeof window !== "undefined") {
+    window[KEY] = helpers;
+  }
+  return helpers;
+})();
+
+const runtimeMessagingErrorMessage = runtimeMessagingHelpers.runtimeErrorMessage;
+const runtimeMessagingIsUnavailable = runtimeMessagingHelpers.isRuntimeUnavailableError;
+const runtimeSend = runtimeMessagingHelpers.sendMessage;
+
 // Clipboard fallback (permissions policy may block navigator.clipboard)
 async function copyPlain(text) {
   const payload = text ?? "";
@@ -3059,28 +3139,10 @@ function setupTopContextBridge() {
   broadcast(currentSnapshot, "init");
 }
 
-function sendPresenceCommand(message) {
-  return new Promise((resolve, reject) => {
-    try {
-      chrome.runtime.sendMessage(message, (resp) => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-          return;
-        }
-        if (!resp) {
-          resolve(null);
-          return;
-        }
-        if (resp.error) {
-          reject(new Error(resp.error));
-          return;
-        }
-        resolve(resp);
-      });
-    } catch (err) {
-      reject(err);
-    }
-  });
+function sendPresenceCommand(message, options = {}) {
+  const attempts = options.attempts || 5;
+  const baseDelay = options.baseDelay || 180;
+  return runtimeSend(message, { attempts, baseDelay });
 }
 
 class PresenceReporter {
@@ -3108,6 +3170,8 @@ class PresenceReporter {
     this.registered = false;
     this.leaveSent = false;
     this.disposed = false;
+    this.runtimeUnavailable = false;
+    this.skipLeaveOnDispose = false;
     this.roomCodeLockUntil = 0;
     this.suspended = document.visibilityState === "hidden";
     this.nextHeartbeatTimer = null;
@@ -3468,6 +3532,10 @@ class PresenceReporter {
       });
       return;
     }
+    if (this.runtimeUnavailable) {
+      this.log("presence", "session_register_skip", { reason: "runtime_unavailable" });
+      return;
+    }
     const deviceId = await this.ensureDeviceId().catch(() => null);
     if (!deviceId) {
       this.log("presence", "session_register_no_device", {});
@@ -3485,11 +3553,16 @@ class PresenceReporter {
         deviceId
       });
     } catch (err) {
+      const message = runtimeMessagingErrorMessage(err);
       this.log("presence", "session_register_error", {
         sessionId: this.sessionId,
-        error: err?.message || String(err)
+        error: message
       });
-      console.warn("[BombPartyShark] Failed to register presence session", err);
+      if (this.runtimeUnavailable || runtimeMessagingIsUnavailable(err)) {
+        this.handleRuntimeUnavailable(err, "register_session");
+      } else {
+        console.warn("[BombPartyShark] Failed to register presence session", err);
+      }
     }
   }
 
@@ -3498,17 +3571,27 @@ class PresenceReporter {
       this.log("presence", "session_unregister_skip", {});
       return;
     }
+    if (this.runtimeUnavailable) {
+      this.registered = false;
+      this.log("presence", "session_unregister_skip", { reason: "runtime_unavailable" });
+      return;
+    }
     this.registered = false;
     try {
       this.log("presence", "session_unregister_attempt", { sessionId: this.sessionId });
       await sendPresenceCommand({ type: "presenceUnregister", sessionId: this.sessionId });
       this.log("presence", "session_unregister_success", { sessionId: this.sessionId });
     } catch (err) {
+      const message = runtimeMessagingErrorMessage(err);
       this.log("presence", "session_unregister_error", {
         sessionId: this.sessionId,
-        error: err?.message || String(err)
+        error: message
       });
-      console.warn("[BombPartyShark] Failed to unregister presence session", err);
+      if (this.runtimeUnavailable || runtimeMessagingIsUnavailable(err)) {
+        this.handleRuntimeUnavailable(err, "unregister_session");
+      } else {
+        console.warn("[BombPartyShark] Failed to unregister presence session", err);
+      }
     }
   }
 
@@ -3519,11 +3602,33 @@ class PresenceReporter {
       await sendPresenceCommand({ type: "presenceSend", payload });
       this.log("presence", "presence_post_success", { payload: safe });
     } catch (err) {
+      const message = runtimeMessagingErrorMessage(err);
       this.log("presence", "presence_post_error", {
         payload: safe,
-        error: err?.message || String(err)
+        error: message
       });
-      throw err;
+      if (this.runtimeUnavailable || runtimeMessagingIsUnavailable(err)) {
+        this.handleRuntimeUnavailable(err, "presence_post");
+      }
+      throw err instanceof Error ? err : new Error(message);
+    }
+  }
+
+  handleRuntimeUnavailable(err, context) {
+    if (this.runtimeUnavailable) return;
+    this.runtimeUnavailable = true;
+    this.skipLeaveOnDispose = true;
+    this.leaveSent = true;
+    this.registered = false;
+    this.pendingImmediate = false;
+    const message = runtimeMessagingErrorMessage(err);
+    this.log("presence", "runtime_unavailable", {
+      context: context || null,
+      error: message
+    });
+    console.warn(`[BombPartyShark] Extension runtime unavailable during ${context || 'unknown'}`, err);
+    if (!this.disposed) {
+      this.dispose();
     }
   }
 
@@ -3636,8 +3741,13 @@ class PresenceReporter {
       this.retryAttempt = 0;
       this.log("presence", "heartbeat_send_success", { payload: this.maskPayload(payload) });
     } catch (err) {
+      const message = runtimeMessagingErrorMessage(err);
+      this.log("presence", "heartbeat_send_error", { error: message });
+      if (this.runtimeUnavailable || runtimeMessagingIsUnavailable(err)) {
+        this.handleRuntimeUnavailable(err, "heartbeat");
+        return;
+      }
       console.warn("[BombPartyShark] Failed to send presence heartbeat", err);
-      this.log("presence", "heartbeat_send_error", { error: err?.message || String(err) });
       this.retryAttempt += 1;
       const delay = this.computeRetryDelay();
       this.log("presence", "heartbeat_retry_scheduled", { delay, attempt: this.retryAttempt });
@@ -3710,6 +3820,10 @@ class PresenceReporter {
   async trySendLeave() {
     if (this.leaveSent || !this.sessionId) return;
     this.leaveSent = true;
+    if (this.runtimeUnavailable) {
+      this.log("presence", "leave_skip_runtime_unavailable", {});
+      return;
+    }
     this.log("presence", "leave_attempt", { sessionId: this.sessionId });
     const deviceId = await this.ensureDeviceId().catch(() => null);
     if (!deviceId) {
@@ -3726,8 +3840,13 @@ class PresenceReporter {
       await this.postPresencePayload(payload);
       this.log("presence", "leave_success", { payload: this.maskPayload(payload) });
     } catch (err) {
-      console.warn("[BombPartyShark] Failed to send presence leave", err);
-      this.log("presence", "leave_error", { error: err?.message || String(err) });
+      const message = runtimeMessagingErrorMessage(err);
+      this.log("presence", "leave_error", { error: message });
+      if (this.runtimeUnavailable || runtimeMessagingIsUnavailable(err)) {
+        this.handleRuntimeUnavailable(err, "leave");
+      } else {
+        console.warn("[BombPartyShark] Failed to send presence leave", err);
+      }
     } finally {
       await this.unregisterSession();
     }
@@ -3751,7 +3870,11 @@ class PresenceReporter {
     document.removeEventListener("visibilitychange", this.visibilityHandler, true);
     window.removeEventListener("pagehide", this.pageHideHandler);
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
-    this.trySendLeave();
+    if (this.skipLeaveOnDispose || this.runtimeUnavailable) {
+      this.log("presence", "leave_skip_runtime_unavailable", {});
+    } else {
+      this.trySendLeave();
+    }
   }
 
   handlePresenceContext(message) {

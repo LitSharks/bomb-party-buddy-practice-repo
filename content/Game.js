@@ -15,6 +15,102 @@ const WORD_CACHE = new Map();
 const WORD_CACHE_LOADING = new Map();
 const WORD_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const RUNTIME_MESSAGING_KEY = "__litsharkRuntimeMessaging";
+const RUNTIME_TRANSIENT_ERROR_PATTERNS = Object.freeze([
+  "Extension context invalidated",
+  "The message port closed before a response was received"
+]);
+
+function runtimeErrorMessage(error) {
+  if (!error) return "";
+  if (error instanceof Error && typeof error.message === "string") return error.message;
+  if (typeof error === "object" && typeof error.message === "string") return error.message;
+  return String(error);
+}
+
+function isTransientRuntimeError(error) {
+  const message = runtimeErrorMessage(error);
+  if (!message) return false;
+  return RUNTIME_TRANSIENT_ERROR_PATTERNS.some((fragment) => message.includes(fragment));
+}
+
+function isRuntimeUnavailableError(error) {
+  const message = runtimeErrorMessage(error);
+  if (!message) return false;
+  if (message === "extension_unavailable") return true;
+  return isTransientRuntimeError(error);
+}
+
+function runtimeDelay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createRuntimeSendMessage() {
+  const sendOnce = (payload) => new Promise((resolve, reject) => {
+    try {
+      if (!chrome?.runtime?.id) {
+        reject(new Error("extension_unavailable"));
+        return;
+      }
+      chrome.runtime.sendMessage(payload, (resp) => {
+        const lastError = chrome.runtime.lastError;
+        if (lastError) {
+          reject(new Error(lastError.message || String(lastError)));
+          return;
+        }
+        if (!resp) {
+          resolve(null);
+          return;
+        }
+        if (resp.error) {
+          reject(new Error(resp.error));
+          return;
+        }
+        resolve(resp);
+      });
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+
+  const sendWithRetry = (payload, options = {}) => {
+    const attempts = Math.max(1, options.attempts || 3);
+    const baseDelay = Math.max(0, options.baseDelay || 150);
+
+    const execute = (attempt = 0) => sendOnce(payload).catch((err) => {
+      if (attempt + 1 >= attempts || !isTransientRuntimeError(err)) {
+        throw err instanceof Error ? err : new Error(runtimeErrorMessage(err));
+      }
+      const delayMs = baseDelay * Math.pow(2, attempt);
+      return runtimeDelay(delayMs).then(() => execute(attempt + 1));
+    });
+
+    return execute(0);
+  };
+
+  return sendWithRetry;
+}
+
+function ensureRuntimeMessagingHelpers() {
+  if (typeof window !== "undefined" && window[RUNTIME_MESSAGING_KEY]) {
+    return window[RUNTIME_MESSAGING_KEY];
+  }
+  const helpers = {
+    sendMessage: createRuntimeSendMessage(),
+    runtimeErrorMessage,
+    isRuntimeUnavailableError
+  };
+  if (typeof window !== "undefined") {
+    window[RUNTIME_MESSAGING_KEY] = helpers;
+  }
+  return helpers;
+}
+
+const __runtimeMessaging = ensureRuntimeMessagingHelpers();
+const runtimeSendMessage = __runtimeMessaging.sendMessage;
+const runtimeMessagingErrorMessage = __runtimeMessaging.runtimeErrorMessage;
+const runtimeMessagingIsUnavailable = __runtimeMessaging.isRuntimeUnavailableError;
+
 const LANGUAGE_LABELS = Object.freeze({
   "en": { short: "EN", name: "English" },
   "de": { short: "DE", name: "Deutsch" },
@@ -371,26 +467,37 @@ class Game {
 
   // ---- background fetch/post (avoids CORS) ----
   async extFetch(url) {
-    return new Promise((resolve, reject) => {
-      try {
-        chrome.runtime.sendMessage({ type: "extFetch", url }, (resp) => {
-          if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-          if (!resp || resp.error) return reject(new Error(resp?.error || "No response"));
-          resolve(resp.text || "");
-        });
-      } catch (e) { reject(e); }
-    });
+    try {
+      const resp = await runtimeSendMessage(
+        { type: "extFetch", url },
+        { attempts: 4, baseDelay: 150 }
+      );
+      return resp?.text || "";
+    } catch (err) {
+      if (runtimeMessagingIsUnavailable(err) && typeof fetch === "function") {
+        try {
+          const direct = await fetch(url, { cache: "no-store", credentials: "omit" });
+          if (!direct.ok) {
+            throw new Error(`HTTP ${direct.status}`);
+          }
+          return await direct.text();
+        } catch (_) {
+          throw err instanceof Error ? err : new Error(runtimeMessagingErrorMessage(err));
+        }
+      }
+      throw err instanceof Error ? err : new Error(runtimeMessagingErrorMessage(err));
+    }
   }
   async extPost(url, body) {
-    return new Promise((resolve, reject) => {
-      try {
-        chrome.runtime.sendMessage({ type: "extPost", url, body }, (resp) => {
-          if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-          if (!resp || resp.error) return reject(new Error(resp?.error || "No response"));
-          resolve(resp.text || "");
-        });
-      } catch (e) { reject(e); }
-    });
+    try {
+      const resp = await runtimeSendMessage(
+        { type: "extPost", url, body },
+        { attempts: 4, baseDelay: 150 }
+      );
+      return resp?.text || "";
+    } catch (err) {
+      throw err instanceof Error ? err : new Error(runtimeMessagingErrorMessage(err));
+    }
   }
 
 
