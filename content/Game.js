@@ -15,6 +15,50 @@ const WORD_CACHE = new Map();
 const WORD_CACHE_LOADING = new Map();
 const WORD_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const LOCAL_MAIN_WORD_LISTS = Object.freeze({
+  "en": "words1/en.txt",
+  "de": "words1/de.txt",
+  "fr": "words1/fr.txt",
+  "es": "words1/es.txt",
+  "pt-br": "words1/pt-br.txt",
+  "br": "words1/br.txt",
+  "nah": "words1/nah.txt",
+  "pok-en": "words1/pok-en.txt",
+  "pok-fr": "words1/pok-fr.txt",
+  "pok-de": "words1/pok-de.txt"
+});
+
+const LOCAL_FOUL_WORD_LISTS = Object.freeze({
+  "en": "words1/foul-words-en.txt"
+});
+
+const LOCAL_FOUL_JSON_LISTS = Object.freeze({
+  "en": "words1/foul-words.json"
+});
+
+const LOCAL_POKEMON_WORD_LISTS = Object.freeze({
+  "pok-en": "words1/pok-en.txt",
+  "pok-fr": "words1/pok-fr.txt",
+  "pok-de": "words1/pok-de.txt"
+});
+
+function gameIsExtensionContextInvalidatedMessage(message) {
+  if (!message) return false;
+  const normalized = String(message).toLowerCase();
+  return normalized.includes('context invalidated') || normalized.includes('message port closed before a response was received');
+}
+
+function gameToChromeRuntimeError(raw, fallbackMessage = 'chrome_runtime_error') {
+  const message = (raw && raw.message) ? raw.message : (typeof raw === 'string' ? raw : String(raw || fallbackMessage));
+  const err = new Error(message || fallbackMessage);
+  if (gameIsExtensionContextInvalidatedMessage(message)) {
+    err.code = 'extension_context_invalidated';
+  } else {
+    err.code = 'chrome_runtime_error';
+  }
+  return err;
+}
+
 const LANGUAGE_LABELS = Object.freeze({
   "en": { short: "EN", name: "English" },
   "de": { short: "DE", name: "Deutsch" },
@@ -374,22 +418,34 @@ class Game {
     return new Promise((resolve, reject) => {
       try {
         chrome.runtime.sendMessage({ type: "extFetch", url }, (resp) => {
-          if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-          if (!resp || resp.error) return reject(new Error(resp?.error || "No response"));
+          if (chrome.runtime.lastError) {
+            reject(gameToChromeRuntimeError(chrome.runtime.lastError));
+            return;
+          }
+          if (!resp || resp.error) {
+            reject(gameToChromeRuntimeError({ message: resp?.error || "No response" }));
+            return;
+          }
           resolve(resp.text || "");
         });
-      } catch (e) { reject(e); }
+      } catch (e) { reject(gameToChromeRuntimeError(e)); }
     });
   }
   async extPost(url, body) {
     return new Promise((resolve, reject) => {
       try {
         chrome.runtime.sendMessage({ type: "extPost", url, body }, (resp) => {
-          if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-          if (!resp || resp.error) return reject(new Error(resp?.error || "No response"));
+          if (chrome.runtime.lastError) {
+            reject(gameToChromeRuntimeError(chrome.runtime.lastError));
+            return;
+          }
+          if (!resp || resp.error) {
+            reject(gameToChromeRuntimeError({ message: resp?.error || "No response" }));
+            return;
+          }
           resolve(resp.text || "");
         });
-      } catch (e) { reject(e); }
+      } catch (e) { reject(gameToChromeRuntimeError(e)); }
     });
   }
 
@@ -433,6 +489,89 @@ class Game {
       throw err;
     }
   }
+
+  _resolveLocalListPath(lang, listType) {
+    if (!lang || !listType) return null;
+    const normalized = String(lang).toLowerCase();
+    if (listType === 'main') {
+      return LOCAL_MAIN_WORD_LISTS[normalized] || null;
+    }
+    if (listType === 'foul') {
+      return LOCAL_FOUL_WORD_LISTS[normalized] || null;
+    }
+    if (listType === 'pokemon') {
+      if (LOCAL_POKEMON_WORD_LISTS[normalized]) return LOCAL_POKEMON_WORD_LISTS[normalized];
+      if (normalized === 'en' && LOCAL_POKEMON_WORD_LISTS['pok-en']) return LOCAL_POKEMON_WORD_LISTS['pok-en'];
+      if (normalized === 'fr' && LOCAL_POKEMON_WORD_LISTS['pok-fr']) return LOCAL_POKEMON_WORD_LISTS['pok-fr'];
+      if (normalized === 'de' && LOCAL_POKEMON_WORD_LISTS['pok-de']) return LOCAL_POKEMON_WORD_LISTS['pok-de'];
+      return null;
+    }
+    return null;
+  }
+
+  async _loadLocalTextAsset(path) {
+    if (!path) return '';
+    try {
+      const url = typeof chrome?.runtime?.getURL === 'function' ? chrome.runtime.getURL(path) : path;
+      const response = await fetch(url, { cache: 'no-store', credentials: 'omit' });
+      if (!response.ok) return '';
+      return await response.text();
+    } catch (err) {
+      console.warn('[BombPartyShark] Failed to load local asset', path, err);
+      return '';
+    }
+  }
+
+  async _loadLocalWordListFromPath(path) {
+    const text = await this._loadLocalTextAsset(path);
+    return toWordArrayFromText(text);
+  }
+
+  async _loadLocalJsonWords(path) {
+    const text = await this._loadLocalTextAsset(path);
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) return [];
+      const out = [];
+      const seen = new Set();
+      for (const entry of parsed) {
+        pushWordCandidate(out, seen, entry);
+      }
+      return out;
+    } catch (err) {
+      console.warn('[BombPartyShark] Failed to parse local JSON list', path, err);
+      return [];
+    }
+  }
+
+  async _loadLocalWordData(lang) {
+    const normalized = typeof lang === 'string' ? lang.toLowerCase() : '';
+    const mainPath = this._resolveLocalListPath(normalized, 'main');
+    const words = await this._loadLocalWordListFromPath(mainPath);
+    if (!words.length) return null;
+
+    const foulPath = this._resolveLocalListPath(normalized, 'foul');
+    let foulWords = await this._loadLocalWordListFromPath(foulPath);
+    if (!foulWords.length) {
+      const jsonPath = LOCAL_FOUL_JSON_LISTS[normalized] || LOCAL_FOUL_JSON_LISTS['en'];
+      if (jsonPath) {
+        foulWords = await this._loadLocalJsonWords(jsonPath);
+      }
+    }
+
+    const pokemonPath = this._resolveLocalListPath(normalized, 'pokemon');
+    let pokemonWords = await this._loadLocalWordListFromPath(pokemonPath);
+
+    return {
+      words,
+      foulWords,
+      pokemonWords,
+      mineralWords: [],
+      rareWords: []
+    };
+  }
+
   async _fetchWordData(lang) {
     const base = this.apiBase();
     const mainUrl = `${base}/words.php?lang=${encodeURIComponent(lang)}&list=main`;
@@ -459,9 +598,31 @@ class Game {
     let mainTxt = await fetchText(mainUrl, 'main');
     let words = toWordArrayFromText(mainTxt);
     let mainWarningSent = false;
+    let triedLocalFallback = false;
+    let localFallback = null;
+
+    const loadLocalFallback = async () => {
+      if (triedLocalFallback) return localFallback;
+      triedLocalFallback = true;
+      try {
+        localFallback = await this._loadLocalWordData(lang);
+      } catch (err) {
+        console.warn('[BombPartyShark] Failed to load local fallback word data for', lang, err);
+        localFallback = null;
+      }
+      return localFallback;
+    };
+
     if (!mainTxt || !words.length) {
       mainWarningSent = true;
-      pushWarning({ type: 'mainFailure', lang });
+      const localData = await loadLocalFallback();
+      if (localData?.words?.length) {
+        words = localData.words.slice();
+        pushWarning({ type: 'fallback', list: 'main', lang, source: 'local' });
+        console.warn('[BombPartyShark] Using packaged fallback word list for', lang);
+      } else {
+        pushWarning({ type: 'mainFailure', lang });
+      }
     }
     if (!words.length) {
       const err = new Error(`No word list available for language ${lang}`);
@@ -472,32 +633,68 @@ class Game {
     const foulTxt = await fetchText(foulUrl, 'foul');
     let foulWords = toWordArrayFromText(foulTxt);
     if (!foulWords.length) {
-      if (!mainWarningSent) {
-        console.info(`[BombPartyShark] No foul words from API for ${lang}; using main list.`);
+      let usedLocal = false;
+      const localData = await loadLocalFallback();
+      if (localData?.foulWords?.length) {
+        foulWords = localData.foulWords.slice();
+        usedLocal = true;
+      } else {
+        if (!mainWarningSent) {
+          console.info(`[BombPartyShark] No foul words from API for ${lang}; using main list.`);
+        }
+        foulWords = words.slice();
       }
-      foulWords = words.slice();
-      pushWarning({ type: 'fallback', list: 'foul', lang });
+      const warning = { type: 'fallback', list: 'foul', lang };
+      if (usedLocal) warning.source = 'local';
+      pushWarning(warning);
     }
 
     const pokemonTxt = await fetchText(pokemonUrl, 'pokemon');
     let pokemonWords = toWordArrayFromText(pokemonTxt);
     if (!pokemonWords.length) {
-      pokemonWords = words.slice();
-      pushWarning({ type: 'fallback', list: 'pokemon', lang });
+      let usedLocal = false;
+      const localData = await loadLocalFallback();
+      if (localData?.pokemonWords?.length) {
+        pokemonWords = localData.pokemonWords.slice();
+        usedLocal = true;
+      } else {
+        pokemonWords = words.slice();
+      }
+      const warning = { type: 'fallback', list: 'pokemon', lang };
+      if (usedLocal) warning.source = 'local';
+      pushWarning(warning);
     }
 
     const mineralsTxt = await fetchText(mineralsUrl, 'minerals');
     let mineralWords = toWordArrayFromText(mineralsTxt);
     if (!mineralWords.length) {
-      mineralWords = words.slice();
-      pushWarning({ type: 'fallback', list: 'minerals', lang });
+      let usedLocal = false;
+      const localData = await loadLocalFallback();
+      if (localData?.mineralWords?.length) {
+        mineralWords = localData.mineralWords.slice();
+        usedLocal = true;
+      } else {
+        mineralWords = words.slice();
+      }
+      const warning = { type: 'fallback', list: 'minerals', lang };
+      if (usedLocal) warning.source = 'local';
+      pushWarning(warning);
     }
 
     const rareTxt = await fetchText(rareUrl, 'rare');
     let rareWords = toWordArrayFromText(rareTxt);
     if (!rareWords.length) {
-      rareWords = words.slice();
-      pushWarning({ type: 'fallback', list: 'rare', lang });
+      let usedLocal = false;
+      const localData = await loadLocalFallback();
+      if (localData?.rareWords?.length) {
+        rareWords = localData.rareWords.slice();
+        usedLocal = true;
+      } else {
+        rareWords = words.slice();
+      }
+      const warning = { type: 'fallback', list: 'rare', lang };
+      if (usedLocal) warning.source = 'local';
+      pushWarning(warning);
     }
 
     const letterWeights = Game.computeLetterWeights(words);

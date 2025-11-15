@@ -68,6 +68,13 @@ function createOverlay(game, diagnostics) {
     zIndex: "2147483647", userSelect: "none",
   });
 
+  const applyHudVisibility = () => {
+    wrap.style.display = hudHidden ? "none" : "block";
+    wrap.style.pointerEvents = hudHidden ? "none" : "auto";
+    wrap.setAttribute("aria-hidden", hudHidden ? "true" : "false");
+  };
+  applyHudVisibility();
+
   const STORAGE_KEY = "bombpartybuddy.settings.v1";
   const SESSION_KEY = "bombpartybuddy.session.v1";
 
@@ -242,6 +249,23 @@ function createOverlay(game, diagnostics) {
   });
 
   addText({
+    toastHudHidden: {
+      en: "HUD hidden — press Alt+H to show.",
+      de: "HUD ausgeblendet – Alt+H zum Anzeigen.",
+      es: "HUD oculto — presiona Alt+H para mostrarlo.",
+      fr: "HUD masqué — appuyez sur Alt+H pour l'afficher.",
+      "pt-br": "HUD oculto — pressione Alt+H para mostrar."
+    },
+    toastHudShown: {
+      en: "HUD visible — press Alt+H to hide.",
+      de: "HUD eingeblendet – Alt+H zum Ausblenden.",
+      es: "HUD visible — presiona Alt+H para ocultar.",
+      fr: "HUD affiché — appuyez sur Alt+H pour masquer.",
+      "pt-br": "HUD visível — pressione Alt+H para ocultar."
+    }
+  });
+
+  addText({
     errorWordListFallback: {
       en: "Couldn't load {{list}} ({{language}}); using the main word list instead.",
       de: "Konnte {{list}} ({{language}}) nicht laden; verwende stattdessen die Hauptliste.",
@@ -327,6 +351,7 @@ function createOverlay(game, diagnostics) {
   const getBool = (value, fallback) => (typeof value === "boolean" ? value : fallback);
 
   let hudSizePercent = clampNumber(savedSettings?.hudSizePercent, 20, 70, 45);
+  let hudHidden = !!savedSettings?.hudHidden;
 
   const defaultCollapsedSections = {
     automation: false,
@@ -409,6 +434,7 @@ function createOverlay(game, diagnostics) {
 
   const collectSettings = () => ({
     hudSizePercent,
+    hudHidden: !!hudHidden,
     autoTypeEnabled: !game.paused,
     instantMode: !!game.instantMode,
     mistakesEnabled: !!game.mistakesEnabled,
@@ -482,6 +508,30 @@ function createOverlay(game, diagnostics) {
   game._notifySettingsChanged = (opts = {}) => {
     requestSave(opts);
   };
+
+  const setHudHiddenState = (next, options = {}) => {
+    const desired = !!next;
+    if (hudHidden === desired) return false;
+    hudHidden = desired;
+    applyHudVisibility();
+    if (!options.skipSave) {
+      requestSave();
+    }
+    if (options.showToast) {
+      showToast(desired ? "toastHudHidden" : "toastHudShown", 2400);
+    }
+    return true;
+  };
+
+  const toggleHudHidden = (options = {}) => {
+    const changed = setHudHiddenState(!hudHidden, options);
+    if (changed && !options.skipToast) {
+      showToast(hudHidden ? "toastHudHidden" : "toastHudShown", 2400);
+    }
+    return changed;
+  };
+
+  const isHudHidden = () => hudHidden;
 
   const setSectionCollapsed = (id, collapsed, options = {}) => {
     if (!id) return;
@@ -2522,7 +2572,7 @@ function createOverlay(game, diagnostics) {
   document.body.appendChild(wrap);
   if (!toast.isConnected) document.body.appendChild(toast);
   autoJoinManager.update(game.autoJoinAlways);
-  return { render };
+  return { render, setHudHidden: setHudHiddenState, toggleHudHidden, isHudHidden };
 }
 
 class DiagnosticsLog {
@@ -2606,6 +2656,29 @@ class DiagnosticsLog {
       catch (_) { /* ignore listener errors */ }
     });
   }
+}
+
+function buddyIsExtensionContextInvalidatedMessage(message) {
+  if (!message) return false;
+  const normalized = String(message).toLowerCase();
+  return normalized.includes("context invalidated") || normalized.includes("message port closed before a response was received");
+}
+
+function buddyToChromeRuntimeError(raw, fallbackMessage = "chrome_runtime_error") {
+  const message = (raw && raw.message) ? raw.message : (typeof raw === "string" ? raw : String(raw || fallbackMessage));
+  const err = new Error(message || fallbackMessage);
+  if (buddyIsExtensionContextInvalidatedMessage(message)) {
+    err.code = "extension_context_invalidated";
+  } else {
+    err.code = "chrome_runtime_error";
+  }
+  return err;
+}
+
+function buddyIsExtensionContextInvalidatedError(err) {
+  if (!err) return false;
+  if (err.code === "extension_context_invalidated") return true;
+  return buddyIsExtensionContextInvalidatedMessage(err.message);
 }
 
 const DEVICE_ID_STORAGE_KEY = "litsharkDeviceId";
@@ -3064,7 +3137,7 @@ function sendPresenceCommand(message) {
     try {
       chrome.runtime.sendMessage(message, (resp) => {
         if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
+          reject(buddyToChromeRuntimeError(chrome.runtime.lastError));
           return;
         }
         if (!resp) {
@@ -3072,13 +3145,13 @@ function sendPresenceCommand(message) {
           return;
         }
         if (resp.error) {
-          reject(new Error(resp.error));
+          reject(buddyToChromeRuntimeError({ message: resp.error }));
           return;
         }
         resolve(resp);
       });
     } catch (err) {
-      reject(err);
+      reject(buddyToChromeRuntimeError(err));
     }
   });
 }
@@ -3121,6 +3194,7 @@ class PresenceReporter {
     this.roomMonitorTimer = null;
     this.storageListener = null;
     this.topContextInterval = null;
+    this.extensionInvalidated = false;
 
     this.log("presence", "constructor", {
       sessionId: this.sessionId,
@@ -3490,6 +3564,10 @@ class PresenceReporter {
         error: err?.message || String(err)
       });
       console.warn("[BombPartyShark] Failed to register presence session", err);
+      if (buddyIsExtensionContextInvalidatedError(err)) {
+        this.handleExtensionInvalidated(err, "registerSession");
+        throw err;
+      }
     }
   }
 
@@ -3509,6 +3587,9 @@ class PresenceReporter {
         error: err?.message || String(err)
       });
       console.warn("[BombPartyShark] Failed to unregister presence session", err);
+      if (buddyIsExtensionContextInvalidatedError(err)) {
+        this.handleExtensionInvalidated(err, "unregisterSession");
+      }
     }
   }
 
@@ -3638,6 +3719,10 @@ class PresenceReporter {
     } catch (err) {
       console.warn("[BombPartyShark] Failed to send presence heartbeat", err);
       this.log("presence", "heartbeat_send_error", { error: err?.message || String(err) });
+      if (buddyIsExtensionContextInvalidatedError(err)) {
+        this.handleExtensionInvalidated(err, "heartbeat");
+        return;
+      }
       this.retryAttempt += 1;
       const delay = this.computeRetryDelay();
       this.log("presence", "heartbeat_retry_scheduled", { delay, attempt: this.retryAttempt });
@@ -3722,21 +3807,29 @@ class PresenceReporter {
       session_id: this.sessionId,
       device_id: deviceId
     };
+    let skipUnregister = false;
     try {
       await this.postPresencePayload(payload);
       this.log("presence", "leave_success", { payload: this.maskPayload(payload) });
     } catch (err) {
       console.warn("[BombPartyShark] Failed to send presence leave", err);
       this.log("presence", "leave_error", { error: err?.message || String(err) });
+      if (buddyIsExtensionContextInvalidatedError(err)) {
+        this.handleExtensionInvalidated(err, "leave");
+        skipUnregister = true;
+      }
     } finally {
-      await this.unregisterSession();
+      if (!skipUnregister && !this.extensionInvalidated) {
+        await this.unregisterSession();
+      }
     }
   }
 
-  dispose() {
+  dispose(options = {}) {
     if (this.disposed) return;
     this.disposed = true;
-    this.log("presence", "dispose", {});
+    const skipLeave = !!options.skipLeave;
+    this.log("presence", "dispose", { skipLeave });
     this.clearTimers();
     this.stopTopContextPolling();
     if (this.chattersObserver) {
@@ -3751,7 +3844,23 @@ class PresenceReporter {
     document.removeEventListener("visibilitychange", this.visibilityHandler, true);
     window.removeEventListener("pagehide", this.pageHideHandler);
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
-    this.trySendLeave();
+    if (skipLeave) {
+      this.leaveSent = true;
+    } else {
+      this.trySendLeave();
+    }
+  }
+
+  handleExtensionInvalidated(err, context) {
+    if (this.extensionInvalidated) return;
+    this.extensionInvalidated = true;
+    this.leaveSent = true;
+    this.registered = false;
+    this.log("presence", "extension_invalidated", {
+      context,
+      error: err?.message || String(err)
+    });
+    this.dispose({ skipLeave: true });
   }
 
   handlePresenceContext(message) {
@@ -4387,7 +4496,7 @@ async function setupBuddy() {
   const presence = new PresenceReporter(game, diagnostics);
   presence.updateLanguage(game.lang);
 
-  const { render } = createOverlay(game, diagnostics);
+  const { render, toggleHudHidden, isHudHidden } = createOverlay(game, diagnostics);
 
   const notifySettingsChanged = (opts = {}) => {
     if (typeof game._notifySettingsChanged === "function") {
@@ -4454,6 +4563,7 @@ async function setupBuddy() {
     const k = ev.key.toLowerCase();
     let handled = false;
     let recompute = false;
+    let skipSettingsNotify = false;
     if (k === "w") { game.togglePause(); handled = true; }
     else if (k === "arrowup") { game.setSpeed(Math.min(12, game.speed+1)); handled = true; }
     else if (k === "arrowdown") { game.setSpeed(Math.max(1, game.speed-1)); handled = true; }
@@ -4463,10 +4573,20 @@ async function setupBuddy() {
     else if (k === "b") { game.toggleMistakes(); handled = true; }
     else if (k === "r") { game.resetCoverage(); handled = true; recompute = true; }
     else if (k === "t") { game.toggleLengthMode(); handled = true; recompute = true; }
+    else if (k === "h") {
+      if (typeof toggleHudHidden === "function") {
+        handled = toggleHudHidden({ skipSave: false, skipToast: false });
+        skipSettingsNotify = true;
+      }
+    }
 
     if (!handled) return;
-    notifySettingsChanged({ recompute });
-    render();
+    if (!skipSettingsNotify) {
+      notifySettingsChanged({ recompute });
+    }
+    if (typeof render === "function" && !(skipSettingsNotify && typeof isHudHidden === "function" && isHudHidden())) {
+      render();
+    }
     ev.preventDefault();
   });
 }
