@@ -68,6 +68,39 @@ function createOverlay(game, diagnostics) {
     zIndex: "2147483647", userSelect: "none",
   });
 
+  const applyHudVisibility = () => {
+    wrap.style.display = hudHidden ? "none" : "block";
+    if (hudHidden) {
+      wrap.setAttribute("aria-hidden", "true");
+    } else {
+      wrap.setAttribute("aria-hidden", "false");
+    }
+  };
+
+  const setHudHidden = (value, options = {}) => {
+    const next = !!value;
+    if (hudHidden === next) return;
+    hudHidden = next;
+    applyHudVisibility();
+    if (!options.skipToast) {
+      showToast(next ? "hudHiddenToast" : "hudShownToast", 2800);
+    }
+    if (!options.skipSave) {
+      requestSave();
+    }
+  };
+
+  const toggleHudVisibility = (options = {}) => {
+    const opts = Object.assign({ skipToast: false, skipSave: false }, options);
+    setHudHidden(!hudHidden, opts);
+  };
+
+  applyHudVisibility();
+
+  game.isHudHidden = () => hudHidden;
+  game.setHudHidden = (value, options = {}) => setHudHidden(value, options);
+  game.toggleHudHidden = (options = {}) => toggleHudVisibility(options);
+
   const STORAGE_KEY = "bombpartybuddy.settings.v1";
   const SESSION_KEY = "bombpartybuddy.session.v1";
 
@@ -103,6 +136,20 @@ function createOverlay(game, diagnostics) {
     title: { en: "Bomb Party Shark", de: "Bomb Party Shark", es: "Bomb Party Shark", fr: "Bomb Party Shark", "pt-br": "Bomb Party Shark" },
     forceSave: { en: "Force save settings", de: "Einstellungen jetzt speichern", es: "Guardar configuración ahora", fr: "Forcer l'enregistrement", "pt-br": "Salvar configurações agora" },
     forceSaveSaved: { en: "Saved!", de: "Gespeichert!", es: "¡Guardado!", fr: "Enregistré !", "pt-br": "Salvo!" },
+    hudHiddenToast: {
+      en: "HUD hidden (press Alt+H to show)",
+      de: "HUD ausgeblendet (Alt+H zum Anzeigen)",
+      es: "HUD oculto (presiona Alt+H para mostrar)",
+      fr: "HUD masqué (appuyez sur Alt+H pour afficher)",
+      "pt-br": "HUD oculto (pressione Alt+H para mostrar)"
+    },
+    hudShownToast: {
+      en: "HUD visible (press Alt+H to hide)",
+      de: "HUD sichtbar (Alt+H zum Ausblenden)",
+      es: "HUD visible (presiona Alt+H para ocultar)",
+      fr: "HUD visible (appuyez sur Alt+H pour masquer)",
+      "pt-br": "HUD visível (pressione Alt+H para ocultar)"
+    },
     currentLanguage: { en: "Current language: {{language}}", de: "Aktuelle Sprache : {{language}}", es: "Idioma actual: {{language}}", fr: "Langue actuelle : {{language}}", "pt-br": "Idioma atual: {{language}}" },
     tabMain: { en: "Main", de: "Haupt", es: "Principal", fr: "Principal", "pt-br": "Principal" },
     tabCoverage: { en: "Coverage", de: "Abdeckung", es: "Cobertura", fr: "Couverture", "pt-br": "Cobertura" },
@@ -242,6 +289,13 @@ function createOverlay(game, diagnostics) {
   });
 
   addText({
+    errorWordListPackagedFallback: {
+      en: "Couldn't reach the live {{language}} list; using the built-in fallback.",
+      de: "Live-Liste für {{language}} nicht erreichbar; verwende die integrierte Ersatzliste.",
+      es: "No se pudo acceder a la lista en vivo de {{language}}; usando la lista integrada.",
+      fr: "Impossible d'accéder à la liste {{language}} en ligne ; utilisation de la liste intégrée.",
+      "pt-br": "Não foi possível acessar a lista ao vivo de {{language}}; usando a lista integrada."
+    },
     errorWordListFallback: {
       en: "Couldn't load {{list}} ({{language}}); using the main word list instead.",
       de: "Konnte {{list}} ({{language}}) nicht laden; verwende stattdessen die Hauptliste.",
@@ -327,6 +381,7 @@ function createOverlay(game, diagnostics) {
   const getBool = (value, fallback) => (typeof value === "boolean" ? value : fallback);
 
   let hudSizePercent = clampNumber(savedSettings?.hudSizePercent, 20, 70, 45);
+  let hudHidden = getBool(savedSettings?.hudHidden, false);
 
   const defaultCollapsedSections = {
     automation: false,
@@ -409,6 +464,7 @@ function createOverlay(game, diagnostics) {
 
   const collectSettings = () => ({
     hudSizePercent,
+    hudHidden: !!hudHidden,
     autoTypeEnabled: !game.paused,
     instantMode: !!game.instantMode,
     mistakesEnabled: !!game.mistakesEnabled,
@@ -726,6 +782,8 @@ function createOverlay(game, diagnostics) {
       const listKey = listLabelKey(issue.list);
       const listLabel = translator.t(listKey);
       showToast('errorWordListFallback', 4200, { list: listLabel, language: languageName }, { theme: 'error' });
+    } else if (kind === 'packagedFallback') {
+      showToast('errorWordListPackagedFallback', 4600, { language: languageName });
     } else if (kind === 'mainFailure') {
       showToast('errorWordListMainFailure', 5200, { language: languageName }, { theme: 'error' });
     }
@@ -3061,10 +3119,63 @@ function setupTopContextBridge() {
 
 function sendPresenceCommand(message) {
   return new Promise((resolve, reject) => {
+    const normalizeRuntimeError = (errorLike, defaultCode = "extension_runtime_error") => {
+      if (!errorLike) {
+        const fallback = new Error("Extension runtime error");
+        fallback.code = defaultCode;
+        fallback.isRuntimeError = true;
+        return fallback;
+      }
+      if (errorLike instanceof Error) {
+        const lower = (errorLike.message || "").toLowerCase();
+        if (!errorLike.code) {
+          if (lower.includes("context") && lower.includes("invalid")) {
+            errorLike.code = "extension_context_invalidated";
+          } else if (lower.includes("message port closed")) {
+            errorLike.code = "extension_context_invalidated";
+          } else if (lower.includes("receiving end does not exist")) {
+            errorLike.code = "extension_context_invalidated";
+          } else {
+            errorLike.code = defaultCode;
+          }
+        }
+        errorLike.isRuntimeError = true;
+        return errorLike;
+      }
+      const messageText = typeof errorLike === "string"
+        ? errorLike
+        : (errorLike && typeof errorLike.message === "string" ? errorLike.message : String(errorLike));
+      const err = new Error(messageText || "Extension runtime error");
+      const lower = (messageText || "").toLowerCase();
+      if (lower.includes("context") && lower.includes("invalid")) {
+        err.code = "extension_context_invalidated";
+      } else if (lower.includes("message port closed")) {
+        err.code = "extension_context_invalidated";
+      } else if (lower.includes("receiving end does not exist")) {
+        err.code = "extension_context_invalidated";
+      } else {
+        err.code = defaultCode;
+      }
+      err.isRuntimeError = true;
+      return err;
+    };
+
+    const send = chrome?.runtime?.sendMessage;
+    if (typeof send !== "function") {
+      const err = normalizeRuntimeError("Extension runtime unavailable", "extension_runtime_unavailable");
+      reject(err);
+      return;
+    }
+
+    const rejectWithRuntimeError = (errorLike, code) => {
+      reject(normalizeRuntimeError(errorLike, code));
+    };
+
     try {
-      chrome.runtime.sendMessage(message, (resp) => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
+      send(message, (resp) => {
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) {
+          rejectWithRuntimeError(runtimeError);
           return;
         }
         if (!resp) {
@@ -3072,13 +3183,15 @@ function sendPresenceCommand(message) {
           return;
         }
         if (resp.error) {
-          reject(new Error(resp.error));
+          const err = new Error(resp.error);
+          err.code = "extension_response_error";
+          reject(err);
           return;
         }
         resolve(resp);
       });
     } catch (err) {
-      reject(err);
+      rejectWithRuntimeError(err);
     }
   });
 }
@@ -3100,6 +3213,7 @@ class PresenceReporter {
     this.maxPeerSeen = null;
     this.deviceId = null;
     this.deviceIdPromise = this.ensureDeviceId();
+    this.runtimeUnavailable = false;
     this.accountToken = null;
     this.lobbyNickname = null;
     this.lobbyAuthLabel = null;
@@ -3460,7 +3574,34 @@ class PresenceReporter {
     return id;
   }
 
+  handleRuntimeUnavailable(err, context = null) {
+    const message = err && typeof err.message === "string" ? err.message : (err ? String(err) : "");
+    const lower = (message || "").toLowerCase();
+    const code = err && typeof err.code === "string" ? err.code : null;
+    const runtimeIssue = err?.isRuntimeError === true
+      || code === "extension_context_invalidated"
+      || code === "extension_runtime_unavailable"
+      || lower.includes("extension context invalidated")
+      || lower.includes("message port closed")
+      || lower.includes("receiving end does not exist");
+    if (!runtimeIssue) return false;
+    if (this.runtimeUnavailable) return true;
+    this.runtimeUnavailable = true;
+    this.log("presence", "runtime_unavailable", {
+      context: context || null,
+      message: message || null,
+      code: code || null
+    });
+    console.info("[BombPartyShark] Presence disabled: extension runtime unavailable.");
+    this.dispose();
+    return true;
+  }
+
   async registerSession() {
+    if (this.runtimeUnavailable) {
+      this.log("presence", "session_register_runtime_unavailable", {});
+      return;
+    }
     if (this.registered || this.disposed) {
       this.log("presence", "session_register_skip", {
         registered: this.registered,
@@ -3489,6 +3630,9 @@ class PresenceReporter {
         sessionId: this.sessionId,
         error: err?.message || String(err)
       });
+      if (this.handleRuntimeUnavailable(err, "register")) {
+        return;
+      }
       console.warn("[BombPartyShark] Failed to register presence session", err);
     }
   }
@@ -3499,6 +3643,10 @@ class PresenceReporter {
       return;
     }
     this.registered = false;
+    if (this.runtimeUnavailable) {
+      this.log("presence", "session_unregister_runtime_unavailable", {});
+      return;
+    }
     try {
       this.log("presence", "session_unregister_attempt", { sessionId: this.sessionId });
       await sendPresenceCommand({ type: "presenceUnregister", sessionId: this.sessionId });
@@ -3508,6 +3656,9 @@ class PresenceReporter {
         sessionId: this.sessionId,
         error: err?.message || String(err)
       });
+      if (this.handleRuntimeUnavailable(err, "unregister")) {
+        return;
+      }
       console.warn("[BombPartyShark] Failed to unregister presence session", err);
     }
   }
@@ -3515,6 +3666,10 @@ class PresenceReporter {
   async postPresencePayload(payload) {
     const safe = this.maskPayload(payload);
     this.log("presence", "presence_post_attempt", { payload: safe });
+    if (this.runtimeUnavailable) {
+      this.log("presence", "presence_post_skip_runtime", { payload: safe });
+      return;
+    }
     try {
       await sendPresenceCommand({ type: "presenceSend", payload });
       this.log("presence", "presence_post_success", { payload: safe });
@@ -3523,6 +3678,7 @@ class PresenceReporter {
         payload: safe,
         error: err?.message || String(err)
       });
+      this.handleRuntimeUnavailable(err, "post");
       throw err;
     }
   }
@@ -3636,8 +3792,11 @@ class PresenceReporter {
       this.retryAttempt = 0;
       this.log("presence", "heartbeat_send_success", { payload: this.maskPayload(payload) });
     } catch (err) {
-      console.warn("[BombPartyShark] Failed to send presence heartbeat", err);
       this.log("presence", "heartbeat_send_error", { error: err?.message || String(err) });
+      if (this.handleRuntimeUnavailable(err, "heartbeat")) {
+        return;
+      }
+      console.warn("[BombPartyShark] Failed to send presence heartbeat", err);
       this.retryAttempt += 1;
       const delay = this.computeRetryDelay();
       this.log("presence", "heartbeat_retry_scheduled", { delay, attempt: this.retryAttempt });
@@ -3711,6 +3870,11 @@ class PresenceReporter {
     if (this.leaveSent || !this.sessionId) return;
     this.leaveSent = true;
     this.log("presence", "leave_attempt", { sessionId: this.sessionId });
+    if (this.runtimeUnavailable) {
+      this.log("presence", "leave_skip_runtime_unavailable", {});
+      await this.unregisterSession();
+      return;
+    }
     const deviceId = await this.ensureDeviceId().catch(() => null);
     if (!deviceId) {
       this.log("presence", "leave_no_device", {});
@@ -3726,8 +3890,10 @@ class PresenceReporter {
       await this.postPresencePayload(payload);
       this.log("presence", "leave_success", { payload: this.maskPayload(payload) });
     } catch (err) {
-      console.warn("[BombPartyShark] Failed to send presence leave", err);
       this.log("presence", "leave_error", { error: err?.message || String(err) });
+      if (!this.handleRuntimeUnavailable(err, "leave")) {
+        console.warn("[BombPartyShark] Failed to send presence leave", err);
+      }
     } finally {
       await this.unregisterSession();
     }
@@ -4463,6 +4629,7 @@ async function setupBuddy() {
     else if (k === "b") { game.toggleMistakes(); handled = true; }
     else if (k === "r") { game.resetCoverage(); handled = true; recompute = true; }
     else if (k === "t") { game.toggleLengthMode(); handled = true; recompute = true; }
+    else if (k === "h") { toggleHudVisibility({ skipSave: true }); handled = true; }
 
     if (!handled) return;
     notifySettingsChanged({ recompute });

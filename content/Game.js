@@ -15,6 +15,21 @@ const WORD_CACHE = new Map();
 const WORD_CACHE_LOADING = new Map();
 const WORD_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const PACKAGED_WORD_FILES = Object.freeze({
+  "en": "words1/en.txt",
+  "de": "words1/de.txt",
+  "fr": "words1/fr.txt",
+  "es": "words1/es.txt",
+  "pt-br": "words1/pt-br.txt",
+  "nah": "words1/nah.txt",
+  "br": "words1/br.txt",
+  "pok-en": "words1/pok-en.txt",
+  "pok-fr": "words1/pok-fr.txt",
+  "pok-de": "words1/pok-de.txt"
+});
+
+const PACKAGED_WORD_CACHE = new Map();
+
 const LANGUAGE_LABELS = Object.freeze({
   "en": { short: "EN", name: "English" },
   "de": { short: "DE", name: "Deutsch" },
@@ -459,9 +474,16 @@ class Game {
     let mainTxt = await fetchText(mainUrl, 'main');
     let words = toWordArrayFromText(mainTxt);
     let mainWarningSent = false;
-    if (!mainTxt || !words.length) {
+    if (!words.length) {
       mainWarningSent = true;
-      pushWarning({ type: 'mainFailure', lang });
+      const packagedWords = await this.loadPackagedWordList(lang).catch(() => []);
+      if (Array.isArray(packagedWords) && packagedWords.length) {
+        console.warn(`[BombPartyShark] Using packaged fallback word list for ${lang}`);
+        words = packagedWords;
+        pushWarning({ type: 'packagedFallback', lang });
+      } else {
+        pushWarning({ type: 'mainFailure', lang });
+      }
     }
     if (!words.length) {
       const err = new Error(`No word list available for language ${lang}`);
@@ -512,6 +534,36 @@ class Game {
       fetchedAt: Date.now(),
       warnings
     };
+  }
+
+  async loadPackagedWordList(lang) {
+    const normalized = this.normalizeLang(lang);
+    if (PACKAGED_WORD_CACHE.has(normalized)) {
+      return PACKAGED_WORD_CACHE.get(normalized);
+    }
+    const path = PACKAGED_WORD_FILES[normalized];
+    if (!path) {
+      PACKAGED_WORD_CACHE.set(normalized, []);
+      return [];
+    }
+    const url = typeof chrome?.runtime?.getURL === "function"
+      ? chrome.runtime.getURL(path)
+      : path;
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+      const text = await response.text();
+      const words = toWordArrayFromText(text);
+      const safe = Array.isArray(words) ? words : [];
+      PACKAGED_WORD_CACHE.set(normalized, safe);
+      return safe;
+    } catch (err) {
+      console.warn(`[BombPartyShark] Failed to load packaged word list for ${normalized}`, err);
+      PACKAGED_WORD_CACHE.set(normalized, []);
+      return [];
+    }
   }
 
   _applyWordData(data) {
