@@ -2970,6 +2970,7 @@ class PresenceReporter {
     this.lobbyNickname = null;
     this.lobbyAuthLabel = null;
     this.lobbyAuthProvider = null;
+    this.lastLobbyProfileJson = null;
     this.registered = false;
     this.leaveSent = false;
     this.disposed = false;
@@ -3159,10 +3160,38 @@ class PresenceReporter {
       changed = true;
     }
 
+    this.lastLobbyProfileJson = JSON.stringify({
+      nickname: this.lobbyNickname || null,
+      authLabel: this.lobbyAuthLabel || null,
+      authProvider: this.lobbyAuthProvider || null
+    });
+
     const identityChanged = this.applyIdentityFallbacks("lobby_profile", { log: true });
     if ((changed || identityChanged) && !this.disposed) {
       this.queueHeartbeat({ immediate: true });
     }
+  }
+
+  persistLobbyProfile(reason) {
+    if (this.disposed) return;
+    const profile = {
+      nickname: this.lobbyNickname || null,
+      authLabel: this.lobbyAuthLabel || null,
+      authProvider: this.lobbyAuthProvider || null
+    };
+    const json = JSON.stringify(profile);
+    if (json === this.lastLobbyProfileJson) return;
+    this.lastLobbyProfileJson = json;
+    this.log("presence", "lobby_profile_persist", {
+      reason: reason || null,
+      nickname: profile.nickname,
+      authLabel: profile.authLabel,
+      authProvider: profile.authProvider
+    });
+    storageSet("local", { [LOBBY_PROFILE_STORAGE_KEY]: { ...profile, updatedAt: Date.now() } })
+      .catch((err) => {
+        this.log("presence", "lobby_profile_persist_error", { error: err?.message || String(err) });
+      });
   }
 
   requestTopContext(reason) {
@@ -3239,25 +3268,40 @@ class PresenceReporter {
       }
     }
 
+    let lobbyChanged = false;
     const nickname = typeof context.nickname === "string" ? context.nickname.trim() : "";
     if (nickname && nickname !== (this.lobbyNickname || "")) {
       this.lobbyNickname = nickname;
       contextChanged = true;
+      lobbyChanged = true;
     }
 
     const authLabel = typeof context.authLabel === "string" ? context.authLabel.trim() : "";
     if (authLabel !== (this.lobbyAuthLabel || "")) {
       this.lobbyAuthLabel = authLabel || null;
       contextChanged = true;
+      lobbyChanged = true;
     }
 
     const authProvider = typeof context.authProvider === "string" ? context.authProvider.trim() : "";
     if (authProvider !== (this.lobbyAuthProvider || "")) {
       this.lobbyAuthProvider = authProvider || null;
       contextChanged = true;
+      lobbyChanged = true;
     }
 
     const identityChanged = this.applyIdentityFallbacks("top_context", { log: true });
+    if (lobbyChanged) {
+      this.log("presence", "lobby_profile_top_context", {
+        reason: message.reason || null,
+        nickname: this.lobbyNickname || null,
+        authLabel: this.lobbyAuthLabel || null,
+        authProvider: this.lobbyAuthProvider || null,
+        nicknameSource: context.nicknameSource || null,
+        authSource: context.authSource || null
+      });
+      this.persistLobbyProfile("top_context");
+    }
     if ((contextChanged || identityChanged) && !this.disposed) {
       this.queueHeartbeat({ immediate: true });
     }
@@ -3631,20 +3675,71 @@ class PresenceReporter {
       contextChanged = true;
     }
 
+    if (typeof message.roomUrl === "string" && message.roomUrl.trim()) {
+      const trimmedUrl = message.roomUrl.trim();
+      const currentUrl = this.roomUrl || "";
+      const nextIsTop = /jklm\.fun\//i.test(trimmedUrl);
+      const currentIsTop = /jklm\.fun\//i.test(currentUrl);
+      const shouldUpdate = !trimmedUrl
+        ? false
+        : (!currentUrl)
+          || (nextIsTop && !currentIsTop)
+          || (!currentIsTop && !nextIsTop && trimmedUrl !== currentUrl)
+          || (nextIsTop && currentIsTop && trimmedUrl !== currentUrl);
+      if (shouldUpdate) {
+        this.roomUrl = trimmedUrl;
+        contextChanged = true;
+      }
+    }
+
+    let lobbyChanged = false;
+    const lobbyNickname = typeof message.lobbyNickname === "string" ? message.lobbyNickname.trim() : "";
+    if (lobbyNickname && lobbyNickname !== (this.lobbyNickname || "")) {
+      this.lobbyNickname = lobbyNickname;
+      lobbyChanged = true;
+    }
+    const lobbyAuthLabel = typeof message.lobbyAuthLabel === "string" ? message.lobbyAuthLabel.trim() : "";
+    if (lobbyAuthLabel && lobbyAuthLabel !== (this.lobbyAuthLabel || "")) {
+      this.lobbyAuthLabel = lobbyAuthLabel;
+      lobbyChanged = true;
+    }
+    const lobbyAuthProvider = typeof message.lobbyAuthProvider === "string" ? message.lobbyAuthProvider.trim() : "";
+    if (lobbyAuthProvider && lobbyAuthProvider !== (this.lobbyAuthProvider || "")) {
+      this.lobbyAuthProvider = lobbyAuthProvider;
+      lobbyChanged = true;
+    }
+
     if (message.lang) {
       this.updateLanguage(message.lang);
     }
 
     const identityChanged = this.applyIdentityFallbacks("presence_context", { log: true });
 
+    if (lobbyChanged) {
+      contextChanged = true;
+      this.log("presence", "lobby_profile_context", {
+        reason,
+        nickname: this.lobbyNickname || null,
+        authLabel: this.lobbyAuthLabel || null,
+        authProvider: this.lobbyAuthProvider || null,
+        nicknameSource: message.lobbyNicknameSource || null,
+        authSource: message.lobbyAuthSource || null
+      });
+      this.persistLobbyProfile("context");
+    }
+
     this.log("presence", "context_message", {
       reason,
       roomCode: candidateRoom,
+      roomUrl: this.roomUrl || null,
       username: this.username || null,
       authLabel: this.authLabel || null,
       selfPeerId: this.selfPeerId || null,
       candidates,
       lang: message.lang || null,
+      lobbyNickname: this.lobbyNickname || null,
+      lobbyAuthLabel: this.lobbyAuthLabel || null,
+      lobbyAuthProvider: this.lobbyAuthProvider || null,
       authSources: Array.isArray(message.authSources) ? message.authSources.slice(0, 10) : null,
       usernameSources: Array.isArray(message.usernameSources) ? message.usernameSources.slice(0, 10) : null
     });
@@ -3809,12 +3904,17 @@ class PresenceReporter {
 
     const nicknameEl = targetNode.querySelector(".nickname");
     const nickname = nicknameEl ? (nicknameEl.textContent || "").trim() : "";
+    let lobbyUpdated = false;
     if (nickname && nickname !== this.username) {
       this.username = nickname;
       contextChanged = true;
     } else if (!this.username && nickname) {
       this.username = nickname;
       contextChanged = true;
+    }
+    if (nickname && nickname !== (this.lobbyNickname || "")) {
+      this.lobbyNickname = nickname;
+      lobbyUpdated = true;
     }
 
     const authEl = targetNode.querySelector(".auth");
@@ -3824,8 +3924,16 @@ class PresenceReporter {
       this.authLabel = authLabel;
       contextChanged = true;
     }
+    if (authLabel !== (this.lobbyAuthLabel || "")) {
+      this.lobbyAuthLabel = authLabel;
+      lobbyUpdated = true;
+    }
 
     const identityChanged = this.applyIdentityFallbacks("roster_update", { log: true });
+
+    if (lobbyUpdated) {
+      this.persistLobbyProfile("roster");
+    }
 
     if (contextChanged || identityChanged) {
       this.log("presence", "roster_context_update", {
@@ -3899,9 +4007,19 @@ class PresenceReporter {
     const attempts = [];
     let resolved = null;
     const limit = 32;
+    const reservedPathCodes = new Set(["GAMES"]);
 
     const record = (entry) => {
       if (attempts.length < limit) attempts.push(entry);
+    };
+
+    const shouldIgnore = (source, normalized) => {
+      if (!normalized) return false;
+      if (!source) return false;
+      if (source.startsWith("location.path")) {
+        return reservedPathCodes.has(normalized);
+      }
+      return false;
     };
 
     const consider = (source, getter) => {
@@ -3909,6 +4027,11 @@ class PresenceReporter {
         const raw = typeof getter === "function" ? getter() : getter;
         const normalized = this.normalizeRoomCode(raw);
         const entry = { source, raw: raw ?? null, normalized: normalized || null };
+        if (normalized && shouldIgnore(source, normalized)) {
+          entry.ignored = true;
+          record(entry);
+          return null;
+        }
         if (resolved) entry.skipped = true;
         record(entry);
         if (!resolved && normalized) {

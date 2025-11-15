@@ -70,6 +70,17 @@ function normalizeRoomCodeForMessage(value) {
   return upper;
 }
 
+const RESERVED_ROOM_CODE_TOKENS = new Set(["GAMES"]);
+
+function shouldIgnoreRoomCandidate(source, normalized) {
+  if (!normalized) return false;
+  if (!source) return false;
+  if (source.startsWith("location.path")) {
+    return RESERVED_ROOM_CODE_TOKENS.has(normalized);
+  }
+  return false;
+}
+
 function gatherRoomCodeCandidates(extraCandidates = []) {
   const candidates = [];
   const push = (source, value) => {
@@ -77,6 +88,11 @@ function gatherRoomCodeCandidates(extraCandidates = []) {
     const str = typeof value === "string" ? value : (value === null ? "" : String(value));
     const trimmed = str.trim();
     if (!trimmed) return;
+    const normalized = normalizeRoomCodeForMessage(trimmed);
+    if (normalized && shouldIgnoreRoomCandidate(source, normalized)) {
+      candidates.push({ source, value: trimmed, skipped: true, reason: "reserved_path" });
+      return;
+    }
     candidates.push({ source, value: trimmed });
   };
   if (Array.isArray(extraCandidates)) {
@@ -185,6 +201,7 @@ function gatherRoomCodeCandidates(extraCandidates = []) {
 
 function pickBestRoomCode(candidates) {
   for (const entry of candidates) {
+    if (entry && entry.skipped) continue;
     const normalized = normalizeRoomCodeForMessage(entry.value);
     if (normalized) return normalized;
   }
@@ -408,6 +425,151 @@ function gatherSelfCandidates() {
   return out;
 }
 
+function gatherInlineProfileSnapshot() {
+  const safeTrim = (value) => {
+    if (value == null) return "";
+    try { return String(value).trim(); }
+    catch (_) { return ""; }
+  };
+
+  const snapshot = {
+    nickname: null,
+    nicknameSource: null,
+    authLabel: null,
+    authSource: null,
+    authProvider: null
+  };
+
+  const tryNickname = (selector) => {
+    if (snapshot.nickname) return;
+    try {
+      const node = document.querySelector(selector);
+      if (!node) return;
+      let raw = "";
+      if (typeof node.getAttribute === "function") {
+        raw = node.getAttribute("data-nickname")
+          || node.getAttribute("data-name")
+          || node.getAttribute("data-value")
+          || "";
+      }
+      if (!raw && typeof node.value === "string") raw = node.value;
+      if (!raw) raw = node.textContent || "";
+      const value = safeTrim(raw);
+      if (!value) return;
+      snapshot.nickname = value;
+      snapshot.nicknameSource = selector;
+    } catch (_) {
+      /* ignore */
+    }
+  };
+
+  [
+    "#mentionTriggers",
+    ".settings #mentionTriggers",
+    ".sidebar #mentionTriggers",
+    ".setup .auth .nickname",
+    ".setup .nickname",
+    "[data-nickname]",
+    ".profile .nickname",
+    ".account .nickname",
+    ".account .name"
+  ].forEach((selector) => tryNickname(selector));
+
+  const tryAuth = (selector) => {
+    if (snapshot.authLabel) return;
+    try {
+      const node = document.querySelector(selector);
+      if (!node) return;
+      let raw = "";
+      if (typeof node.getAttribute === "function") {
+        raw = node.getAttribute("data-auth-label")
+          || node.getAttribute("data-label")
+          || node.getAttribute("title")
+          || node.getAttribute("aria-label")
+          || "";
+      }
+      if (!raw && typeof node.value === "string") raw = node.value;
+      if (!raw) raw = node.textContent || "";
+      const value = safeTrim(raw);
+      if (!value || value.length <= 2) return;
+      if (value.toLowerCase() === "you are") return;
+      snapshot.authLabel = value;
+      snapshot.authSource = selector;
+    } catch (_) {
+      /* ignore */
+    }
+  };
+
+  [
+    "[data-auth-label]",
+    ".setup .auth [data-label]",
+    ".setup .auth .authLabel",
+    ".setup .auth .label",
+    ".setup .auth .auth",
+    ".userProfile .auth",
+    ".sidebar .userProfile .auth",
+    ".mainBadge"
+  ].forEach((selector) => tryAuth(selector));
+
+  const tryProvider = (selector) => {
+    if (snapshot.authProvider) return;
+    try {
+      const node = document.querySelector(selector);
+      if (!node) return;
+      let raw = "";
+      if (typeof node.getAttribute === "function") {
+        raw = node.getAttribute("data-service")
+          || node.getAttribute("data-provider")
+          || node.getAttribute("data-auth-provider")
+          || node.getAttribute("alt")
+          || node.getAttribute("title")
+          || "";
+      }
+      if (!raw && typeof node.value === "string") raw = node.value;
+      if (!raw) raw = node.textContent || "";
+      const value = safeTrim(raw);
+      if (!value) return;
+      snapshot.authProvider = value;
+    } catch (_) {
+      /* ignore */
+    }
+  };
+
+  [
+    ".setup .auth",
+    ".setup .auth .service",
+    ".userProfile .service",
+    ".sidebar .userProfile .service"
+  ].forEach((selector) => tryProvider(selector));
+
+  if (!snapshot.authProvider && snapshot.authLabel) {
+    const match = snapshot.authLabel.match(/\bon\s+([A-Za-z0-9 ]+)/i);
+    if (match && match[1]) {
+      const provider = safeTrim(match[1]);
+      if (provider && provider.toLowerCase() !== "guest") {
+        snapshot.authProvider = provider;
+      }
+    }
+  }
+
+  if (snapshot.nickname && snapshot.nicknameSource === "#mentionTriggers") {
+    try {
+      const authButton = document.querySelector(".setup .auth");
+      if (authButton) {
+        const attr = authButton.getAttribute("data-service")
+          || authButton.getAttribute("data-provider")
+          || (authButton.dataset ? (authButton.dataset.service || authButton.dataset.provider) : "");
+        const provider = safeTrim(attr);
+        if (provider) snapshot.authProvider = provider;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  return snapshot;
+}
+
 function attemptString(target, source, value, bucket) {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -596,6 +758,27 @@ function gatherLanguageForContext() {
 function emitPresenceContext(reason) {
   try {
     refreshSocketRoomOverrides();
+    const inlineProfile = gatherInlineProfileSnapshot();
+    const inlineOverride = {};
+    if (inlineProfile.nickname) {
+      inlineOverride.username = inlineProfile.nickname;
+      if (inlineProfile.nicknameSource) {
+        inlineOverride.usernameSources = [
+          { source: inlineProfile.nicknameSource, value: inlineProfile.nickname }
+        ];
+      }
+    }
+    if (inlineProfile.authLabel) {
+      inlineOverride.authLabel = inlineProfile.authLabel;
+      if (inlineProfile.authSource) {
+        inlineOverride.authSources = [
+          { source: inlineProfile.authSource, value: inlineProfile.authLabel }
+        ];
+      }
+    }
+    if (Object.keys(inlineOverride).length) {
+      registerPresenceOverride(inlineOverride);
+    }
     const extraCandidates = Array.isArray(presenceOverride.roomCodeCandidates)
       ? presenceOverride.roomCodeCandidates.slice(0, OVERRIDE_LIST_LIMIT)
       : [];
@@ -612,6 +795,12 @@ function emitPresenceContext(reason) {
     if (Array.isArray(selfInfo.usernameSources)) {
       combinedUsernameSources.push(...selfInfo.usernameSources);
     }
+    if (inlineProfile.nickname && inlineProfile.nicknameSource) {
+      combinedUsernameSources.push({
+        source: inlineProfile.nicknameSource,
+        value: inlineProfile.nickname
+      });
+    }
     const combinedAuthSources = [];
     if (Array.isArray(presenceOverride.authSources)) {
       combinedAuthSources.push(...presenceOverride.authSources);
@@ -619,10 +808,23 @@ function emitPresenceContext(reason) {
     if (Array.isArray(selfInfo.authSources)) {
       combinedAuthSources.push(...selfInfo.authSources);
     }
+    if (inlineProfile.authLabel && inlineProfile.authSource) {
+      combinedAuthSources.push({
+        source: inlineProfile.authSource,
+        value: inlineProfile.authLabel
+      });
+    }
     const username = (presenceOverride.username || selfInfo.username || "").trim();
     const authLabel = (presenceOverride.authLabel || selfInfo.authLabel || "").trim();
     const peerId = presenceOverride.selfPeerId || selfInfo.peerId || null;
     const lang = presenceOverride.lang || gatherLanguageForContext();
+    let roomUrl = null;
+    try {
+      const href = window?.location?.href;
+      if (typeof href === "string" && href.trim()) roomUrl = href.trim();
+    } catch (_) {
+      roomUrl = null;
+    }
     const payload = {
       type: "presenceContext",
       reason,
@@ -634,7 +836,13 @@ function emitPresenceContext(reason) {
       authLabel: authLabel || null,
       authSources: combinedAuthSources.slice(0, OVERRIDE_LIST_LIMIT),
       selfPeerId: peerId || null,
-      lang: lang || null
+      lang: lang || null,
+      roomUrl: roomUrl,
+      lobbyNickname: inlineProfile.nickname || null,
+      lobbyNicknameSource: inlineProfile.nicknameSource || null,
+      lobbyAuthLabel: inlineProfile.authLabel || null,
+      lobbyAuthSource: inlineProfile.authSource || null,
+      lobbyAuthProvider: inlineProfile.authProvider || null
     };
     window.postMessage(payload, "*");
   } catch (err) {
