@@ -425,12 +425,66 @@ function gatherSelfCandidates() {
   return out;
 }
 
-function gatherInlineProfileSnapshot() {
-  const safeTrim = (value) => {
-    if (value == null) return "";
-    try { return String(value).trim(); }
-    catch (_) { return ""; }
+function safeTrimString(value) {
+  if (value == null) return "";
+  try { return String(value).trim(); }
+  catch (_) { return ""; }
+}
+
+function normalizeNicknameCandidate(raw) {
+  const trimmed = safeTrimString(raw);
+  if (!trimmed) return "";
+
+  const tryFromJson = (value) => {
+    if (!value) return "";
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const candidate = normalizeNicknameCandidate(entry);
+        if (candidate) return candidate;
+      }
+      return "";
+    }
+    if (typeof value === "object") {
+      const keys = [
+        "nickname",
+        "name",
+        "displayName",
+        "username",
+        "label",
+        "text",
+        "value"
+      ];
+      for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const candidate = normalizeNicknameCandidate(value[key]);
+          if (candidate) return candidate;
+        }
+      }
+      return "";
+    }
+    return normalizeNicknameCandidate(String(value || ""));
   };
+
+  if (trimmed[0] === "{" || trimmed[0] === "[") {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const fromJson = tryFromJson(parsed);
+      if (fromJson) return fromJson;
+    } catch (_) {
+      /* ignore JSON parse errors */
+    }
+  }
+
+  const parts = trimmed
+    .split(/[\n;,]/)
+    .map((part) => safeTrimString(part))
+    .filter(Boolean);
+  if (parts.length) return parts[0];
+  return trimmed;
+}
+
+function gatherInlineProfileSnapshot() {
+  const safeTrim = safeTrimString;
 
   const snapshot = {
     nickname: null,
@@ -440,30 +494,22 @@ function gatherInlineProfileSnapshot() {
     authProvider: null
   };
 
-  const tryNickname = (selector) => {
-    if (snapshot.nickname) return;
-    try {
-      const node = document.querySelector(selector);
-      if (!node) return;
-      let raw = "";
-      if (typeof node.getAttribute === "function") {
-        raw = node.getAttribute("data-nickname")
-          || node.getAttribute("data-name")
-          || node.getAttribute("data-value")
-          || "";
+  const nicknameAttempts = [];
+  const recordNicknameAttempt = (selector, detail) => {
+    if (nicknameAttempts.length >= 12) return;
+    const entry = { selector };
+    if (detail) {
+      if (typeof detail.found === "boolean") entry.found = detail.found;
+      if (typeof detail.raw === "string" && detail.raw) {
+        entry.raw = detail.raw.length > 100 ? `${detail.raw.slice(0, 97)}...` : detail.raw;
       }
-      if (!raw && typeof node.value === "string") raw = node.value;
-      if (!raw) raw = node.textContent || "";
-      const value = safeTrim(raw);
-      if (!value) return;
-      snapshot.nickname = value;
-      snapshot.nicknameSource = selector;
-    } catch (_) {
-      /* ignore */
+      if (typeof detail.value === "string" && detail.value) entry.value = detail.value;
+      if (detail.note) entry.note = detail.note;
     }
+    nicknameAttempts.push(entry);
   };
 
-  [
+  const nicknameSelectors = [
     "#mentionTriggers",
     ".settings #mentionTriggers",
     ".sidebar #mentionTriggers",
@@ -473,7 +519,86 @@ function gatherInlineProfileSnapshot() {
     ".profile .nickname",
     ".account .nickname",
     ".account .name"
-  ].forEach((selector) => tryNickname(selector));
+  ];
+  for (const selector of nicknameSelectors) {
+    try {
+      const node = document.querySelector(selector);
+      if (!node) {
+        recordNicknameAttempt(selector, { found: false, note: "missing" });
+        continue;
+      }
+      let raw = "";
+      if (typeof node.value === "string") raw = node.value;
+      if (!raw && typeof node.defaultValue === "string") raw = node.defaultValue;
+      if (!raw && typeof node.getAttribute === "function") {
+        raw = node.getAttribute("data-nickname")
+          || node.getAttribute("data-name")
+          || node.getAttribute("data-value")
+          || node.getAttribute("value")
+          || "";
+      }
+      if (!raw) raw = node.textContent || "";
+      const value = normalizeNicknameCandidate(raw);
+      recordNicknameAttempt(selector, {
+        found: true,
+        raw: safeTrim(raw),
+        value,
+        note: value ? "candidate" : "empty"
+      });
+      if (!value) continue;
+      snapshot.nickname = value;
+      snapshot.nicknameSource = selector;
+      break;
+    } catch (err) {
+      recordNicknameAttempt(selector, { found: false, note: err?.message ? `error:${err.message}` : "error" });
+    }
+  }
+
+  if (!snapshot.nickname) {
+    const storageSources = [
+      { storage: window?.localStorage, label: "localStorage" },
+      { storage: window?.sessionStorage, label: "sessionStorage" }
+    ];
+    const storageKeys = [
+      "nickname",
+      "mentionTriggers",
+      "settings.nickname",
+      "settings.mentionTriggers",
+      "profile.nickname"
+    ];
+    for (const source of storageSources) {
+      const store = source.storage;
+      if (!store || typeof store.getItem !== "function") continue;
+      for (const key of storageKeys) {
+        try {
+          const raw = store.getItem(key);
+          if (!raw) {
+            recordNicknameAttempt(`${source.label}:${key}`, { found: false, note: "empty" });
+            continue;
+          }
+          const value = normalizeNicknameCandidate(raw);
+          recordNicknameAttempt(`${source.label}:${key}`, {
+            found: true,
+            raw: safeTrim(raw),
+            value,
+            note: value ? "candidate" : "empty"
+          });
+          if (value) {
+            snapshot.nickname = value;
+            snapshot.nicknameSource = `${source.label}:${key}`;
+            break;
+          }
+        } catch (err) {
+          recordNicknameAttempt(`${source.label}:${key}`, { found: false, note: err?.message ? `error:${err.message}` : "error" });
+        }
+      }
+      if (snapshot.nickname) break;
+    }
+  }
+
+  if (nicknameAttempts.length) {
+    snapshot.nicknameAttempts = nicknameAttempts;
+  }
 
   const tryAuth = (selector) => {
     if (snapshot.authLabel) return;
@@ -844,6 +969,9 @@ function emitPresenceContext(reason) {
       lobbyAuthSource: inlineProfile.authSource || null,
       lobbyAuthProvider: inlineProfile.authProvider || null
     };
+    if (Array.isArray(inlineProfile.nicknameAttempts) && inlineProfile.nicknameAttempts.length) {
+      payload.lobbyNicknameAttempts = inlineProfile.nicknameAttempts.slice(0, OVERRIDE_LIST_LIMIT);
+    }
     window.postMessage(payload, "*");
   } catch (err) {
     console.warn("[BombPartyShark] Failed to emit presence context", err);

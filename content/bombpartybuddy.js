@@ -2688,6 +2688,58 @@ function safeTrim(value) {
   catch (_) { return ""; }
 }
 
+function normalizeNicknameCandidate(raw) {
+  const trimmed = safeTrim(raw);
+  if (!trimmed) return "";
+
+  const tryFromJson = (value) => {
+    if (!value) return "";
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const candidate = normalizeNicknameCandidate(entry);
+        if (candidate) return candidate;
+      }
+      return "";
+    }
+    if (typeof value === "object") {
+      const keys = [
+        "nickname",
+        "name",
+        "displayName",
+        "username",
+        "label",
+        "text",
+        "value"
+      ];
+      for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const candidate = normalizeNicknameCandidate(value[key]);
+          if (candidate) return candidate;
+        }
+      }
+      return "";
+    }
+    return normalizeNicknameCandidate(String(value || ""));
+  };
+
+  if (trimmed[0] === "{" || trimmed[0] === "[") {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const fromJson = tryFromJson(parsed);
+      if (fromJson) return fromJson;
+    } catch (_) {
+      /* ignore JSON parse errors */
+    }
+  }
+
+  const parts = trimmed
+    .split(/[\n;,]/)
+    .map((part) => safeTrim(part))
+    .filter(Boolean);
+  if (parts.length) return parts[0];
+  return trimmed;
+}
+
 function gatherTopContextSnapshot() {
   const snapshot = {
     roomCode: null,
@@ -2729,7 +2781,25 @@ function gatherTopContextSnapshot() {
     }
   }
 
+  const nicknameAttempts = [];
+  const recordNicknameAttempt = (selector, detail) => {
+    if (nicknameAttempts.length >= 12) return;
+    const entry = { selector };
+    if (detail) {
+      if (typeof detail.found === "boolean") entry.found = detail.found;
+      if (typeof detail.raw === "string" && detail.raw) {
+        entry.raw = detail.raw.length > 100 ? `${detail.raw.slice(0, 97)}...` : detail.raw;
+      }
+      if (typeof detail.value === "string" && detail.value) entry.value = detail.value;
+      if (detail.note) entry.note = detail.note;
+    }
+    nicknameAttempts.push(entry);
+  };
+
   const nicknameSelectors = [
+    "#mentionTriggers",
+    ".settings #mentionTriggers",
+    ".sidebar #mentionTriggers",
     ".setup .auth .nickname",
     ".setup .nickname",
     "[data-nickname]",
@@ -2739,17 +2809,81 @@ function gatherTopContextSnapshot() {
   for (const selector of nicknameSelectors) {
     try {
       const node = document.querySelector(selector);
-      if (!node) continue;
-      const attr = node.getAttribute ? (node.getAttribute("data-nickname") || node.getAttribute("data-name")) : "";
-      const raw = attr || node.textContent || "";
-      const value = safeTrim(raw);
+      if (!node) {
+        recordNicknameAttempt(selector, { found: false, note: "missing" });
+        continue;
+      }
+      let raw = "";
+      if (typeof node.value === "string") raw = node.value;
+      if (!raw && typeof node.defaultValue === "string") raw = node.defaultValue;
+      if (!raw && typeof node.getAttribute === "function") {
+        raw = node.getAttribute("data-nickname")
+          || node.getAttribute("data-name")
+          || node.getAttribute("data-value")
+          || node.getAttribute("value")
+          || "";
+      }
+      if (!raw) raw = node.textContent || "";
+      const value = normalizeNicknameCandidate(raw);
+      recordNicknameAttempt(selector, {
+        found: true,
+        raw: safeTrim(raw),
+        value,
+        note: value ? "candidate" : "empty"
+      });
       if (!value) continue;
       snapshot.nickname = value;
       snapshot.nicknameSource = selector;
       break;
-    } catch (_) {
-      /* ignore */
+    } catch (err) {
+      recordNicknameAttempt(selector, { found: false, note: err?.message ? `error:${err.message}` : "error" });
     }
+  }
+
+  if (!snapshot.nickname) {
+    const storageSources = [
+      { storage: window?.localStorage, label: "localStorage" },
+      { storage: window?.sessionStorage, label: "sessionStorage" }
+    ];
+    const storageKeys = [
+      "nickname",
+      "mentionTriggers",
+      "settings.nickname",
+      "settings.mentionTriggers",
+      "profile.nickname"
+    ];
+    for (const source of storageSources) {
+      const store = source.storage;
+      if (!store || typeof store.getItem !== "function") continue;
+      for (const key of storageKeys) {
+        try {
+          const raw = store.getItem(key);
+          if (!raw) {
+            recordNicknameAttempt(`${source.label}:${key}`, { found: false, note: "empty" });
+            continue;
+          }
+          const value = normalizeNicknameCandidate(raw);
+          recordNicknameAttempt(`${source.label}:${key}`, {
+            found: true,
+            raw: safeTrim(raw),
+            value,
+            note: value ? "candidate" : "empty"
+          });
+          if (value) {
+            snapshot.nickname = value;
+            snapshot.nicknameSource = `${source.label}:${key}`;
+            break;
+          }
+        } catch (err) {
+          recordNicknameAttempt(`${source.label}:${key}`, { found: false, note: err?.message ? `error:${err.message}` : "error" });
+        }
+      }
+      if (snapshot.nickname) break;
+    }
+  }
+
+  if (nicknameAttempts.length) {
+    snapshot.nicknameAttempts = nicknameAttempts;
   }
 
   const authLabelSelectors = [
@@ -3626,6 +3760,12 @@ class PresenceReporter {
     const candidates = Array.isArray(message.roomCodeCandidates)
       ? message.roomCodeCandidates.slice(0, 10)
       : null;
+    if (Array.isArray(message.lobbyNicknameAttempts) && message.lobbyNicknameAttempts.length) {
+      this.log("presence", "lobby_nickname_attempts", {
+        reason,
+        attempts: message.lobbyNicknameAttempts.slice(0, 10)
+      });
+    }
     const normalizedRoom = this.normalizeRoomCode(message.roomCode || message.room_code || null);
     const candidateRoom = normalizedRoom || null;
 
