@@ -1,0 +1,2665 @@
+{
+  "title": "Calculus and Vectors MCV4U",
+  "chapters": [
+    {
+      "title": "Chapter 1 Introduction to Calculus",
+      "lessons": [
+        {
+          "title": "1.1 Rationalizing Denominators",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1",
+              "url": "https://www.youtube.com/watch?v=3JzfRIWY62k"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2a",
+              "url": "https://www.youtube.com/watch?v=BD5Oz533cv8"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2b",
+              "url": "https://www.youtube.com/watch?v=dbdQT8S3Gcg"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2c",
+              "url": "https://www.youtube.com/watch?v=owpcQq6HPXg"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2d",
+              "url": "https://www.youtube.com/watch?v=LtjN87cazdA"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3a",
+              "url": "https://www.youtube.com/watch?v=Mc0VpsJpOlY"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3b",
+              "url": "https://www.youtube.com/watch?v=1xywDLMOkng"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3c",
+              "url": "https://www.youtube.com/watch?v=tQZnP9npq2o"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3d",
+              "url": "https://www.youtube.com/watch?v=t1cPyD7_cKA"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3e",
+              "url": "https://www.youtube.com/watch?v=yZt1q78DLFQ"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3f",
+              "url": "https://www.youtube.com/watch?v=ndh3fGckfTY"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=gdtO5KTIFQo"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=QL1rZnpPdiQ"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=H-L-UkvK24Y"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=MUsu2vudL_U"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=EewjAcI_FdE"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6a",
+              "url": "https://www.youtube.com/watch?v=ksSt5cmgNXA"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6b",
+              "url": "https://www.youtube.com/watch?v=uUtS9AkzMQ8"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6c",
+              "url": "https://www.youtube.com/watch?v=StA5WsQHmEA"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6d",
+              "url": "https://www.youtube.com/watch?v=PRTo8TVIzPk"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6e",
+              "url": "https://www.youtube.com/watch?v=Q6KDrUn1Okw"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6f",
+              "url": "https://www.youtube.com/watch?v=j9fnZQwCr0g"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=O_8Ujm_ESPk"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=Fc0QTNJdty0"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7c",
+              "url": "https://www.youtube.com/watch?v=fjDNS4mKMWo"
+            }
+          ]
+        },
+        {
+          "title": "1.2 The Slope of a Tangent",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1a",
+              "url": "https://www.youtube.com/watch?v=jGsrxb45uNc"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2",
+              "url": "https://www.youtube.com/watch?v=5_Zy-j0WUhQ"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3a",
+              "url": "https://www.youtube.com/watch?v=MqjKUJ6Bgrg"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3b",
+              "url": "https://www.youtube.com/watch?v=STxbDiFncCw"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3c",
+              "url": "https://www.youtube.com/watch?v=0ugO4szRFuo"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3d",
+              "url": "https://www.youtube.com/watch?v=VCz3vJ7kyfI"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=IBEhqPj6U8g"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": null
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": null
+            },
+            {
+              "id": "004",
+              "prompt": "Q4d",
+              "url": null
+            },
+            {
+              "id": "004",
+              "prompt": "Q4e",
+              "url": "https://www.youtube.com/watch?v=hwNvefpHA48"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4f",
+              "url": "https://www.youtube.com/watch?v=l2UqA6y7-aA"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=n6xA9pArmkQ"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=2EqAE8PYhfA"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5c",
+              "url": "https://www.youtube.com/watch?v=-lF_EKacztQ"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6a",
+              "url": "https://www.youtube.com/watch?v=bO8pvghelWg"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6b",
+              "url": "https://www.youtube.com/watch?v=DxCaTX1_KEo"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6c",
+              "url": "https://www.youtube.com/watch?v=YHYIuxLMsIM"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7",
+              "url": "https://www.youtube.com/watch?v=gJqhQjIhfEQ"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8a",
+              "url": "https://www.youtube.com/watch?v=V7mXWgQF_gE"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8b",
+              "url": "https://www.youtube.com/watch?v=8av8fvN2QjA"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8c",
+              "url": "https://www.youtube.com/watch?v=cjNV1aYaiLU"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9a",
+              "url": "https://www.youtube.com/watch?v=tPnstzzEAGM"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9b",
+              "url": "https://www.youtube.com/watch?v=X9bCxyq6ZlA"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9c",
+              "url": "https://www.youtube.com/watch?v=ixMaj2L7T5g"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10a",
+              "url": "https://www.youtube.com/watch?v=Om4e78XXgTs"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10b",
+              "url": "https://www.youtube.com/watch?v=k2k3sxJq9Sg"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10c",
+              "url": "https://www.youtube.com/watch?v=w8vQcje1LS0"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11a",
+              "url": "https://www.youtube.com/watch?v=eLaFNb7jZKI"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11b",
+              "url": "https://www.youtube.com/watch?v=V_86MM5cSaU"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11c",
+              "url": "https://www.youtube.com/watch?v=OKXLQvDHJRs"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11d",
+              "url": null
+            },
+            {
+              "id": "011",
+              "prompt": "Q11e",
+              "url": "https://www.youtube.com/watch?v=HP0XLAzvVqQ"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11f",
+              "url": "https://www.youtube.com/watch?v=iU7rwpm5beU"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12",
+              "url": "https://www.youtube.com/watch?v=URV79BMj4f0"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15",
+              "url": "https://www.youtube.com/watch?v=spPEv8zWmKw"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16",
+              "url": "https://www.youtube.com/watch?v=jawamnrtaN4"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17a",
+              "url": "https://www.youtube.com/watch?v=fU2tFTr7OoQ"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17b",
+              "url": "https://www.youtube.com/watch?v=9SyFyKukyVM"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17c",
+              "url": "https://www.youtube.com/watch?v=g_glNLP_RkI"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17de",
+              "url": "https://www.youtube.com/watch?v=HaMKndyPPa0"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18",
+              "url": "https://www.youtube.com/watch?v=iEoaf7hDApE"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19",
+              "url": "https://www.youtube.com/watch?v=b2AP5gzYVPg"
+            },
+            {
+              "id": "020",
+              "prompt": "Q20",
+              "url": "https://www.youtube.com/watch?v=BN3jGWXSFlM"
+            },
+            {
+              "id": "021",
+              "prompt": "Q21",
+              "url": "https://www.youtube.com/watch?v=kzwza04g9SM"
+            },
+            {
+              "id": "022",
+              "prompt": "Q22",
+              "url": "https://www.youtube.com/watch?v=jNbW9XOFeoY"
+            },
+            {
+              "id": "023",
+              "prompt": "Q23",
+              "url": "https://www.youtube.com/watch?v=XtTXhXC8ffs"
+            },
+            {
+              "id": "024",
+              "prompt": "Q24",
+              "url": "https://www.youtube.com/watch?v=tzm6c9Uqzyo"
+            },
+            {
+              "id": "025",
+              "prompt": "Q25",
+              "url": "https://www.youtube.com/watch?v=hsEm3bDsCBA"
+            }
+          ]
+        },
+        {
+          "title": "1.3 Rates of Change",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1",
+              "url": "https://www.youtube.com/watch?v=X6sC6gBAE1w"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2",
+              "url": "https://www.youtube.com/watch?v=4nfp5PiK9gY"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3",
+              "url": "https://www.youtube.com/watch?v=uuntEoyKXtQ"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=wQzvG5-fSbc"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=LEty_4zZLp0"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=3xcrn-FbT98"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5",
+              "url": "https://www.youtube.com/watch?v=8bVTpmy-xWs"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=exMNupeoyMI"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=KYtFkMPfLO8"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7c",
+              "url": "https://www.youtube.com/watch?v=yRlMJRtUHDU"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7d",
+              "url": "https://www.youtube.com/watch?v=hhi38-_CGUg"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8",
+              "url": "https://www.youtube.com/watch?v=p9Ep5UgWBCM"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9",
+              "url": "https://www.youtube.com/watch?v=yuGrZAAMZOg"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=74BpIfaJCl0"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11",
+              "url": "https://www.youtube.com/watch?v=u4JQ5-BAqbs"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12",
+              "url": "https://www.youtube.com/watch?v=-FTDYxDlgi0"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13",
+              "url": "https://www.youtube.com/watch?v=GJQuDD8QvIY"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14",
+              "url": "https://www.youtube.com/watch?v=BqjLmpdu8bw"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15b",
+              "url": "https://www.youtube.com/watch?v=pVBQdQMWy-s"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16",
+              "url": "https://www.youtube.com/watch?v=qzh4mF1mlOc"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17",
+              "url": "https://www.youtube.com/watch?v=xnjMdye8huY"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18",
+              "url": "https://www.youtube.com/watch?v=7YKktxQvSfo"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19",
+              "url": "https://www.youtube.com/watch?v=dRB1U31AbYE"
+            },
+            {
+              "id": "020",
+              "prompt": "Q20",
+              "url": "https://www.youtube.com/watch?v=UPj3Fry8PLs"
+            },
+            {
+              "id": "021",
+              "prompt": "Q21",
+              "url": "https://www.youtube.com/watch?v=4KiF2Vw66OU"
+            },
+            {
+              "id": "022",
+              "prompt": "Q22a",
+              "url": "https://www.youtube.com/watch?v=6zOS6f1GudQ"
+            },
+            {
+              "id": "022",
+              "prompt": "Q22b",
+              "url": "https://www.youtube.com/watch?v=Xo1JmV5KBPs"
+            }
+          ]
+        },
+        {
+          "title": "Mid Chapter Review for Rates of Change",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1",
+              "url": "https://www.youtube.com/watch?v=Gbj2Bpm_LrY"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2a",
+              "url": "https://www.youtube.com/watch?v=SxMA1vM9JZM"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2b",
+              "url": "https://www.youtube.com/watch?v=mcWEFJq1M64"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2c",
+              "url": "https://www.youtube.com/watch?v=ZImTbwy_Yp8"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2d",
+              "url": "https://www.youtube.com/watch?v=ooSqOVqVBQs"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2e",
+              "url": "https://www.youtube.com/watch?v=XE8joXTvjkI"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2f",
+              "url": "https://www.youtube.com/watch?v=gFCv1rQnAV4"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3a",
+              "url": "https://www.youtube.com/watch?v=vbQ0YRmGOcA"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3b",
+              "url": "https://www.youtube.com/watch?v=pJ7Ezg5wE4k"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3c",
+              "url": "https://www.youtube.com/watch?v=GaVBNItrnTY"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3d",
+              "url": "https://www.youtube.com/watch?v=a2c0m_cuAmw"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3e",
+              "url": "https://www.youtube.com/watch?v=g8_1eaIA-rc"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3f",
+              "url": "https://www.youtube.com/watch?v=oZv4m6VA9JE"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=9L-RZG7Lqb0"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=mkCOXtWym5o"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=8YMv-rwTPB4"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4d",
+              "url": "https://www.youtube.com/watch?v=6AKsE3GMV44"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5",
+              "url": "https://www.youtube.com/watch?v=l8bdHw2cWN0"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6",
+              "url": "https://www.youtube.com/watch?v=IsullC-Fk0g"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=xjT_idKzy3s"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=9eE2Nl1Q_08"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7c",
+              "url": "https://www.youtube.com/watch?v=V0XPY0cFCQU"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7d",
+              "url": "https://www.youtube.com/watch?v=WEEbXhGCAZ4"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8",
+              "url": "https://www.youtube.com/watch?v=LiYXzW2HKpk"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9a",
+              "url": "https://www.youtube.com/watch?v=9aH6gDoJ8n0"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9b",
+              "url": "https://www.youtube.com/watch?v=n9429wX408c"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=kkYmo88BdOg"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11a",
+              "url": "https://www.youtube.com/watch?v=0-4Es1jQ0R4"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11b",
+              "url": "https://www.youtube.com/watch?v=ZX8m4MeO-cw"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11c",
+              "url": "https://www.youtube.com/watch?v=ykSUUVQpvYE"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11d",
+              "url": "https://www.youtube.com/watch?v=JKTKTvf4dF0"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12a",
+              "url": "https://www.youtube.com/watch?v=BLKxTqvnxZ4"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12b",
+              "url": "https://www.youtube.com/watch?v=EUaKwqcqoIM"
+            }
+          ]
+        },
+        {
+          "title": "1.4 Limit of a Function",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1a",
+              "url": "https://www.youtube.com/watch?v=RBENno6Sg0I"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1b",
+              "url": "https://www.youtube.com/watch?v=8y944Qtb8ME"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=Z1yKe6NjHoU"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=X5KCTKN8F0M"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=HunS0aeZmW4"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4d",
+              "url": "https://www.youtube.com/watch?v=zYD4wcCW4aA"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4e",
+              "url": "https://www.youtube.com/watch?v=98zTO2pbUsM"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4f",
+              "url": "https://www.youtube.com/watch?v=BWYjAa-ZZqw"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5",
+              "url": "https://www.youtube.com/watch?v=fhnMIvPYUVU"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6",
+              "url": "https://www.youtube.com/watch?v=j6RCR7yc5i4"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=QU7sL5eGCnU"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=HAqMJW6prr0"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7c",
+              "url": "https://www.youtube.com/watch?v=UZsRK1FVNSw"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8a",
+              "url": "https://www.youtube.com/watch?v=oYVDauUlA5E"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8b",
+              "url": "https://www.youtube.com/watch?v=NIXwgchVHZo"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8c",
+              "url": "https://www.youtube.com/watch?v=U7kdKSY2kMs"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9",
+              "url": "https://www.youtube.com/watch?v=eF5KMUeKbd0"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10a",
+              "url": "https://www.youtube.com/watch?v=hm_qE8uShFM"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10b",
+              "url": "https://www.youtube.com/watch?v=zivHDFkYP7I"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10c",
+              "url": "https://www.youtube.com/watch?v=VbltWwVmYnU"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10d",
+              "url": "https://www.youtube.com/watch?v=5xH7R2xCiEc"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10e",
+              "url": "https://www.youtube.com/watch?v=2_LbiuDo-p0"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10f",
+              "url": "https://www.youtube.com/watch?v=Ro1XhIUNC_c"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11a",
+              "url": "https://www.youtube.com/watch?v=6VWw6xJaK8Q"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11b",
+              "url": "https://www.youtube.com/watch?v=_eaP9gy1qR4"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11c",
+              "url": "https://www.youtube.com/watch?v=2CsB5CvzHYk"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11d",
+              "url": "https://www.youtube.com/watch?v=doVNL-DwL8Q"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12a",
+              "url": "https://www.youtube.com/watch?v=s4G2sb33-xI"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12b",
+              "url": "https://www.youtube.com/watch?v=uk-yKSf6uZw"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12c",
+              "url": "https://www.youtube.com/watch?v=HdtsRAMao0o"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12d",
+              "url": "https://www.youtube.com/watch?v=7T0H7M1YUGY"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13",
+              "url": "https://www.youtube.com/watch?v=VpommwcCDoo"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14",
+              "url": "https://www.youtube.com/watch?v=Cm0HxZftRrI"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15",
+              "url": "https://www.youtube.com/watch?v=8ux6aDdbiiE"
+            }
+          ]
+        },
+        {
+          "title": "1.5 Limits Properties and Laws",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1",
+              "url": "https://www.youtube.com/watch?v=nfZAylfSBqM"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3",
+              "url": "https://www.youtube.com/watch?v=2-KKhODwTV8"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=PcOxCsjyCwA"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=Gboj6d9gtXo"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=wWF5vi15f8Y"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4d",
+              "url": "https://www.youtube.com/watch?v=ZMMw0XvxpnE"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4e",
+              "url": "https://www.youtube.com/watch?v=mD-kYN0veTs"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4f",
+              "url": "https://www.youtube.com/watch?v=MmW0izS5tLs"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=CRR2U3iuNE8"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=WHCDiGGuH-4"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6",
+              "url": "https://www.youtube.com/watch?v=6xQej09KCPE"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=H-9ecJ9JcSo"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=rWzj5O16BmE"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7c",
+              "url": "https://www.youtube.com/watch?v=G3gJAJjATeo"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7d",
+              "url": "https://www.youtube.com/watch?v=PUb1DjUCRb8"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7e",
+              "url": "https://www.youtube.com/watch?v=4qA_zGkPM6g"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7f",
+              "url": "https://www.youtube.com/watch?v=Vg_0VZqyfw4"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8a",
+              "url": "https://www.youtube.com/watch?v=ujIKHIx4rCc"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8b",
+              "url": "https://www.youtube.com/watch?v=ipLsWzfVQao"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8c",
+              "url": "https://www.youtube.com/watch?v=fjeZikxQzi0"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8d",
+              "url": "https://www.youtube.com/watch?v=7NOczXe5JVg"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8e",
+              "url": "https://www.youtube.com/watch?v=Uw7kXBIDfLo"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8f",
+              "url": "https://www.youtube.com/watch?v=cfdTLF8U3mM"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9a",
+              "url": "https://www.youtube.com/watch?v=Yn__XTLIe30"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9b",
+              "url": "https://www.youtube.com/watch?v=GJZ8bh2_DXI"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9c",
+              "url": "https://www.youtube.com/watch?v=nk9M3q--dLk"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9d",
+              "url": "https://www.youtube.com/watch?v=9fY7YJXpNYg"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9e",
+              "url": "https://www.youtube.com/watch?v=obDLL3dW--A"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9f",
+              "url": "https://www.youtube.com/watch?v=dJKiuNKwBGM"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10a",
+              "url": "https://www.youtube.com/watch?v=4JoV97vLUho"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10b",
+              "url": "https://www.youtube.com/watch?v=oikovuMO71E"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10c",
+              "url": "https://www.youtube.com/watch?v=-CS6OQiBu7Y"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10d",
+              "url": "https://www.youtube.com/watch?v=qcFMh9aT1fk"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12",
+              "url": "https://www.youtube.com/watch?v=ZR4Q0R6qmhs"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13a",
+              "url": "https://www.youtube.com/watch?v=z8l5Qoux0WQ"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13b",
+              "url": "https://www.youtube.com/watch?v=6eXkxRUxqqg"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13c",
+              "url": "https://www.youtube.com/watch?v=Tm5vLoipNO4"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14a",
+              "url": "https://www.youtube.com/watch?v=Cs3Il4iV0j0"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14b",
+              "url": "https://www.youtube.com/watch?v=uNPLgXAIE1w"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15a",
+              "url": "https://www.youtube.com/watch?v=5AMIaG16-kM"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15b",
+              "url": "https://www.youtube.com/watch?v=vnxcwoM1aPM"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16",
+              "url": "https://www.youtube.com/watch?v=rKUFKMmpwzM"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17",
+              "url": "https://www.youtube.com/watch?v=GtJ0v3Ek_8E"
+            }
+          ]
+        },
+        {
+          "title": "1.6 Continuity",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1",
+              "url": "https://www.youtube.com/watch?v=Yi-Mip2kbAU"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2",
+              "url": "https://www.youtube.com/watch?v=jiHPCsOVmGI"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3",
+              "url": "https://www.youtube.com/watch?v=iK24_-NrSWc"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=8jQLTebMLMU"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=uZyTwbL2b1s"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=bhlKsv5hu_k"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4d",
+              "url": "https://www.youtube.com/watch?v=xQ164Qo00bI"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4e",
+              "url": "https://www.youtube.com/watch?v=V8Tx86rzNUY"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4f",
+              "url": "https://www.youtube.com/watch?v=5aHqiUsT21g"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=jTFuURsoRGI"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=xfGYQFcqYEE"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5c",
+              "url": "https://www.youtube.com/watch?v=ug8UkQbeuMk"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5d",
+              "url": "https://www.youtube.com/watch?v=CwDeZz3s9Zg"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5e",
+              "url": "https://www.youtube.com/watch?v=grxKahgpqRQ"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5f",
+              "url": "https://www.youtube.com/watch?v=TsxAE8oOK8Y"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6",
+              "url": "https://www.youtube.com/watch?v=NclcS2OuqrE"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7",
+              "url": "https://www.youtube.com/watch?v=ubWZ0OM4MWw"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8",
+              "url": "https://www.youtube.com/watch?v=9TvIby3WRLc"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9",
+              "url": "https://www.youtube.com/watch?v=0GzIwuSh_lU"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=vhBfGkaq7tA"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11",
+              "url": "https://www.youtube.com/watch?v=hd7oL-PEwmc"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12",
+              "url": "https://www.youtube.com/watch?v=3B3YeWuj5cE"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13a",
+              "url": "https://www.youtube.com/watch?v=czpUR0ZUW8c"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13b",
+              "url": "https://www.youtube.com/watch?v=akaNjE91XEM"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14a",
+              "url": "https://www.youtube.com/watch?v=VcDnRRRxfQ8"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14b",
+              "url": "https://www.youtube.com/watch?v=F5QHY5dlUR0"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14c",
+              "url": "https://www.youtube.com/watch?v=o51Qmxu9Hus"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15",
+              "url": "https://www.youtube.com/watch?v=Ny6AenQE3qc"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16",
+              "url": "https://www.youtube.com/watch?v=xmRahMtVUto"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17a",
+              "url": "https://www.youtube.com/watch?v=Hkkisx2YnVM"
+            },
+            {
+              "id": "018",
+              "prompt": "Q17b",
+              "url": "https://www.youtube.com/watch?v=UL8hbLINiTU"
+            }
+          ]
+        },
+        {
+          "title": "Chapter Review Limits and Continuity",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1a",
+              "url": "https://www.youtube.com/watch?v=bDlGL2GVWbs"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1b",
+              "url": "https://www.youtube.com/watch?v=pfrGmuRcc5w"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1c",
+              "url": "https://www.youtube.com/watch?v=xfDg6a-QtL0"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2a",
+              "url": "https://www.youtube.com/watch?v=Mq_TnP_pAOM"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2b",
+              "url": "https://www.youtube.com/watch?v=Rn5dYE4DEiI"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2c",
+              "url": "https://www.youtube.com/watch?v=Q5tOkmQH2-w"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2d",
+              "url": "https://www.youtube.com/watch?v=IyPSpR-ry50"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3a",
+              "url": "https://www.youtube.com/watch?v=lPA8dOsKBJ4"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3b",
+              "url": "https://www.youtube.com/watch?v=JmB9aSwYvXQ"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=Gi4y3Rmb4XU"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=tCifj1icEAU"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=0-oLUD13LfA"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=lPYSwTzt1yY"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=gPTwbacGdYs"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5c",
+              "url": "https://www.youtube.com/watch?v=8L0fyiFvX1Q"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6a",
+              "url": "https://www.youtube.com/watch?v=xed2IR296Cg"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6b",
+              "url": "https://www.youtube.com/watch?v=l6w-TGXzoBY"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6c",
+              "url": "https://www.youtube.com/watch?v=l-J7Wogdq0w"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6d",
+              "url": "https://www.youtube.com/watch?v=HMKQCELCBHU"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7",
+              "url": "https://www.youtube.com/watch?v=43618SFuxAo"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8a",
+              "url": "https://www.youtube.com/watch?v=dZIXBwXaHN4"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8b",
+              "url": "https://www.youtube.com/watch?v=LZnjRDTgLeI"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9a",
+              "url": "https://www.youtube.com/watch?v=VHErAoqYs1Y"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9b",
+              "url": "https://www.youtube.com/watch?v=zGgIS8QkSg8"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9c",
+              "url": "https://www.youtube.com/watch?v=STNrzBS1TI8"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=pvh8f81QWSc"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11a",
+              "url": "https://www.youtube.com/watch?v=a-dYqboAUok"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11b",
+              "url": "https://www.youtube.com/watch?v=yAGLMG3SXAM"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12a",
+              "url": "https://www.youtube.com/watch?v=xRwnNb86-JM"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12b",
+              "url": "https://www.youtube.com/watch?v=2vmgogIVlkU"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12c",
+              "url": "https://www.youtube.com/watch?v=n-7b94T8bys"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13a",
+              "url": "https://www.youtube.com/watch?v=2271NA5tcrs"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13b",
+              "url": "https://www.youtube.com/watch?v=rlsUuuqqLg0"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14",
+              "url": "https://www.youtube.com/watch?v=D-fR_7D4eRw"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15",
+              "url": "https://www.youtube.com/watch?v=lz4l5XtjGfI"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16a",
+              "url": "https://www.youtube.com/watch?v=gZumktDuS2c"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16b",
+              "url": "https://www.youtube.com/watch?v=XZhFmNIIWss"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16c",
+              "url": "https://www.youtube.com/watch?v=HUjxWRZBW0s"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17a",
+              "url": "https://www.youtube.com/watch?v=lp78VyV2fIo"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17b",
+              "url": "https://www.youtube.com/watch?v=Tn_AbPcvwUo"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17c",
+              "url": "https://www.youtube.com/watch?v=gCbWuGHTKkQ"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17d",
+              "url": "https://www.youtube.com/watch?v=nayqqvcrrPI"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17e",
+              "url": "https://www.youtube.com/watch?v=XSGE-7vqnp8"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17f",
+              "url": "https://www.youtube.com/watch?v=dPx8KCYJq9k"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18a",
+              "url": "https://www.youtube.com/watch?v=_ZnSm_rFwU0"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18b",
+              "url": "https://www.youtube.com/watch?v=VYlfuYcSh9A"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18c",
+              "url": "https://www.youtube.com/watch?v=peRLTTUtY-8"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18d",
+              "url": "https://www.youtube.com/watch?v=l6ixtkce_xk"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18e",
+              "url": "https://www.youtube.com/watch?v=XZEx25Sg7sw"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18f",
+              "url": "https://www.youtube.com/watch?v=3F3q44XRFxA"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19a",
+              "url": "https://www.youtube.com/watch?v=qLnVvfV77G8"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19b",
+              "url": "https://www.youtube.com/watch?v=0GUIUaEdmfM"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19c",
+              "url": "https://www.youtube.com/watch?v=DjWEwuCjLUs"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19d",
+              "url": "https://www.youtube.com/watch?v=_qd0G72Ef9Y"
+            },
+            {
+              "id": "020",
+              "prompt": "Q20",
+              "url": "https://www.youtube.com/watch?v=WLODew7qyUI"
+            }
+          ]
+        },
+        {
+          "title": "Chapter Test",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1",
+              "url": "https://www.youtube.com/watch?v=QHyrzgI719o"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2",
+              "url": "https://www.youtube.com/watch?v=7ZQ_GFLAu_Q"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3",
+              "url": "https://www.youtube.com/watch?v=_E0STUASijw"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=BFT4G5ndSbc"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=MACTIQB_1Kc"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5",
+              "url": "https://www.youtube.com/watch?v=G68dHoCzoMw"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6",
+              "url": "https://www.youtube.com/watch?v=EAzTH90nj2U"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=xZdpkdkA7o8"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=7bpOLcD1R5Y"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7c",
+              "url": null
+            },
+            {
+              "id": "007",
+              "prompt": "Q7d",
+              "url": null
+            },
+            {
+              "id": "007",
+              "prompt": "Q7e",
+              "url": "https://www.youtube.com/watch?v=2aXEsjiU_yg"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7f",
+              "url": "https://www.youtube.com/watch?v=ECMNOX5z1Ok"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8",
+              "url": "https://www.youtube.com/watch?v=wYNi4LCZW2s"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chapter 2 Derivatives",
+      "lessons": [
+        {
+          "title": "2.1 The Derivative Function",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1a",
+              "url": "https://www.youtube.com/watch?v=fM7GYgMjTAs"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1b",
+              "url": "https://www.youtube.com/watch?v=TyDcMvPj40o"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1c",
+              "url": "https://www.youtube.com/watch?v=7YOqQAPrZZ4"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1d",
+              "url": "https://www.youtube.com/watch?v=95D_rTMbklU"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1e",
+              "url": "https://www.youtube.com/watch?v=WjlQy8szKxA"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1f",
+              "url": "https://www.youtube.com/watch?v=_peu6Bm2jTY"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2",
+              "url": "https://www.youtube.com/watch?v=Ya__3C_tMi4"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3",
+              "url": "https://www.youtube.com/watch?v=fCJUtgoA9_c"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=vsYR1pL2oyg"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=gxlW7Sv07IM"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=HQ2NnwW7P7I"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4d",
+              "url": "https://www.youtube.com/watch?v=V0AQ0-kRcvs"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4e",
+              "url": "https://www.youtube.com/watch?v=RJ5J8uX6AU0"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4f",
+              "url": "https://www.youtube.com/watch?v=dpGBCjDezGA"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=jX6JEAC1BHY"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=ei7VU3B5QbA"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5c",
+              "url": "https://www.youtube.com/watch?v=P6ut8qwASMk"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5d",
+              "url": "https://www.youtube.com/watch?v=pEOyRfdVwCY"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6a",
+              "url": "https://www.youtube.com/watch?v=Mf6OaqGKoKg"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6b",
+              "url": "https://www.youtube.com/watch?v=L94PNutLOgA"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6c",
+              "url": "https://www.youtube.com/watch?v=EJCA7LnhsyM"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6d",
+              "url": "https://www.youtube.com/watch?v=-2XrLz_cnJw"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=Xh4rysJvo6M"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=Dx2m6Mgy0_0"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7c",
+              "url": "https://www.youtube.com/watch?v=MQarYGDQM4s"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8",
+              "url": "https://www.youtube.com/watch?v=gFzXV2kcD5s"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9",
+              "url": "https://www.youtube.com/watch?v=Mhk_0oY4FMs"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=B8vlhWPwLFI"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11",
+              "url": "https://www.youtube.com/watch?v=oR14CcEeJe4"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12a",
+              "url": "https://www.youtube.com/watch?v=EmkbswZDXik"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12b",
+              "url": "https://www.youtube.com/watch?v=v06s58Iexvk"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12c",
+              "url": "https://www.youtube.com/watch?v=gbl-QbG8wzM"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12d",
+              "url": "https://www.youtube.com/watch?v=wQmHQlMAQGY"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13",
+              "url": "https://www.youtube.com/watch?v=OKwftCnbetI"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14a",
+              "url": "https://www.youtube.com/watch?v=vwqwxsS5UrA"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15",
+              "url": "https://www.youtube.com/watch?v=S0OThYRnOGI"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16",
+              "url": null
+            },
+            {
+              "id": "017",
+              "prompt": "Q17",
+              "url": "https://www.youtube.com/watch?v=gXI2PwICpMM"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18",
+              "url": "https://www.youtube.com/watch?v=5vViy_fnfio"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19",
+              "url": "https://www.youtube.com/watch?v=sVX88KiW8yc"
+            },
+            {
+              "id": "020",
+              "prompt": "Q20",
+              "url": "https://www.youtube.com/watch?v=5m0pAVzEoQg"
+            }
+          ]
+        },
+        {
+          "title": "2.2 The Derivatives of Polynomial Functions",
+          "videos": [
+            {
+              "id": "002",
+              "prompt": "Q2a",
+              "url": "https://www.youtube.com/watch?v=kov4stIr_sc"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2b",
+              "url": "https://www.youtube.com/watch?v=VkgFM3QcpGs"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2c",
+              "url": "https://www.youtube.com/watch?v=WBK8HKMU2_Y"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2d",
+              "url": "https://www.youtube.com/watch?v=-LBVM6ukPcs"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2e",
+              "url": "https://www.youtube.com/watch?v=iXneNiOfZ1g"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2f",
+              "url": "https://www.youtube.com/watch?v=eCYW1LfDi8Q"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3a",
+              "url": "https://www.youtube.com/watch?v=gdM_vNlYWFI"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3b",
+              "url": "https://www.youtube.com/watch?v=AcXGJPISRlQ"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3c",
+              "url": "https://www.youtube.com/watch?v=rRqnCXumd-Y"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3d",
+              "url": "https://www.youtube.com/watch?v=iztbyEDb6F0"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3e",
+              "url": "https://www.youtube.com/watch?v=O70K7l_iPMc"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3f",
+              "url": "https://www.youtube.com/watch?v=u2Gg2C1FyyM"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=IiVMmL_l2-E"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=V9VJZjFSMV0"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=g2qNsCeY0sQ"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4d",
+              "url": "https://www.youtube.com/watch?v=8RfIYwSaxks"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4e",
+              "url": "https://www.youtube.com/watch?v=tWGIW-LuAdY"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4f",
+              "url": "https://www.youtube.com/watch?v=LSB1z9fMTWI"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=f34QLex4BAE"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=RPzMj9y4_IY"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5c",
+              "url": "https://www.youtube.com/watch?v=9L9VzWLyvKo"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6a",
+              "url": "https://www.youtube.com/watch?v=FuSZeHQnEWI"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6b",
+              "url": "https://www.youtube.com/watch?v=0rVlmnzRudY"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=VNOUIjVgW4s"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=d8OfEi_bHYM"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7c",
+              "url": "https://www.youtube.com/watch?v=NSBHFkRNwUw"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7d",
+              "url": "https://www.youtube.com/watch?v=FUQ1neiHuNU"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8a",
+              "url": "https://www.youtube.com/watch?v=BEb17PjDrzA"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8b",
+              "url": "https://www.youtube.com/watch?v=97Vc3FdoI7k"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8c",
+              "url": "https://www.youtube.com/watch?v=Z2peuKtb1so"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8d",
+              "url": "https://www.youtube.com/watch?v=BGdgp1hJGsg"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9a",
+              "url": "https://www.youtube.com/watch?v=tn5iWeAdT5Y"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9b",
+              "url": "https://www.youtube.com/watch?v=rjCsY6bNQKk"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9c",
+              "url": "https://www.youtube.com/watch?v=rzXKK9mTx50"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9d",
+              "url": "https://www.youtube.com/watch?v=i-S2FEiXZ1A"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9e",
+              "url": "https://www.youtube.com/watch?v=ohGSuoxpdHA"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9f",
+              "url": "https://www.youtube.com/watch?v=r5abFCk1dbM"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=FES5god1lXg"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11",
+              "url": "https://www.youtube.com/watch?v=00Hrj0A12I4"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12",
+              "url": "https://www.youtube.com/watch?v=MphcMZQ55RA"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13",
+              "url": "https://www.youtube.com/watch?v=eFmcL3vtxtw"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14",
+              "url": "https://www.youtube.com/watch?v=PizyLgcI3W8"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15",
+              "url": "https://www.youtube.com/watch?v=ZwtXeMGPiHg"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16",
+              "url": "https://www.youtube.com/watch?v=wYI-39g2GSo"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17a",
+              "url": "https://www.youtube.com/watch?v=mrDeqrdaTCw"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17b",
+              "url": "https://www.youtube.com/watch?v=DZT75SLvVMw"
+            },
+            {
+              "id": "018",
+              "prompt": "Q18",
+              "url": "https://www.youtube.com/watch?v=4Pl7LPjL-Ww"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19a",
+              "url": "https://www.youtube.com/watch?v=t8Y1cM0uqKk"
+            },
+            {
+              "id": "019",
+              "prompt": "Q19b",
+              "url": "https://www.youtube.com/watch?v=CkJEBpZRv0M"
+            },
+            {
+              "id": "020",
+              "prompt": "Q20a",
+              "url": "https://www.youtube.com/watch?v=4U0gGvY9sWI"
+            },
+            {
+              "id": "020",
+              "prompt": "Q20b",
+              "url": "https://www.youtube.com/watch?v=Lcm7ggCgYOs"
+            },
+            {
+              "id": "020",
+              "prompt": "Q20c",
+              "url": "https://www.youtube.com/watch?v=l62TbEG_1IM"
+            },
+            {
+              "id": "021",
+              "prompt": "Q21",
+              "url": "https://www.youtube.com/watch?v=Gl3rzq-_R6g"
+            },
+            {
+              "id": "022",
+              "prompt": "Q22",
+              "url": "https://www.youtube.com/watch?v=hrAoATphRRc"
+            },
+            {
+              "id": "023",
+              "prompt": "Q23",
+              "url": "https://www.youtube.com/watch?v=wHNbkghNboc"
+            },
+            {
+              "id": "024",
+              "prompt": "Q24",
+              "url": "https://www.youtube.com/watch?v=LOzgSO_Yroo"
+            },
+            {
+              "id": "025",
+              "prompt": "Q25ai",
+              "url": "https://www.youtube.com/watch?v=I6lfhyK2jZw"
+            },
+            {
+              "id": "025",
+              "prompt": "Q25aii",
+              "url": "https://www.youtube.com/watch?v=shvM8kSNWqY"
+            },
+            {
+              "id": "025",
+              "prompt": "Q25aiii",
+              "url": "https://www.youtube.com/watch?v=CxPceda4Ojw"
+            },
+            {
+              "id": "026",
+              "prompt": "Q26",
+              "url": "https://www.youtube.com/watch?v=8woHaz-Iz_o"
+            },
+            {
+              "id": "027",
+              "prompt": "Q27",
+              "url": "https://www.youtube.com/watch?v=PDNOfwrxmJ0"
+            },
+            {
+              "id": "028",
+              "prompt": "Q28a",
+              "url": "https://www.youtube.com/watch?v=TOzmzVCAXBE"
+            },
+            {
+              "id": "028",
+              "prompt": "Q28b",
+              "url": "https://www.youtube.com/watch?v=4cz8CKB-RvI"
+            },
+            {
+              "id": "028",
+              "prompt": "Q28c",
+              "url": "https://www.youtube.com/watch?v=Wi_t8UwS4Mc"
+            }
+          ]
+        },
+        {
+          "title": "2.3 The Product rule",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1a",
+              "url": "https://www.youtube.com/watch?v=zlME3zwJwpQ"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1b",
+              "url": "https://www.youtube.com/watch?v=hDNZjViO3NQ"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1c",
+              "url": "https://www.youtube.com/watch?v=mKTiVmeCaDc"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1d",
+              "url": "https://www.youtube.com/watch?v=8GcUFDJesF4"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1e",
+              "url": "https://www.youtube.com/watch?v=XvMt3r-pORE"
+            },
+            {
+              "id": "001",
+              "prompt": "Q1f",
+              "url": "https://www.youtube.com/watch?v=gI8vRr6Urj0"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2a",
+              "url": "https://www.youtube.com/watch?v=eKi7D1fu6mU"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2b",
+              "url": "https://www.youtube.com/watch?v=t9Sgzc9xLNI"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2c",
+              "url": "https://www.youtube.com/watch?v=E0VKS-c4o30"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2d",
+              "url": "https://www.youtube.com/watch?v=AvkX9vPbzEE"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4",
+              "url": "https://www.youtube.com/watch?v=NeFPgiXIMe4"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=9Di-BqKSRFE"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=MC1OR7Af1C0"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5c",
+              "url": "https://www.youtube.com/watch?v=InqjnWEclys"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5d",
+              "url": "https://www.youtube.com/watch?v=jEefSyuW8eM"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5e",
+              "url": "https://www.youtube.com/watch?v=J7WtnnCAiCc"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5f",
+              "url": "https://www.youtube.com/watch?v=W31vINtnSuo"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6",
+              "url": "https://www.youtube.com/watch?v=9_pvkkAZ4no"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=cCRFDAZylEk"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=Qs0qr29twGA"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8a",
+              "url": "https://www.youtube.com/watch?v=DVKJDgHVK6E"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8b",
+              "url": "https://www.youtube.com/watch?v=sQyl6XBAvI0"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9",
+              "url": "https://www.youtube.com/watch?v=jMs-C6KObSM"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=Gzo7Py3tVdE"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11a",
+              "url": "https://www.youtube.com/watch?v=8SZui3FTcwk"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11b",
+              "url": "https://www.youtube.com/watch?v=BgzXH8CSojI"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12",
+              "url": "https://www.youtube.com/watch?v=dFZF7WCRwzY"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13a",
+              "url": "https://www.youtube.com/watch?v=l3KKbPe1TNY"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13b",
+              "url": "https://www.youtube.com/watch?v=eU7l0Pj7tis"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13c",
+              "url": "https://www.youtube.com/watch?v=3Yxvk9Bw4k0"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14",
+              "url": "https://www.youtube.com/watch?v=oB9O-H80BIU"
+            }
+          ]
+        },
+        {
+          "title": "Mid Chapter Review upto Product Rule",
+          "videos": [
+            {
+              "id": "001",
+              "prompt": "Q1",
+              "url": "https://www.youtube.com/watch?v=qk834BwTGs4"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2a",
+              "url": "https://www.youtube.com/watch?v=5nh_HzVuuIs"
+            },
+            {
+              "id": "003",
+              "prompt": "Q2b",
+              "url": "https://www.youtube.com/watch?v=vLgfVucqktI"
+            },
+            {
+              "id": "004",
+              "prompt": "Q2c",
+              "url": "https://www.youtube.com/watch?v=480k_UmLHcE"
+            },
+            {
+              "id": "005",
+              "prompt": "Q2d",
+              "url": "https://www.youtube.com/watch?v=FFLkfIh1_Gs"
+            },
+            {
+              "id": "006",
+              "prompt": "Q3",
+              "url": "https://www.youtube.com/watch?v=Dh8E96Cnlu8"
+            },
+            {
+              "id": "007",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=cIFdet3xbLE"
+            },
+            {
+              "id": "008",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=DAXcdwzELOY"
+            },
+            {
+              "id": "009",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=_N8JW8PuDG8"
+            },
+            {
+              "id": "010",
+              "prompt": "Q4d",
+              "url": "https://www.youtube.com/watch?v=0hYuVxQLn48"
+            },
+            {
+              "id": "011",
+              "prompt": "Q4e",
+              "url": "https://www.youtube.com/watch?v=dOnWaCpMTk0"
+            },
+            {
+              "id": "012",
+              "prompt": "Q4f",
+              "url": "https://www.youtube.com/watch?v=VWYCTiFHqcw"
+            },
+            {
+              "id": "013",
+              "prompt": "Q5",
+              "url": "https://www.youtube.com/watch?v=yiV2G0Kttc0"
+            },
+            {
+              "id": "014",
+              "prompt": "Q6a",
+              "url": "https://www.youtube.com/watch?v=Hf33PLxYhVQ"
+            },
+            {
+              "id": "015",
+              "prompt": "Q6b",
+              "url": "https://www.youtube.com/watch?v=pjyz-C77vZg"
+            },
+            {
+              "id": "016",
+              "prompt": "Q6c",
+              "url": "https://www.youtube.com/watch?v=zsKWXYo8YBA"
+            },
+            {
+              "id": "017",
+              "prompt": "Q6d",
+              "url": "https://www.youtube.com/watch?v=o62pH3CLdxo"
+            },
+            {
+              "id": "018",
+              "prompt": "Q6e",
+              "url": "https://www.youtube.com/watch?v=RztkKgSzYhY"
+            },
+            {
+              "id": "019",
+              "prompt": "Q6f",
+              "url": "https://www.youtube.com/watch?v=QlbaGDyNPW8"
+            },
+            {
+              "id": "020",
+              "prompt": "Q7a",
+              "url": "https://www.youtube.com/watch?v=WVw7h8VmDjU"
+            },
+            {
+              "id": "021",
+              "prompt": "Q7b",
+              "url": "https://www.youtube.com/watch?v=cVg2fQT__AM"
+            },
+            {
+              "id": "022",
+              "prompt": "Q7c",
+              "url": "https://www.youtube.com/watch?v=pMy4DpdoTLI"
+            },
+            {
+              "id": "023",
+              "prompt": "Q8a",
+              "url": null
+            },
+            {
+              "id": "024",
+              "prompt": "Q8b",
+              "url": null
+            },
+            {
+              "id": "025",
+              "prompt": "Q8c",
+              "url": null
+            },
+            {
+              "id": "026",
+              "prompt": "Q8d",
+              "url": "https://www.youtube.com/watch?v=i_9vN3gr5kQ"
+            },
+            {
+              "id": "027",
+              "prompt": "Q9",
+              "url": "https://www.youtube.com/watch?v=_K3u7IYayLY"
+            },
+            {
+              "id": "028",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=Ia3pRwl21xA"
+            },
+            {
+              "id": "029",
+              "prompt": "Q11",
+              "url": "https://www.youtube.com/watch?v=56XzeQHu37E"
+            },
+            {
+              "id": "030",
+              "prompt": "Q12",
+              "url": "https://www.youtube.com/watch?v=46XB2EggRbc"
+            },
+            {
+              "id": "031",
+              "prompt": "Q13",
+              "url": "https://www.youtube.com/watch?v=bzRLzZsn1GM"
+            },
+            {
+              "id": "032",
+              "prompt": "Q14",
+              "url": "https://www.youtube.com/watch?v=7-G1vX85s7M"
+            },
+            {
+              "id": "033",
+              "prompt": "Q15",
+              "url": "https://www.youtube.com/watch?v=SqjnpZCX_K8"
+            },
+            {
+              "id": "034",
+              "prompt": "Q16",
+              "url": "https://www.youtube.com/watch?v=njiXVOIcaP8"
+            },
+            {
+              "id": "035",
+              "prompt": "Q17",
+              "url": "https://www.youtube.com/watch?v=ERqH7B4-q1M"
+            },
+            {
+              "id": "036",
+              "prompt": "Q18",
+              "url": "https://www.youtube.com/watch?v=QXUX1I4VBnk"
+            }
+          ]
+        },
+        {
+          "title": "2.4 The Quotient Rule",
+          "videos": [
+            {
+              "id": "002",
+              "prompt": "Q2a",
+              "url": "https://www.youtube.com/watch?v=NFCuJEllI44"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2b",
+              "url": "https://www.youtube.com/watch?v=ZHfTdKTTcb0"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2c",
+              "url": "https://www.youtube.com/watch?v=MmeiTNkarcA"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2d",
+              "url": "https://www.youtube.com/watch?v=MUjhSLN0U4E"
+            },
+            {
+              "id": "002",
+              "prompt": "Q2e",
+              "url": "https://www.youtube.com/watch?v=3oVNyGUhDUI"
+            },
+            {
+              "id": "003",
+              "prompt": "Q3",
+              "url": "https://www.youtube.com/watch?v=bqe0Gw0nen0"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4a",
+              "url": "https://www.youtube.com/watch?v=aFhs3BkyjGI"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4b",
+              "url": "https://www.youtube.com/watch?v=HO8eoEprjlQ"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4c",
+              "url": "https://www.youtube.com/watch?v=pSITxwgaBrw"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4d",
+              "url": "https://www.youtube.com/watch?v=LB-1xRXaQVk"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4e",
+              "url": "https://www.youtube.com/watch?v=HE9L8cyMiLs"
+            },
+            {
+              "id": "004",
+              "prompt": "Q4f",
+              "url": "https://www.youtube.com/watch?v=rna7ThnHo6s"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5a",
+              "url": "https://www.youtube.com/watch?v=-rhUK8f0ITE"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5b",
+              "url": "https://www.youtube.com/watch?v=DtxOWizgNc0"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5c",
+              "url": "https://www.youtube.com/watch?v=ezvnqul4qzU"
+            },
+            {
+              "id": "005",
+              "prompt": "Q5d",
+              "url": "https://www.youtube.com/watch?v=rxkA52-jU4M"
+            },
+            {
+              "id": "006",
+              "prompt": "Q6",
+              "url": "https://www.youtube.com/watch?v=fbxA6ZzfvkQ"
+            },
+            {
+              "id": "007",
+              "prompt": "Q7",
+              "url": "https://www.youtube.com/watch?v=V5yYc10AMsE"
+            },
+            {
+              "id": "008",
+              "prompt": "Q8",
+              "url": "https://www.youtube.com/watch?v=GOlCIZMIqpo"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9a",
+              "url": "https://www.youtube.com/watch?v=tG1pmuLf0QI"
+            },
+            {
+              "id": "009",
+              "prompt": "Q9b",
+              "url": "https://www.youtube.com/watch?v=Z08ZJqs5z3w"
+            },
+            {
+              "id": "010",
+              "prompt": "Q10",
+              "url": "https://www.youtube.com/watch?v=ZGVSZJQwZG8"
+            },
+            {
+              "id": "011",
+              "prompt": "Q11",
+              "url": "https://www.youtube.com/watch?v=mR3DNlqqOAc"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12a",
+              "url": "https://www.youtube.com/watch?v=y2vMTPGvmBA"
+            },
+            {
+              "id": "012",
+              "prompt": "Q12b",
+              "url": "https://www.youtube.com/watch?v=Ycl6oxkWDAY"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13ai",
+              "url": "https://www.youtube.com/watch?v=AQ1on8ZHAVc"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13aii",
+              "url": "https://www.youtube.com/watch?v=GBNc3KOwh8E"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13aiii",
+              "url": "https://www.youtube.com/watch?v=TiHQifWqsP0"
+            },
+            {
+              "id": "013",
+              "prompt": "Q13b",
+              "url": "https://www.youtube.com/watch?v=Yrg5ZBlTcjE"
+            },
+            {
+              "id": "014",
+              "prompt": "Q14",
+              "url": "https://www.youtube.com/watch?v=QFHDTVKsmXg"
+            },
+            {
+              "id": "015",
+              "prompt": "Q15",
+              "url": "https://www.youtube.com/watch?v=wS2V53Mp4cQ"
+            },
+            {
+              "id": "016",
+              "prompt": "Q16",
+              "url": "https://www.youtube.com/watch?v=peleEBlqdT4"
+            },
+            {
+              "id": "017",
+              "prompt": "Q17",
+              "url": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
